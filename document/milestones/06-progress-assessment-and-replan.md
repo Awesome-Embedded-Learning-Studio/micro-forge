@@ -159,7 +159,19 @@
 - 阶段 2 优化:NVIC `highest_priority_pending_irq()` 改 lazy cache,状态变更失效、查询命中 O(1),行为与扫描版 bit 一致。
 - 新增 5 个测试(抢占嵌套 / 同优先级不抢占 / BASEPRI / PSP / PRIGROUP),**全量 222/222 通过**,HAL UART E2E 无回归。
 
-**02 仍剩**:bit-band 别名区、tail-chaining(late-arrival 在同步模拟器天然退化,无需处理)。
+**02 仍剩**:tail-chaining(late-arrival 在同步模拟器天然退化,无需处理)。**bit-band 别名区已落地**(`src/memory/bus.cpp` 的 `bitband_read`/`bitband_write`,外设 `0x42xxxxxx` / SRAM `0x22xxxxxx` word 访问映射单 bit,read 返 0/1、write 原子 RMW),见第二波 C4。
+
+## 实施记录补充(2026-06-19 · 第二波及之后)
+
+继第一波 A/B 之后,本批次补齐真实固件跑通的「最后一公里」,并补上事件观测层:
+
+- **Cortex-M3 Thumb-2 指令覆盖修复 + b.n 自循环**:修 9 处解码缺口,使真实 Keil/MDK-ARM STM32F103 HAL 固件端到端跑通。缺口:LDR.W `[PC,#imm12]` literal / BLX `Rm` 未设 LR / ADR 缺失 / SUB.W·SUBW plain imm12 / Load·Store immediate 忽略 hw1[7] 寻址模式 / shifted-reg CMP·CMN 误写 PC / data-proc register Rm 字段取错位 / b.n 自循环被 step 误判。验证路径:reset → `__main` scatter-load → `main` → `HAL_Init` → `SystemClock_Config` 切 PLL → `MX_GPIO_Init` → `HAL_GPIO_WritePin(PA1)` → `while(1)`,SysTick 中断正常。回归载体:`examples/F103/MDK-ARM/F103/F103.axf`(真实 Keil/MDK-ARM 固件)。
+- **bit-band 别名区(第二波 C4)**:见上节,02 中 bit-band 债清零。
+- **事件总线 / Hooks**:`include/hooks/`(`signal.hpp` / `ring_sink.hpp` / `event_bus.hpp` / `events.hpp`)。`Signal<E>` 类型化观察者、`RingSink<E>` 非阻塞 SPSC 环(O(1) push / 批量 drain)、`EventBus`,`GpioEdge`/`UartByte` 携带 CPU-cycle 时戳(`Stm32f1Gpio` 在 ODR 变化 emit GpioEdge,SoC 注入 CPU cycles 作时戳)。立场:单线程确定性,「不阻塞」靠 slot 轻量 + RingSink 离线 drain,不靠线程池。这补上了 02/04 观测层的可订阅事件源,GUI dashboard(04)可直接复用。
+- **全量 244/244 通过**(第一波 A 落地后 222 → 本批次补测后 244)。
+
+**02 仍剩**:仅 tail-chaining(同步模拟器天然退化,见上)。**03 外设中断路径**(EXTI / Timer UIF→IRQ E2E / USART RX-RXNE-TXE IRQ)进入第二波 C1–C3。
+
 
 ## 结论 / 下一步
 
