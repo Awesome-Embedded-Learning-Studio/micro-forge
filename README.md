@@ -80,6 +80,9 @@ Key milestones ahead: CLI diagnostics, AI state snapshot, full exception semanti
 
 This project is licensed under the [MIT License](LICENSE).
 
+## Contributing
+geqianQWQ: Provide the suggestions of Compatible of Keil, and provide some examples.
+
 ---
 
 ## 中文说明
