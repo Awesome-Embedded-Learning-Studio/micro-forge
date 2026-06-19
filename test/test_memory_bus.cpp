@@ -24,6 +24,50 @@ TEST(BusTest, SingleRegionReadWrite) {
     EXPECT_EQ(rd.value(), 0xCAFEBABEu);
 }
 
+// -- Bit-band alias (Cortex-M3 hardware feature) --
+
+TEST(BusTest, BitBandPeripheralWriteSetsAndClearsBit) {
+    Bus bus;
+    FlatMemory periph(256);
+    ASSERT_TRUE(bus.map(region(0x40000000, 256, periph.GetWeak())).has_value());
+
+    // alias 0x42000000 = bit 0 of word 0x40000000.
+    ASSERT_TRUE(bus.write(0x42000000, 1, Width::Word).has_value());
+    auto w = bus.read(0x40000000, Width::Word);
+    ASSERT_TRUE(w.has_value());
+    EXPECT_EQ(*w, 1u);
+
+    ASSERT_TRUE(bus.write(0x42000000, 0, Width::Word).has_value());
+    auto w2 = bus.read(0x40000000, Width::Word);
+    ASSERT_TRUE(w2.has_value());
+    EXPECT_EQ(*w2, 0u);
+}
+
+TEST(BusTest, BitBandPeripheralReadReturnsBit) {
+    Bus bus;
+    FlatMemory periph(256);
+    ASSERT_TRUE(bus.map(region(0x40000000, 256, periph.GetWeak())).has_value());
+
+    // Set bit 16 of word 0x40000000 directly.
+    ASSERT_TRUE(bus.write(0x40000000, 0x00010000u, Width::Word).has_value());
+    // Alias for bit 16: byte 0x40000002 bit 0 → 0x42000000 + (2<<5) = 0x42000040.
+    auto v = bus.read(0x42000040, Width::Word);
+    ASSERT_TRUE(v.has_value());
+    EXPECT_EQ(*v, 1u);
+}
+
+TEST(BusTest, BitBandSramWriteSetsBit) {
+    Bus bus;
+    FlatMemory sram(256);
+    ASSERT_TRUE(bus.map(region(0x20000000, 256, sram.GetWeak())).has_value());
+
+    // SRAM alias 0x22000000 = bit 0 of word 0x20000000.
+    ASSERT_TRUE(bus.write(0x22000000, 1, Width::Word).has_value());
+    auto w = bus.read(0x20000000, Width::Word);
+    ASSERT_TRUE(w.has_value());
+    EXPECT_EQ(*w, 1u);
+}
+
 // -- Dual region routing --
 
 TEST(BusTest, DualRegionRouting) {

@@ -35,6 +35,12 @@ class Bus {
   private:
     std::vector<Region> regions_;
     Region* find_region(addr_t addr);
+    // Cortex-M3 bit-band alias: a word access in 0x22xxxxxx / 0x42xxxxxx
+    // maps to a single bit in SRAM / peripheral space.
+    Expected<data_t> bitband_read(addr_t addr, addr_t band_base,
+                                  addr_t region_base);
+    Expected<void> bitband_write(addr_t addr, addr_t band_base,
+                                 addr_t region_base, data_t data);
     void trace_access(bool is_write, addr_t addr, data_t value, Width width,
                       Expected<void> result, std::string_view device);
     TraceCallback trace_;
