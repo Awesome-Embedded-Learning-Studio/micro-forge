@@ -229,13 +229,30 @@ CPU::CPUExpected<void> CortexM3CPU::execute_16bit(uint16_t insn) {
                     }
                     case 0b10:
                         return wr(rd, rr(rm)); // MOV high
-                    case 0b11:
-                        return write_pc(rr(rm)); // BX
+                    case 0b11: { // BX / BLX register — bit[7]: 0=BX, 1=BLX
+                        bool is_blx = (insn >> 7) & 1;
+                        data_t target = rr(rm);
+                        if (is_blx) {
+                            // LR = address of next instruction | Thumb bit.
+                            auto pc_res = read_pc_raw();
+                            if (!pc_res) {
+                                return std::unexpected{pc_res.error()};
+                            }
+                            auto lr_wr = wr(14, (*pc_res + 2u) | 1u);
+                            if (!lr_wr) {
+                                return lr_wr;
+                            }
+                        }
+                        return write_pc(target);
+                    }
                 }
             }
             // Data processing register
+            // op=bits[9:6], Rm/Rs=bits[5:3], Rdn/Rd=bits[2:0].
+            // (rm3() reads bits[8:6], which is the store-reg-offset Rm field,
+            //  NOT the data-proc Rm — that was the bug.)
             uint8_t op = (insn >> 6) & 0xF;
-            uint8_t rm = rm3(insn);
+            uint8_t rm = (insn >> 3) & 0x7u;
             uint8_t rd = rd3(insn);
             data_t a = rr(rd), b = rr(rm);
             data_t result;
@@ -450,16 +467,20 @@ CPU::CPUExpected<void> CortexM3CPU::execute_16bit(uint16_t insn) {
             return wr(rd8(insn), *v);
         }
 
-        // ── ADD Rd, SP/PC, #imm8 ──
-        // Encoding: 1010 1 ddd iiii iiii
-        // bit[11]=1 → ADD Rd, SP, #imm*4
-        // bit[11]=0 → ADD Rd, PC, #imm*4
-        case 0b10101: {
+        // ── ADR / ADD Rd, SP, #imm8*4 ──
+        // 1010 0 ddd iiiiiiii → ADR: Rd = Align(PC+4, 4) + imm*4
+        // 1010 1 ddd iiiiiiii → ADD Rd, SP, #imm*4
+        case 0b10100: { // ADR (PC-relative)
             uint8_t rd = rd8(insn);
-            uint32_t base =
-                (insn & (1 << 11)) ? rr(13) : (read_pc_raw().value_or(0) & ~3u);
-            uint32_t offset = imm8(insn) * 4;
-            return wr(rd, base + offset);
+            auto pc_res = read_pc_raw();
+            if (!pc_res) {
+                return std::unexpected{pc_res.error()};
+            }
+            uint32_t base = (*pc_res + 4u) & ~3u;
+            return wr(rd, base + imm8(insn) * 4u);
+        }
+        case 0b10101: { // ADD Rd, SP, #imm*4
+            return wr(rd8(insn), rr(13) + imm8(insn) * 4u);
         }
 
         // ── PUSH / ADD SP / SUB SP ──

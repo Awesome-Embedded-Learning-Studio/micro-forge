@@ -149,6 +149,8 @@ class CortexM3CPU : public CPU {
     std::vector<uint8_t> active_priorities_;
     addr_t vector_table_base_ = 0x08000000;
     bool pending_sys_tick_ = false;
+    bool pc_written_ = false; // write_reg(15) sets it; step uses it to tell an
+                              // explicit branch from sequential fall-through
 
     // Probe mode state
     bool probe_mode_ = false;

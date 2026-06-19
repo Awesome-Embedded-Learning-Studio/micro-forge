@@ -262,8 +262,44 @@ CPU::CPUExpected<void> CortexM3CPU::execute_32bit(uint16_t hw1, uint16_t hw2) {
         return wr(rd, result);
     }
 
-    // ── Data processing (modified immediate) ──
-    if ((hw1 & 0xF800) == 0xF000 && (hw2 & 0x8000) == 0) {
+    // ── Add/subtract (plain imm12): insn[25]=1 (hw1[9]) ──
+    // addw/subw (S=0) and adds.w/subs.w (S=1). imm12 = i:imm3:imm8 packed
+    // PLAIN (not Thumb2ExpandImm). op = hw1[8:5]: 0000=ADD, 0101=SUB; S=hw1[4].
+    // Modified-immediate (insn[25]=0, e.g. cmp.w #0x110000) keeps its own form.
+    if ((hw1 & 0xF800) == 0xF000 && (hw1 & 0x0200) != 0 &&
+        (hw2 & 0x8000) == 0) {
+        uint8_t op = (hw1 >> 5) & 0xF;
+        bool s_bit = (hw1 >> 4) & 1;
+        uint8_t rn = hw1 & 0xF;
+        uint8_t rd = (hw2 >> 12) & 0xF;
+        uint32_t imm12 = (((hw1 >> 10) & 0x1u) << 11) |
+                         (((hw2 >> 12) & 0x7u) << 8) | (hw2 & 0xFFu);
+        uint32_t a = rr(rn);
+        uint32_t result;
+        bool is_sub;
+        switch (op) {
+            case 0x0:
+                is_sub = false;
+                result = a + imm12;
+                break; // ADD.W/addw
+            case 0x5:
+                is_sub = true;
+                result = a - imm12;
+                break; // SUB.W/subw
+            default:
+                return std::unexpected{CPUError::IllegalInstruction};
+        }
+        if (s_bit) {
+            update_flags(is_sub ? FlagPostOperation::Sub
+                                : FlagPostOperation::Add,
+                         a, imm12, result);
+        }
+        return wr(rd, result);
+    }
+
+    // ── Data processing (modified immediate): insn[25]=0 ──
+    if ((hw1 & 0xF800) == 0xF000 && (hw1 & 0x0200) == 0 &&
+        (hw2 & 0x8000) == 0) {
         uint8_t op2 = (hw1 >> 5) & 0xF;
         bool s_bit = (hw1 >> 4) & 1;
         uint8_t rn = thumb32::dp_rn(hw1);
@@ -327,14 +363,16 @@ CPU::CPUExpected<void> CortexM3CPU::execute_32bit(uint16_t hw1, uint16_t hw2) {
         return wr(rd, result);
     }
 
-    // ── Load/Store immediate (LDR[B/H].W / STR[B/H].W / LDR.W / STR.W) ──
+    // ── Load/Store single (immediate): str/ldr/strb/ldrb/strh/ldrh .W ──
+    // hw1[7] selects the immediate form:
+    //   1 → imm12 offset (T2/T3): addr = Rn + imm12, no writeback.
+    //   0 → imm8 with addressing modes, op = hw2[11:8]:
+    //       0=offset+, C=offset-, B=post+, 9=post-, F=pre+, D=pre-.
     if ((hw1 & 0xFF00) == 0xF800) {
         uint8_t rn = hw1 & 0xF;
         bool load = (hw1 >> 4) & 1;
         uint8_t size = (hw1 >> 5) & 0x3;
         uint8_t rt = (hw2 >> 12) & 0xF;
-        uint8_t sub_op = (hw2 >> 8) & 0xF;
-        uint32_t imm8 = hw2 & 0xFF;
         uint32_t rn_val = rr(rn);
         Width width;
         switch (size) {
@@ -351,64 +389,88 @@ CPU::CPUExpected<void> CortexM3CPU::execute_32bit(uint16_t hw1, uint16_t hw2) {
                 return std::unexpected{CPUError::IllegalInstruction};
         }
 
-        if (sub_op == 0x0) { // offset: addr = Rn + imm8, no writeback
-            addr_t addr = rn_val + imm8;
-            if (load) {
-                auto r = br(addr, width);
-                if (!r) {
-                    return std::unexpected{r.error()};
-                }
-                return wr(rt, *r);
-            } else {
-                auto w = bw(addr, rr(rt), width);
-                if (!w) {
-                    return w;
-                }
-                return {};
+        // ── LDR.W (literal): Rn == PC ──
+        // `ldr.w Rt, [pc, #imm12]` — PC-relative literal pool load (compiled
+        // `LDR Rd, =const`). addr = Align(PC+4, 4) + imm12, no writeback.
+        // Store-to-PC-relative is UNDEFINED → rejected for !load.
+        if (rn == 15) {
+            if (!load) {
+                return std::unexpected{CPUError::IllegalInstruction};
+            }
+            uint32_t imm12 = hw2 & 0xFFFu;
+            auto pc_res = read_pc_raw();
+            if (!pc_res) {
+                return std::unexpected{pc_res.error()};
+            }
+            addr_t addr = ((*pc_res + 4) & ~0x3u) + imm12;
+            auto r = br(addr, width);
+            if (!r) {
+                return std::unexpected{r.error()};
+            }
+            return wr(rt, *r);
+        }
+
+        // Resolve effective address + optional writeback per immediate form.
+        addr_t addr = 0;
+        bool writeback = false;
+        data_t wb_val = 0;
+        if ((hw1 >> 7) & 1) {
+            // imm12 offset form (no writeback).
+            addr = rn_val + (hw2 & 0xFFFu);
+        } else {
+            uint8_t op = (hw2 >> 8) & 0xF;
+            uint32_t imm8 = hw2 & 0xFF;
+            switch (op) {
+                case 0x0: // [Rn, #+imm8]
+                    addr = rn_val + imm8;
+                    break;
+                case 0xC: // [Rn, #-imm8]
+                    addr = rn_val - imm8;
+                    break;
+                case 0xB: // [Rn], #+imm8  (post-index)
+                    addr = rn_val;
+                    wb_val = rn_val + imm8;
+                    writeback = true;
+                    break;
+                case 0x9: // [Rn], #-imm8  (post-index)
+                    addr = rn_val;
+                    wb_val = rn_val - imm8;
+                    writeback = true;
+                    break;
+                case 0xF: // [Rn, #+imm8]! (pre-index)
+                    addr = rn_val + imm8;
+                    wb_val = addr;
+                    writeback = true;
+                    break;
+                case 0xD: // [Rn, #-imm8]! (pre-index)
+                    addr = rn_val - imm8;
+                    wb_val = addr;
+                    writeback = true;
+                    break;
+                default:
+                    return std::unexpected{CPUError::IllegalInstruction};
             }
         }
 
-        if (sub_op == 0xB) { // post-index: op, then Rn += imm8
-            addr_t addr = rn_val;
-            if (load) {
-                auto r = br(addr, width);
-                if (!r) {
-                    return std::unexpected{r.error()};
-                }
-                auto w = wr(rt, *r);
-                if (!w) {
-                    return w;
-                }
-            } else {
-                auto w = bw(addr, rr(rt), width);
-                if (!w) {
-                    return w;
-                }
+        if (load) {
+            auto v = br(addr, width);
+            if (!v) {
+                return std::unexpected{v.error()};
             }
-            return wr(rn, rn_val + imm8);
-        }
-
-        if (sub_op == 0xF) { // pre-index: addr = Rn + imm8, op, Rn = addr
-            addr_t addr = rn_val + imm8;
-            if (load) {
-                auto r = br(addr, width);
-                if (!r) {
-                    return std::unexpected{r.error()};
-                }
-                auto w = wr(rt, *r);
-                if (!w) {
-                    return w;
-                }
-            } else {
-                auto w = bw(addr, rr(rt), width);
-                if (!w) {
-                    return w;
-                }
+            auto w = wr(rt, *v);
+            if (!w) {
+                return w;
             }
-            return wr(rn, addr);
+        } else {
+            auto w = bw(addr, rr(rt), width);
+            if (!w) {
+                return w;
+            }
         }
-
-        return std::unexpected{CPUError::IllegalInstruction};
+        if (writeback) {
+            return wr(rn, wb_val);
+        }
+        return {};
     }
 
     // ── UDIV / SDIV ──
@@ -546,6 +608,10 @@ CPU::CPUExpected<void> CortexM3CPU::execute_32bit(uint16_t hw1, uint16_t hw2) {
             } else {
                 update_nz(result);
             }
+        }
+        // CMP/CMN/TST/TEQ: S=1, Rd=15 → flags only, no register write.
+        if (s_bit && rd == 15) {
+            return {};
         }
         return wr(rd, result);
     }

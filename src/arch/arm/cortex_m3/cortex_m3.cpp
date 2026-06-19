@@ -128,6 +128,9 @@ CPU::CPUExpected<void> CortexM3CPU::write_reg(uint8_t index, data_t value) {
             msp_ = value;
         }
     }
+    if (index == 15) {
+        pc_written_ = true; // control flow changed this step (branch/return)
+    }
     auto result = regs_.write(index, value);
     if (!result) {
         return std::unexpected{CPUError::RegisterIndexOverflow};
@@ -329,6 +332,7 @@ CPU::CPUExpected<void> CortexM3CPU::step() {
         return std::unexpected{pc_res.error()};
     }
     addr_t pc = *pc_res;
+    pc_written_ = false; // an instruction may set this via write_reg(15)
 
     auto hw1_res = fetch16(pc);
     if (!hw1_res) {
@@ -372,25 +376,19 @@ CPU::CPUExpected<void> CortexM3CPU::step() {
         }
         exec_res = execute_instruction ? execute_32bit(hw1, *hw2_res)
                                        : CPUExpected<void>{};
-        if (exec_res.has_value()) {
-            auto new_pc = read_pc_raw();
-            if (new_pc && *new_pc == pc) {
-                auto wr = write_reg(15, pc + 4);
-                if (!wr) {
-                    return wr;
-                }
+        if (exec_res.has_value() && !pc_written_) {
+            auto wr = write_reg(15, pc + 4);
+            if (!wr) {
+                return wr;
             }
         }
     } else {
         exec_res =
             execute_instruction ? execute_16bit(hw1) : CPUExpected<void>{};
-        if (exec_res.has_value()) {
-            auto new_pc = read_pc_raw();
-            if (new_pc && *new_pc == pc) {
-                auto wr = write_reg(15, pc + 2);
-                if (!wr) {
-                    return wr;
-                }
+        if (exec_res.has_value() && !pc_written_) {
+            auto wr = write_reg(15, pc + 2);
+            if (!wr) {
+                return wr;
             }
         }
     }
