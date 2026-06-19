@@ -78,6 +78,17 @@ Stm32f103Soc::create() {
         }
     });
 
+    // Stamp GPIO edge events with the CPU cycle counter.
+    auto cycle_src = [cm3_weak]() -> uint64_t {
+        if (!cm3_weak.IsValid()) {
+            return 0;
+        }
+        return cm3_weak->cycles().value_or(0);
+    };
+    p.gpioa.set_cycle_source(cycle_src);
+    p.gpiob.set_cycle_source(cycle_src);
+    p.gpioc.set_cycle_source(cycle_src);
+
     // SimulationCoordinator
     auto clock = sim::VirtualClock(std::span<const sim::DomainConfig>(
         stm32f103_default_clocks, kClockDomainCount));

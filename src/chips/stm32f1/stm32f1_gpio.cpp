@@ -157,6 +157,11 @@ void Stm32f1Gpio::on_odr_changed(uint32_t old_odr, uint32_t new_odr) {
             if (on_pin_change_) {
                 on_pin_change_(i, high);
             }
+            if (!edge_signal_.empty()) {
+                edge_signal_.emit(hooks::GpioEdge{
+                    {cycle_source_ ? cycle_source_() : 0},
+                    static_cast<char>(port_id_), i, high});
+            }
         }
     }
 }

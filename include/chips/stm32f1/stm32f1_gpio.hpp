@@ -1,5 +1,7 @@
 #pragma once
 
+#include "hooks/events.hpp"
+#include "hooks/signal.hpp"
 #include "periph/device.hpp"
 #include "periph/gpio.hpp"
 #include "util/weak_ptr/weak_ptr_factory.h"
@@ -27,6 +29,14 @@ class Stm32f1Gpio : public periph::Device, public periph::Gpio {
     void simulate_input(uint8_t pin, bool high) override;
     void set_pin_change_callback(PinChangeCallback cb) override;
 
+    // ── Hook bus ──
+    // Subscribers observe real output edges (ODR / BSRR / BRR / set_pin).
+    hooks::Signal<hooks::GpioEdge>& edge_signal() { return edge_signal_; }
+    // Stamp emitted events with the simulator cycle; wire after the CPU is up.
+    void set_cycle_source(std::function<uint64_t()> src) {
+        cycle_source_ = std::move(src);
+    }
+
     WeakPtr<Stm32f1Gpio> GetWeak() { return weak_factory_.GetWeakPtr(); }
 
   private:
@@ -39,6 +49,8 @@ class Stm32f1Gpio : public periph::Device, public periph::Gpio {
     uint32_t lckr_ = 0;
     uint8_t port_id_;
     PinChangeCallback on_pin_change_;
+    hooks::Signal<hooks::GpioEdge> edge_signal_;
+    std::function<uint64_t()> cycle_source_;
 
     WeakPtrFactory<Stm32f1Gpio> weak_factory_{this};
 };
