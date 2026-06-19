@@ -170,3 +170,19 @@ if(TARGET hello_firmware AND TARGET blink_firmware AND TARGET systick_firmware)
 
     gtest_discover_tests(test_e2e)
 endif()
+
+# ── CLI 测试(drives the `micro-forge` binary) ──
+if(TARGET micro-forge AND TARGET hello_firmware)
+    add_executable(test_cli
+        test_cli.cpp
+    )
+    target_link_libraries(test_cli
+        PRIVATE GTest::gtest_main
+    )
+    target_compile_definitions(test_cli PRIVATE
+        MICRO_FORGE_BIN="${CMAKE_BINARY_DIR}/micro-forge"
+        CLI_HELLO_ELF="${CMAKE_BINARY_DIR}/examples/hello_world/hello.elf"
+    )
+    add_dependencies(test_cli micro-forge hello_firmware)
+    gtest_discover_tests(test_cli)
+endif()

@@ -1,4 +1,4 @@
-// JSON snapshot serialization (B2). Hand-written, zero external deps.
+// JSON snapshot serialization. Hand-written, zero external deps.
 // Addresses/values use lowercase hex strings; numbers stay decimal.
 #include "cli/snapshot.hpp"
 
@@ -6,12 +6,14 @@
 #include "chips/stm32f1/stm32f103_soc.hpp"
 #include "cpu/cpu.hpp"
 
+#include <cstdio>
 #include <iomanip>
 #include <ostream>
 
 using namespace micro_forge;
 using micro_forge::chips::stm32f1::Stm32f103Soc;
 using micro_forge::cpu::CPU;
+using micro_forge::tools::MmioAccess;
 
 namespace micro_forge::cli {
 namespace {
@@ -45,9 +47,34 @@ const char* fault_kind_json(CPU::CPUError k) {
     return "Unknown";
 }
 
+// Minimal JSON string escaping (control chars + quotes + backslash).
+void json_string(std::ostream& o, std::string_view s) {
+    o << '\"';
+    for (char c : s) {
+        switch (c) {
+            case '"':  o << "\\\""; break;
+            case '\\': o << "\\\\"; break;
+            case '\n': o << "\\n";  break;
+            case '\r': o << "\\r";  break;
+            case '\t': o << "\\t";  break;
+            default:
+                if (static_cast<unsigned char>(c) < 0x20) {
+                    char b[8];
+                    std::snprintf(b, sizeof(b), "\\u%04x",
+                                  static_cast<unsigned char>(c));
+                    o << b;
+                } else {
+                    o << c;
+                }
+        }
+    }
+    o << '\"';
+}
+
 } // namespace
 
-void write_snapshot_json(Stm32f103Soc& soc, std::ostream& out) {
+void write_snapshot_json(Stm32f103Soc& soc, std::ostream& out,
+                         const SnapshotExtras& extras) {
     out << "{";
     auto cm3 = soc.cortex_m3_cpu();
     if (cm3.IsValid()) {
@@ -90,12 +117,32 @@ void write_snapshot_json(Stm32f103Soc& soc, std::ostream& out) {
         }
     }
 
-    // run region (cycles stays decimal).
     out << "\"run\": {\"cycles\": " << std::dec
         << soc.machine().cpu->cycles().value_or(0) << "}, ";
 
-    // B3: peripherals detail + events ring.
-    out << "\"peripherals\": {}, \"events\": []";
+    out << "\"peripherals\": {\"usart_output\": ";
+    json_string(out, extras.usart_output);
+    out << "}, ";
+
+    out << "\"events\": [";
+    for (size_t i = 0; i < extras.events.size(); ++i) {
+        if (i) {
+            out << ", ";
+        }
+        const MmioAccess& e = extras.events[i];
+        out << "{\"op\": \"" << (e.is_write ? "W" : "R") << "\", ";
+        hex_kv(out, "addr", static_cast<unsigned>(e.addr));
+        out << ", ";
+        hex_kv(out, "value", static_cast<unsigned>(e.value));
+        out << ", \"dev\": \"";
+        if (!e.device.empty()) {
+            out << e.device;
+        } else {
+            out << "?";
+        }
+        out << "\", \"ok\": " << (e.ok ? "true" : "false") << '}';
+    }
+    out << "]";
     out << "}\n";
 }
 

@@ -2,7 +2,7 @@
 
 > 日期: 2026-06-19
 > 阶段: v0.2.0(对应 [01-cli-observability-ai](../milestones/01-cli-observability-ai.md))
-> 状态: B1/B2 完成(手测通过,全量 222 回归);B3(events/peripherals)/B4(测试)待续
+> 状态: ✅ B1–B4 完成(CLI run + JSON snapshot 5 区 + MMIO trace + ctest 回归),226 全过。[01-cli-observability-ai](../milestones/01-cli-observability-ai.md) 验收达成
 
 ---
 
@@ -41,7 +41,18 @@ SoC `load_bin` 原本只加载不 reset/launch(与 `load_elf` 不一致),BIN 固
 - 故意 unmapped PC(0x10000000)→ state=Faulted,fault 区 kind=InstructionFetchFault/pc/lr/sp。
 - `ctest` 全量 222/222 通过(load_bin 改动无回归)。
 
+## B3 · MMIO events ring + peripherals
+
+- CLI 持有 `std::vector<MmioAccess>` ring(容量 256,满则丢最旧=「最近 N 条」)。
+- `--snapshot-json` 或 `--trace-mmio` 时 `tools::enable_mmio_trace` 收集;snapshot 的 `events` 区输出 ring,`peripherals.usart_output` 输出固件 USART 缓存(经 JSON 转义)。
+- `--trace-mmio` 额外把 ring 按人类可读格式(`[RD/WR] addr=val (W) OK dev`)打到 stderr。
+- 验证:hello 短步捕到 USART 写;hal_uart 初始化阶段捕到 RCC + USART。ring 是「最近 N」,固件进 loop 后被 fetch 占满属正常语义。
+
+## B4 · CLI 回归测试
+
+- `test/test_cli.cpp` 用 `popen` 驱动 `micro-forge`,断言:run 输出含 "Hello"、无参 usage exit 2、snapshot 含 cpu/regs 且 r10≠ra(hex-sticky 回归守卫)、unmapped PC → Faulted + InstructionFetchFault。
+- 挂在 `test/CMakeLists.txt`,依赖 `micro-forge` + `hello_firmware`。ctest 全量 226/226。
+
 ## 下一步
 
-- B3:`--trace-mmio` events ring(最近 N 条 MMIO)+ peripherals 区(USART/GPIO/SysTick/NVIC 摘要)。
-- B4:CLI E2E 测试(纳入 ctest)。
+B 条(01-cli-observability-ai)完整完成。候选:发版 v0.2.0(CLI+snapshot 是个发版点)、C 条外设中断(EXTI/Timer IRQ/USART RX)、或 GUI dashboard(复用 snapshot)。

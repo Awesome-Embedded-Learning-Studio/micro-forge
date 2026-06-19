@@ -7,12 +7,15 @@
 #include "cli/snapshot.hpp"
 #include "cpu/cpu.hpp"
 #include "sim/coordinator.hpp"
+#include "tools/mmio_trace.hpp"
 
+#include <csignal>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <iterator>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -20,6 +23,11 @@ using namespace micro_forge;
 using namespace micro_forge::chips::stm32f1;
 
 namespace {
+
+// Ctrl+C flips this; the run loop checks it between chunks so a default
+// unbounded run (no --max-steps) stops gracefully with a status report.
+volatile std::sig_atomic_t g_interrupted = 0;
+void on_sigint(int) { g_interrupted = 1; }
 
 std::vector<uint8_t> read_file(const std::string& path) {
     std::ifstream f(path, std::ios::binary);
@@ -69,7 +77,8 @@ void print_usage() {
     std::fprintf(stderr,
         "usage: micro-forge <subcommand> [options]\n"
         "  run <firmware.{elf,bin}> [--chip stm32f103] [--base 0x08000000]\n"
-        "      [--max-steps N] [--trace-mmio] [--snapshot-json FILE]\n");
+        "      [--max-steps N] [--trace-mmio] [--snapshot-json FILE]\n"
+        "      (runs forever by default; Ctrl+C stops with a report)\n");
 }
 
 struct RunOptions {
@@ -129,11 +138,6 @@ int cmd_run(int argc, char** argv) {
         print_usage();
         return 2;
     }
-    if (opt.trace_mmio) {
-        // MMIO event stream lands in B3.
-        std::fprintf(stderr, "[micro-forge] note: --trace-mmio output lands in B3\n");
-    }
-
     auto data = read_file(opt.firmware);
     if (data.empty()) {
         std::fprintf(stderr, "cannot read firmware: %s\n", opt.firmware.c_str());
@@ -157,7 +161,33 @@ int cmd_run(int argc, char** argv) {
         return 1;
     }
 
-    sim::RunResult run_res = (*soc)->run(opt.max_steps);
+    // B3: collect recent MMIO accesses into a capped ring for diagnostics.
+    std::vector<tools::MmioAccess> events;
+    constexpr size_t kEventCap = 256;
+    const bool want_events = opt.trace_mmio || !opt.snapshot_json.empty();
+    if (want_events) {
+        tools::enable_mmio_trace(
+            *(*soc)->machine().bus, [&](const tools::MmioAccess& a) {
+                if (events.size() >= kEventCap) {
+                    events.erase(events.begin());
+                }
+                events.push_back(a);
+            });
+    }
+
+    // Run in chunks so SIGINT (Ctrl+C) can interrupt a default unbounded run.
+    sim::RunResult run_res = sim::RunResult::Running;
+    size_t remaining = opt.max_steps;
+    constexpr size_t kChunk = 100000;
+    while (remaining > 0 && !g_interrupted) {
+        size_t chunk = remaining < kChunk ? remaining : kChunk;
+        run_res = (*soc)->run(chunk);
+        remaining -= chunk;
+        if (run_res != sim::RunResult::Running) {
+            break;
+        }
+    }
+    bool interrupted = g_interrupted != 0;
 
     // Firmware output → stdout (pipeable / assertable).
     if (!usart_out.empty()) {
@@ -169,8 +199,9 @@ int cmd_run(int argc, char** argv) {
     auto cm3 = (*soc)->cortex_m3_cpu();
     auto st_res = (*soc)->machine().cpu->state();
     cpu::CPU::State st = st_res ? *st_res : cpu::CPU::State::Halted;
+    const char* stop = interrupted ? "Interrupted" : run_result_name(run_res);
     std::fprintf(stderr, "[micro-forge] state=%s stop=%s\n", state_name(st),
-                 run_result_name(run_res));
+                 stop);
 
     if (cm3.IsValid()) {
         const auto& fr = cm3->last_fault();
@@ -183,13 +214,24 @@ int cmd_run(int argc, char** argv) {
         }
     }
 
+    if (opt.trace_mmio) {
+        for (const auto& e : events) {
+            char buf[160];
+            auto sv = tools::format_mmio_access(e, buf, sizeof(buf));
+            std::fprintf(stderr, "%.*s\n", static_cast<int>(sv.size()),
+                         sv.data());
+        }
+    }
+
     if (!opt.snapshot_json.empty()) {
         std::ofstream sf(opt.snapshot_json);
         if (!sf) {
             std::fprintf(stderr, "cannot write snapshot: %s\n",
                          opt.snapshot_json.c_str());
         } else {
-            cli::write_snapshot_json(**soc, sf);
+            cli::SnapshotExtras extras{
+                std::span<const tools::MmioAccess>(events), usart_out};
+            cli::write_snapshot_json(**soc, sf, extras);
             std::fprintf(stderr, "[micro-forge] snapshot → %s\n",
                          opt.snapshot_json.c_str());
         }
@@ -203,6 +245,7 @@ int cmd_run(int argc, char** argv) {
 } // namespace
 
 int main(int argc, char** argv) {
+    std::signal(SIGINT, on_sigint);
     if (argc < 2) {
         print_usage();
         return 2;
