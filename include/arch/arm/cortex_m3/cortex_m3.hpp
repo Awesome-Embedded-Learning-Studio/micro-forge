@@ -65,8 +65,11 @@ class CortexM3CPU : public CPU {
     CPUExpected<void> t32_addsub_plain_imm(uint16_t hw1, uint16_t hw2);
     CPUExpected<void> t32_dataproc_imm(uint16_t hw1, uint16_t hw2);
     CPUExpected<void> t32_dataproc_reg(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_misc_reverse(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_ssat_usat(uint16_t hw1, uint16_t hw2);
     CPUExpected<void> t32_shift_reg(uint16_t hw1, uint16_t hw2);
     CPUExpected<void> t32_loadstore_single(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_ldrex_strex(uint16_t hw1, uint16_t hw2);
     CPUExpected<void> t32_tbb_tbh(uint16_t hw1, uint16_t hw2);
     CPUExpected<void> t32_strd_ldrd(uint16_t hw1, uint16_t hw2);
     CPUExpected<void> t32_stm_ldm(uint16_t hw1, uint16_t hw2);

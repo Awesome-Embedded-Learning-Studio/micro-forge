@@ -19,7 +19,17 @@ CPU::CPUExpected<void> CortexM3CPU::t32_addsub_plain_imm(uint16_t hw1,
     uint8_t rd = (hw2 >> 12) & 0xF;
     uint32_t imm12 = (((hw1 >> 10) & 0x1u) << 11) |
                      (((hw2 >> 12) & 0x7u) << 8) | (hw2 & 0xFFu);
-    uint32_t a = rr(rn);
+    uint32_t a;
+    if (rn == 15) {
+        // ADDW/SUBW with Rn=PC is ADR.W: base = Align(PC+4,4), not raw PC.
+        auto pc_res = read_pc_raw();
+        if (!pc_res) {
+            return std::unexpected{pc_res.error()};
+        }
+        a = (*pc_res + 4) & ~0x3u;
+    } else {
+        a = rr(rn);
+    }
     uint32_t result;
     bool is_sub;
     switch (op) {
@@ -64,6 +74,9 @@ CPU::CPUExpected<void> CortexM3CPU::t32_dataproc_imm(uint16_t hw1, uint16_t hw2)
         case 2:
             result = (rn == 15) ? imm32 : (rn_val | imm32);
             break; // ORR/MOV
+        case 3:
+            result = (rn == 15) ? ~imm32 : (rn_val | ~imm32);
+            break; // ORN/MVN
         case 4:
             result = rn_val ^ imm32;
             break; // EOR
@@ -89,14 +102,18 @@ CPU::CPUExpected<void> CortexM3CPU::t32_dataproc_imm(uint16_t hw1, uint16_t hw2)
     }
 
     if (s_bit) {
-        if (op2 == 8 || op2 == 10 || op2 == 13 || op2 == 14 || op2 == 11) {
-            uint32_t flag_rhs =
-                op2 == 10   ? imm32 + ((xpsr_ & PSR_C) ? 1u : 0u)
-                : op2 == 11 ? imm32 + ((xpsr_ & PSR_C) ? 0u : 1u)
-                            : imm32;
-            update_flags(op2 <= 10 ? FlagPostOperation::Add
-                                   : FlagPostOperation::Sub,
-                         rn_val, flag_rhs, result);
+        if (op2 == 8) { // ADD
+            update_flags(FlagPostOperation::Add, rn_val, imm32, result);
+        } else if (op2 == 10) { // ADC
+            update_flags(FlagPostOperation::Add, rn_val,
+                         imm32 + ((xpsr_ & PSR_C) ? 1u : 0u), result);
+        } else if (op2 == 11) { // SBC = rn - imm - !C
+            update_flags(FlagPostOperation::Sub, rn_val,
+                         imm32 + ((xpsr_ & PSR_C) ? 0u : 1u), result);
+        } else if (op2 == 13) { // SUB = rn - imm
+            update_flags(FlagPostOperation::Sub, rn_val, imm32, result);
+        } else if (op2 == 14) { // RSB = imm - rn; minuend is the immediate.
+            update_flags(FlagPostOperation::Sub, imm32, rn_val, result);
         } else {
             update_nz(result);
         }
@@ -128,18 +145,28 @@ CPU::CPUExpected<void> CortexM3CPU::t32_dataproc_reg(uint16_t hw1, uint16_t hw2)
         case 0:
             shifted = shift_n == 0 ? rm_val : rm_val << shift_n;
             break;
-        case 1:
-            shifted = rm_val >> (shift_n == 0 ? 0 : shift_n);
+        case 1: // LSR; imm3:imm2==0 means shift-by-32 → result 0.
+            shifted = shift_n == 0 ? 0u : (rm_val >> shift_n);
             break;
-        case 2: {
+        case 2: { // ASR; imm3:imm2==0 means shift-by-32 → sign-extend.
             if (shift_n == 0) {
-                shifted = rm_val;
+                shifted = (rm_val & 0x80000000u) ? 0xFFFFFFFFu : 0u;
             } else {
                 uint32_t sign = rm_val & 0x80000000u;
                 shifted = rm_val >> shift_n;
                 if (sign) {
                     shifted |= (0xFFFFFFFFu << (32 - shift_n));
                 }
+            }
+            break;
+        }
+        case 3: { // ROR; shift_n==0 means RRX (rotate-right-extend via C).
+            if (shift_n == 0) {
+                bool carry_in = (xpsr_ & PSR_C) != 0;
+                shifted = (carry_in ? 0x80000000u : 0u) | (rm_val >> 1);
+            } else {
+                uint8_t n = shift_n & 0x1Fu;
+                shifted = (rm_val >> n) | (rm_val << (32 - n));
             }
             break;
         }
@@ -159,8 +186,8 @@ CPU::CPUExpected<void> CortexM3CPU::t32_dataproc_reg(uint16_t hw1, uint16_t hw2)
         case 2:
             result = (rn == 15) ? shifted : (rn_val | shifted);
             break;
-        case 3:
-            result = ~shifted;
+        case 3: // ORN = Rn | ~shifted; Rn=15 collapses to MVN (~shifted).
+            result = (rn == 15) ? ~shifted : (rn_val | ~shifted);
             break;
         case 4:
             result = rn_val ^ shifted;
@@ -179,10 +206,12 @@ CPU::CPUExpected<void> CortexM3CPU::t32_dataproc_reg(uint16_t hw1, uint16_t hw2)
     }
 
     if (s_bit) {
-        if (op == 8 || op == 13 || op == 14) {
-            update_flags(op <= 8 ? FlagPostOperation::Add
-                                 : FlagPostOperation::Sub,
-                         rn_val, shifted, result);
+        if (op == 8) { // ADD
+            update_flags(FlagPostOperation::Add, rn_val, shifted, result);
+        } else if (op == 13) { // SUB = rn - shifted
+            update_flags(FlagPostOperation::Sub, rn_val, shifted, result);
+        } else if (op == 14) { // RSB = shifted - rn; minuend is the operand.
+            update_flags(FlagPostOperation::Sub, shifted, rn_val, result);
         } else {
             update_nz(result);
         }
@@ -221,6 +250,96 @@ CPU::CPUExpected<void> CortexM3CPU::t32_shift_reg(uint16_t hw1, uint16_t hw2) {
         }
     }
     return {};
+}
+
+// ── CLZ / RBIT / REV.W / REV16.W / REVSH.W ──
+// Dispatched when (hw1 & 0xFF00)==0xFA00 && (hw2 & 0xF000)==0xF000 &&
+// (hw2 & 0x00F0)!=0 (op2 present; shift_reg handles op2==0).
+CPU::CPUExpected<void> CortexM3CPU::t32_misc_reverse(uint16_t hw1,
+                                                    uint16_t hw2) {
+    uint8_t rd = (hw2 >> 8) & 0xFu;
+    uint8_t rn = hw1 & 0xFu;
+    uint8_t op2 = (hw2 >> 4) & 0xFu;
+    uint32_t v = rr(rn);
+
+    // CLZ (hw1[7:4]=0xB, op2=8) vs REV.W (hw1[7:4]=0x9, op2=8).
+    if (op2 == 0x8u && (hw1 & 0x00F0u) == 0x00B0u) {
+        return wr(rd, std::countl_zero(v));
+    }
+    uint32_t result;
+    switch (op2) {
+        case 0x8u: // REV.W — byte-reverse (same result as 16-bit REV)
+            result = ((v & 0x000000FFu) << 24) | ((v & 0x0000FF00u) << 8) |
+                     ((v & 0x00FF0000u) >> 8) | ((v & 0xFF000000u) >> 24);
+            break;
+        case 0x9u: // REV16.W — two halfword byte-swaps
+            result = ((v & 0x00FF00FFu) << 8) | ((v & 0xFF00FF00u) >> 8);
+            break;
+        case 0xAu: { // RBIT — bit-reverse all 32 bits
+            v = ((v & 0x55555555u) << 1) | ((v & 0xAAAAAAAAu) >> 1);
+            v = ((v & 0x33333333u) << 2) | ((v & 0xCCCCCCCCu) >> 2);
+            v = ((v & 0x0F0F0F0Fu) << 4) | ((v & 0xF0F0F0F0u) >> 4);
+            v = ((v & 0x00FF00FFu) << 8) | ((v & 0xFF00FF00u) >> 8);
+            result = (v << 16) | (v >> 16);
+            break;
+        }
+        case 0xBu: { // REVSH.W — sign-extend low halfword byte-swap
+            uint32_t r = ((v & 0x00FFu) << 8) | ((v & 0xFF00u) >> 8);
+            result = static_cast<uint32_t>(static_cast<int32_t>(
+                static_cast<int16_t>(r & 0xFFFFu)));
+            break;
+        }
+        default:
+            return std::unexpected{CPUError::IllegalInstruction};
+    }
+    return wr(rd, result);
+}
+
+// ── SSAT / USAT (saturate; writes APSR.Q on saturation) ──
+// Dispatched when (hw1 & 0xFFD0)==0xF300 (SSAT) / 0xF380 (USAT).
+CPU::CPUExpected<void> CortexM3CPU::t32_ssat_usat(uint16_t hw1, uint16_t hw2) {
+    bool is_usat = (hw1 & 0x0080u) != 0u; // bit7: SSAT=0, USAT=1
+    bool asr = (hw1 & 0x0020u) != 0u;     // bit5: shift type (1=asr, 0=lsl)
+    uint8_t rn = hw1 & 0xFu;
+    uint8_t rd = (hw2 >> 8) & 0xFu;
+    uint8_t field = hw2 & 0x1Fu; // sat width field
+    uint8_t imm3 = (hw2 >> 12) & 0x7u;
+    uint8_t imm2 = (hw2 >> 6) & 0x3u;
+    uint8_t shift = (imm3 << 2) | imm2;
+
+    int32_t val = static_cast<int32_t>(rr(rn));
+    val = asr ? (val >> shift)
+              : static_cast<int32_t>(static_cast<uint32_t>(val) << shift);
+    int64_t v = val;
+
+    if (is_usat) {
+        int64_t hi = (1ll << field) - 1; // USAT range [0, 2^field - 1]
+        uint32_t result;
+        if (v < 0) {
+            result = 0u;
+            xpsr_ |= PSR_Q;
+        } else if (v > hi) {
+            result = static_cast<uint32_t>(hi);
+            xpsr_ |= PSR_Q;
+        } else {
+            result = static_cast<uint32_t>(v);
+        }
+        return wr(rd, result);
+    }
+    // SSAT range [-2^(field), 2^(field) - 1] (sat = field + 1).
+    int64_t lo = -(1ll << field);
+    int64_t hi = (1ll << field) - 1;
+    uint32_t result;
+    if (v < lo) {
+        result = static_cast<uint32_t>(static_cast<uint64_t>(lo));
+        xpsr_ |= PSR_Q;
+    } else if (v > hi) {
+        result = static_cast<uint32_t>(hi);
+        xpsr_ |= PSR_Q;
+    } else {
+        result = static_cast<uint32_t>(v);
+    }
+    return wr(rd, result);
 }
 
 } // namespace micro_forge::cpu::arm::cortex_m3

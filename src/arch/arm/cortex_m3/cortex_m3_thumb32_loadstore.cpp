@@ -20,7 +20,6 @@ CPU::CPUExpected<void> CortexM3CPU::t32_loadstore_single(uint16_t hw1,
     bool load = (hw1 >> 4) & 1;
     uint8_t size = (hw1 >> 5) & 0x3;
     uint8_t rt = (hw2 >> 12) & 0xF;
-    uint32_t rn_val = rr(rn);
     Width width;
     switch (size) {
         case 0:
@@ -36,66 +35,79 @@ CPU::CPUExpected<void> CortexM3CPU::t32_loadstore_single(uint16_t hw1,
             return std::unexpected{CPUError::IllegalInstruction};
     }
 
-    // ── LDR.W (literal): Rn == PC ──
-    // `ldr.w Rt, [pc, #imm12]` — PC-relative literal pool load (compiled
-    // `LDR Rd, =const`). addr = Align(PC+4, 4) + imm12, no writeback.
-    // Store-to-PC-relative is UNDEFINED → rejected for !load.
+    // hw1[8]=1 selects the 0xF9xx signed forms (LDRSB.W/LDRSH.W); the load
+    // path sign-extends. Signed stores do not exist.
+    bool sign = (hw1 >> 8) & 1;
+    if (sign && !load) {
+        return std::unexpected{CPUError::IllegalInstruction};
+    }
+
+    // Effective base register value. Rn=PC uses Align(PC+4,4) — covers both
+    // `ldr.w Rt, [pc, #imm12]` (literal pool, compiled `LDR Rd, =const`) and
+    // PC-relative register/imm8 forms. Store-to-PC-relative is UNDEFINED.
+    uint32_t base;
     if (rn == 15) {
-        if (!load) {
-            return std::unexpected{CPUError::IllegalInstruction};
-        }
-        uint32_t imm12 = hw2 & 0xFFFu;
         auto pc_res = read_pc_raw();
         if (!pc_res) {
             return std::unexpected{pc_res.error()};
         }
-        addr_t addr = ((*pc_res + 4) & ~0x3u) + imm12;
-        auto r = br(addr, width);
-        if (!r) {
-            return std::unexpected{r.error()};
-        }
-        return wr(rt, *r);
+        base = (*pc_res + 4) & ~0x3u;
+    } else {
+        base = rr(rn);
     }
 
-    // Resolve effective address + optional writeback per immediate form.
+    // Resolve effective address + optional writeback per form.
+    //   hw1[7]=1 → imm12 offset (T2/T3), no writeback.
+    //   hw1[7]=0, hw2[11:8]=0  → register offset [Rn, Rm, LSL #imm2] (T2).
+    //   hw1[7]=0, hw2[11:8]≠0  → imm8 addressing modes (T4): C/B/9/F/D.
+    // (Per objdump: a positive small offset always folds into imm12, so the
+    //  hw2[11:8]=0 slot is exclusively the register-offset form.)
     addr_t addr = 0;
     bool writeback = false;
     data_t wb_val = 0;
     if ((hw1 >> 7) & 1) {
-        // imm12 offset form (no writeback).
-        addr = rn_val + (hw2 & 0xFFFu);
+        // imm12 offset form (no writeback). Store-to-PC-relative is UNDEFINED.
+        if (rn == 15 && !load) {
+            return std::unexpected{CPUError::IllegalInstruction};
+        }
+        addr = base + (hw2 & 0xFFFu);
     } else {
         uint8_t op = (hw2 >> 8) & 0xF;
-        uint32_t imm8 = hw2 & 0xFF;
-        switch (op) {
-            case 0x0: // [Rn, #+imm8]
-                addr = rn_val + imm8;
-                break;
-            case 0xC: // [Rn, #-imm8]
-                addr = rn_val - imm8;
-                break;
-            case 0xB: // [Rn], #+imm8  (post-index)
-                addr = rn_val;
-                wb_val = rn_val + imm8;
-                writeback = true;
-                break;
-            case 0x9: // [Rn], #-imm8  (post-index)
-                addr = rn_val;
-                wb_val = rn_val - imm8;
-                writeback = true;
-                break;
-            case 0xF: // [Rn, #+imm8]! (pre-index)
-                addr = rn_val + imm8;
-                wb_val = addr;
-                writeback = true;
-                break;
-            case 0xD: // [Rn, #-imm8]! (pre-index)
-                addr = rn_val - imm8;
-                wb_val = addr;
-                writeback = true;
-                break;
-            default:
-                return std::unexpected{CPUError::IllegalInstruction};
+        if (op == 0x0) {
+            // Register offset: [Rn, Rm, LSL #imm2], no writeback.
+            uint8_t rm = hw2 & 0xF;
+            uint8_t shift = (hw2 >> 4) & 0x3;
+            addr = base + (rr(rm) << shift);
+        } else {
+            // imm8 with addressing modes (T4).
+            uint32_t imm8 = hw2 & 0xFFu;
+            switch (op) {
+                case 0xC: // [Rn, #-imm8]
+                    addr = base - imm8;
+                    break;
+                case 0xB: // [Rn], #+imm8  (post-index)
+                    addr = base;
+                    wb_val = base + imm8;
+                    writeback = true;
+                    break;
+                case 0x9: // [Rn], #-imm8  (post-index)
+                    addr = base;
+                    wb_val = base - imm8;
+                    writeback = true;
+                    break;
+                case 0xF: // [Rn, #+imm8]! (pre-index)
+                    addr = base + imm8;
+                    wb_val = addr;
+                    writeback = true;
+                    break;
+                case 0xD: // [Rn, #-imm8]! (pre-index)
+                    addr = base - imm8;
+                    wb_val = addr;
+                    writeback = true;
+                    break;
+                default:
+                    return std::unexpected{CPUError::IllegalInstruction};
+            }
         }
     }
 
@@ -104,7 +116,15 @@ CPU::CPUExpected<void> CortexM3CPU::t32_loadstore_single(uint16_t hw1,
         if (!v) {
             return std::unexpected{v.error()};
         }
-        auto w = wr(rt, *v);
+        data_t val = *v;
+        if (sign) { // LDRSB.W / LDRSH.W: sign-extend byte/half to 32 bits.
+            val = (width == Width::Byte)
+                      ? static_cast<data_t>(
+                          static_cast<int32_t>(static_cast<int8_t>(val)))
+                      : static_cast<data_t>(
+                          static_cast<int32_t>(static_cast<int16_t>(val)));
+        }
+        auto w = wr(rt, val);
         if (!w) {
             return w;
         }
@@ -149,6 +169,43 @@ CPU::CPUExpected<void> CortexM3CPU::t32_tbb_tbh(uint16_t hw1, uint16_t hw2) {
 
     addr_t target = pc_val + halfwords * 2;
     return write_pc(target);
+}
+
+// ── LDREX / STREX (+B/+H) — single-core sim, no exclusive monitor ──
+// Dispatched when (hw1 & 0xFF60)==0xE840: the exclusive space (P=0 & W=0),
+// which STRD/LDRD never occupy (those always set P or W). LDREX → plain load;
+// STREX → plain store with Rd=0 (no monitor → always "succeeds").
+//   hw1[4]=L: STREX(0) / LDREX(1).   hw1[7]: 0=word, 1=byte/half.
+//   word:   LDREX Rd=hw2[15:12];  STREX Rt=hw2[15:12], Rd=hw2[11:8].
+//   byte/h: LDREX Rd=hw2[15:12];  STREX Rt=hw2[15:12], Rd=hw2[3:0]; size=hw2[7:4].
+CPU::CPUExpected<void> CortexM3CPU::t32_ldrex_strex(uint16_t hw1,
+                                                    uint16_t hw2) {
+    uint8_t rn = hw1 & 0xFu;
+    bool load = (hw1 >> 4) & 1u;
+    bool byte_half = (hw1 >> 7) & 1u;
+
+    Width width = Width::Word;
+    if (byte_half) {
+        width = (((hw2 >> 4) & 0xFu) == 5u) ? Width::HalfWord : Width::Byte;
+    }
+    uint32_t base = rr(rn);
+
+    if (load) {
+        uint8_t rd = (hw2 >> 12) & 0xFu;
+        auto v = br(base, width);
+        if (!v) {
+            return std::unexpected{v.error()};
+        }
+        return wr(rd, *v);
+    }
+    // STREX: store Rt, write success status Rd=0.
+    uint8_t rt = (hw2 >> 12) & 0xFu;
+    uint8_t rd = byte_half ? (hw2 & 0xFu) : ((hw2 >> 8) & 0xFu);
+    auto w = bw(base, rr(rt), width);
+    if (!w) {
+        return w;
+    }
+    return wr(rd, 0u);
 }
 
 // ── STRD / LDRD (Store/Load Dual, immediate offset) ──

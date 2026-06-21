@@ -59,7 +59,7 @@ CPU::CPUExpected<void> CortexM3CPU::execute_32bit(uint16_t hw1, uint16_t hw2) {
         uint8_t sysm = hw2 & 0xFFu;
         switch (sysm) {
             case 0x00:
-                return xpsr_ & (PSR_N | PSR_Z | PSR_C | PSR_V);
+                return xpsr_ & (PSR_N | PSR_Z | PSR_C | PSR_V | PSR_Q);
             case 0x08:
                 return msp_;
             case 0x09:
@@ -81,8 +81,9 @@ CPU::CPUExpected<void> CortexM3CPU::execute_32bit(uint16_t hw1, uint16_t hw2) {
         uint8_t sysm = hw2 & 0xFFu;
         switch (sysm) {
             case 0x00:
-                xpsr_ = (xpsr_ & ~(PSR_N | PSR_Z | PSR_C | PSR_V)) |
-                        (value & (PSR_N | PSR_Z | PSR_C | PSR_V)) | PSR_T;
+                xpsr_ = (xpsr_ & ~(PSR_N | PSR_Z | PSR_C | PSR_V | PSR_Q)) |
+                        (value & (PSR_N | PSR_Z | PSR_C | PSR_V | PSR_Q)) |
+                        PSR_T;
                 return {};
             case 0x08:
                 msp_ = value & ~0x3u;
@@ -215,13 +216,20 @@ CPU::CPUExpected<void> CortexM3CPU::execute_32bit(uint16_t hw1, uint16_t hw2) {
         return wr(rd, val);
     }
 
-    // ── DMB / DSB / ISB ──
+    // ── DMB / DSB / ISB / CLREX ──
     if (hw1 == 0xF3BF && (hw2 & 0xFF0Fu) == 0x8F0Fu) {
         uint8_t option = hw2 & 0xFu;
         uint8_t op = (hw2 >> 4) & 0xFu;
-        if (option != 0xFu || (op != 0x4u && op != 0x5u && op != 0x6u)) {
+        // op=4 DSB, 5 DMB, 6 ISB; op=2 CLREX (no-op on a single-core sim).
+        if (option != 0xFu ||
+            (op != 0x2u && op != 0x4u && op != 0x5u && op != 0x6u)) {
             return std::unexpected{CPUError::IllegalInstruction};
         }
+        return {};
+    }
+
+    // ── NOP.W / YIELD.W / SEV.W (T4 hints, f3af 80xx) ── no-op on this sim.
+    if (hw1 == 0xF3AF && (hw2 & 0xF000u) == 0x8000u) {
         return {};
     }
 
@@ -270,6 +278,13 @@ CPU::CPUExpected<void> CortexM3CPU::execute_32bit(uint16_t hw1, uint16_t hw2) {
         return wr(rd, result);
     }
 
+    // ── SSAT / USAT (saturate; writes APSR.Q) ──
+    // Must precede dataproc-imm, which also matches 0xF3xx (insn[25]=0) and
+    // would misread SSAT as ADD-imm. mask 0xFFD0 frees hw1[5] (shift type).
+    if ((hw1 & 0xFFD0u) == 0xF300u || (hw1 & 0xFFD0u) == 0xF380u) {
+        return t32_ssat_usat(hw1, hw2);
+    }
+
     // ── Add/subtract (plain imm12): insn[25]=1 (hw1[9]) ──
     if ((hw1 & 0xF800) == 0xF000 && (hw1 & 0x0200) != 0 &&
         (hw2 & 0x8000) == 0) {
@@ -283,7 +298,9 @@ CPU::CPUExpected<void> CortexM3CPU::execute_32bit(uint16_t hw1, uint16_t hw2) {
     }
 
     // ── Load/Store single (immediate): str/ldr/strb/ldrb/strh/ldrh .W ──
-    if ((hw1 & 0xFF00) == 0xF800) {
+    // 0xFE00 mask covers both 0xF8xx (unsigned str/ldr/b/h) and 0xF9xx
+    // (signed LDRSB.W/LDRSH.W); the handler sign-extends the 0xF9xx forms.
+    if ((hw1 & 0xFE00) == 0xF800) {
         return t32_loadstore_single(hw1, hw2);
     }
 
@@ -317,27 +334,35 @@ CPU::CPUExpected<void> CortexM3CPU::execute_32bit(uint16_t hw1, uint16_t hw2) {
         uint8_t rd = (hw2 >> 8) & 0xFu;
         uint8_t ra = (hw2 >> 12) & 0xFu;
         uint32_t product = rr(rn) * rr(rm);
-        uint32_t result =
-            (hw2 & 0x0010u) ? (rr(ra) - product) : (product + rr(ra));
+        // MUL.W (Ra=15) is MLA/MLS without an accumulator; rr(15) would fold
+        // the raw PC into the product. Treat Ra=15 as "no accumulate".
+        uint32_t acc = (ra == 15) ? 0u : rr(ra);
+        uint32_t result = (hw2 & 0x0010u) ? (acc - product) : (product + acc);
         return wr(rd, result);
     }
 
-    // ── SMULL / UMULL ──
-    if (((hw1 & 0xFFF0u) == 0xFB80u || (hw1 & 0xFFF0u) == 0xFBA0u) &&
+    // ── SMULL/UMULL (no accumulate) and SMLAL/UMLAL (accumulate) ──
+    uint16_t mp_hw1 = hw1 & 0xFFF0u;
+    if ((mp_hw1 == 0xFB80u || mp_hw1 == 0xFBA0u ||
+         mp_hw1 == 0xFBC0u || mp_hw1 == 0xFBE0u) &&
         (hw2 & 0x00F0u) == 0x0000u) {
         uint8_t rn = hw1 & 0xFu;
         uint8_t rm = hw2 & 0xFu;
         uint8_t rdlo = (hw2 >> 12) & 0xFu;
         uint8_t rdhi = (hw2 >> 8) & 0xFu;
-        uint64_t result;
-        if ((hw1 & 0xFFF0u) == 0xFB80u) {
-            result = static_cast<uint64_t>(
-                static_cast<int64_t>(static_cast<int32_t>(rr(rn))) *
-                static_cast<int64_t>(static_cast<int32_t>(rr(rm))));
-        } else {
-            result =
-                static_cast<uint64_t>(rr(rn)) * static_cast<uint64_t>(rr(rm));
-        }
+        bool accumulate = (mp_hw1 == 0xFBC0u || mp_hw1 == 0xFBE0u);
+        bool is_signed = (mp_hw1 == 0xFB80u || mp_hw1 == 0xFBC0u);
+        uint64_t product =
+            is_signed
+                ? static_cast<uint64_t>(
+                      static_cast<int64_t>(static_cast<int32_t>(rr(rn))) *
+                      static_cast<int64_t>(static_cast<int32_t>(rr(rm))))
+                : static_cast<uint64_t>(rr(rn)) * static_cast<uint64_t>(rr(rm));
+        // SMLAL/UMLAL accumulate the existing RdHi:RdLo (read before write).
+        uint64_t result = accumulate
+                              ? product + (static_cast<uint64_t>(rr(rdhi)) << 32) +
+                                    rr(rdlo)
+                              : product;
         auto lo = wr(rdlo, static_cast<uint32_t>(result));
         if (!lo) {
             return lo;
@@ -355,9 +380,26 @@ CPU::CPUExpected<void> CortexM3CPU::execute_32bit(uint16_t hw1, uint16_t hw2) {
         return t32_shift_reg(hw1, hw2);
     }
 
+    // ── CLZ / RBIT / REV.W / REV16.W / REVSH.W ──
+    // 0xFA00 with op2 (hw2[7:4]) != 0; shift_reg above already took op2==0.
+    if ((hw1 & 0xFF00u) == 0xFA00u && (hw2 & 0xF000u) == 0xF000u &&
+        (hw2 & 0x00F0u) != 0u) {
+        return t32_misc_reverse(hw1, hw2);
+    }
+
     // ── TBB / TBH (Table Branch) ──
-    if ((hw1 & 0xFFF0) == 0xE8D0 && (hw2 & 0xF0F0) == 0xF000) {
+    // hw2 mask 0xFFE0 (not 0xF0F0) frees hw2[4:0] — TBH's H-bit at [4] and
+    // Rm at [3:0] — so TBH (0xF010) and TBB with Rm≠0 (e.g. 0xF004) are not
+    // disqualified; otherwise they fall through to STRD/LDRD or LDREX.
+    if ((hw1 & 0xFFF0) == 0xE8D0 && (hw2 & 0xFFE0) == 0xF000) {
         return t32_tbb_tbh(hw1, hw2);
+    }
+
+    // ── LDREX / STREX (+B/+H) — single-core sim, no exclusive monitor ──
+    // Plain LD; STREX always reports success (Rd=0). Must precede the
+    // STRD/LDRD mask (0xFE40==0xE840), which otherwise swallows them.
+    if ((hw1 & 0xFF60u) == 0xE840u) {
+        return t32_ldrex_strex(hw1, hw2);
     }
 
     // ── STRD / LDRD (Store/Load Dual, immediate offset) ──

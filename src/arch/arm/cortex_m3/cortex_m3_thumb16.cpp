@@ -49,13 +49,26 @@ CPU::CPUExpected<void> CortexM3CPU::execute_16bit(uint16_t insn) {
         return {};
     };
 
-    // ── CPSIE i / CPSID i ──
-    if ((insn & 0xFFF0u) == 0xB660u) {
-        primask_ &= ~1u;
-        return {};
-    }
-    if ((insn & 0xFFF0u) == 0xB670u) {
-        primask_ |= 1u;
+    // ── CPS effect {i,f}: CPSIE (enable) / CPSID (disable) ──
+    // 0xB66x (CPSIE) / 0xB67x (CPSID); bit4 = 0/1 (enable/disable),
+    // bit1 = i (PRIMASK), bit0 = f (FAULTMASK). The old 0xFFF0 mask ignored
+    // bit[1:0], so cpsie/cpsid f silently acted on PRIMASK, not FAULTMASK.
+    if ((insn & 0xFFE0u) == 0xB660u) {
+        bool disable = (insn >> 4) & 1u;
+        if (insn & 0x2u) { // i → PRIMASK
+            if (disable) {
+                primask_ |= 1u;
+            } else {
+                primask_ &= ~1u;
+            }
+        }
+        if (insn & 0x1u) { // f → FAULTMASK
+            if (disable) {
+                faultmask_ |= 1u;
+            } else {
+                faultmask_ &= ~1u;
+            }
+        }
         return {};
     }
 
@@ -550,6 +563,11 @@ CPU::CPUExpected<void> CortexM3CPU::execute_16bit(uint16_t insn) {
         case 0b10111: {
             uint8_t sub_op = (insn >> 9) & 0x3;
             if (sub_op == 0b11) {
+                // BKPT #imm8 (0xBExx): no debugger attached → HardFault.
+                // (Was silently treated as NOP — coverage matrix §2 #6.)
+                if ((insn & 0xFF00u) == 0xBE00u) {
+                    return trigger_hardfault();
+                }
                 if ((insn & 0xFF00u) == 0xBF00u && (insn & 0xFu) != 0) {
                     uint8_t first_cond = (insn >> 4) & 0xFu;
                     uint8_t mask = insn & 0xFu;

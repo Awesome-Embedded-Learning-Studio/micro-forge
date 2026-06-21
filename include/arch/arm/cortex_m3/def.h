@@ -10,6 +10,7 @@ static constexpr data_t PSR_N = 1u << 31;
 static constexpr data_t PSR_Z = 1u << 30;
 static constexpr data_t PSR_C = 1u << 29;
 static constexpr data_t PSR_V = 1u << 28;
+static constexpr data_t PSR_Q = 1u << 27;
 static constexpr data_t PSR_T = 1u << 24;
 static constexpr uint16_t REGCNT = 16;
 
