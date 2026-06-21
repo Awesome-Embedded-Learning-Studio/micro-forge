@@ -192,6 +192,56 @@ TEST_F(CortexM3Test, StrbWidePreIndexNegative) {
     EXPECT_EQ(*v, 0x77u);
 }
 
+TEST_F(CortexM3Test, LoadStoreWideRegisterOffset) {
+    // Register offset (T2): addr = Rn + (Rm << shift2). The #9 bug treated
+    // hw2[7:0] as imm8, computing r1+2 instead of r1+r2.
+    //   str.w r0,[r1,r2]       = F841 0002  → r1 + r2
+    //   ldr.w r4,[r1,r2,lsl#3] = F851 4032  → r1 + (r2<<3)
+    load_program({0xF841, 0x0002, 0xF851, 0x4032});
+    reset_cpu();
+    set_reg(1, 0x100u);
+    set_reg(2, 0x40u);
+    set_reg(0, 0x12345678u);
+    uint32_t lit = 0xCAFEF00Du;
+    ASSERT_TRUE(mem_.load(0x300u, {reinterpret_cast<const uint8_t*>(&lit), 4})
+                    .has_value());
+    start_cpu();
+
+    ASSERT_TRUE(cpu_->step().has_value()); // str.w r0,[r1,r2] → 0x140
+    auto w = bus_.read(0x140u, Width::Word);
+    ASSERT_TRUE(w.has_value());
+    EXPECT_EQ(*w, 0x12345678u);
+    // Regression guard: the buggy imm8 path wrote to r1+2 = 0x102 instead.
+    auto bad = bus_.read(0x102u, Width::Word);
+    ASSERT_TRUE(bad.has_value());
+    EXPECT_NE(*bad, 0x12345678u);
+
+    ASSERT_TRUE(cpu_->step().has_value()); // ldr.w r4,[r1,r2,lsl#3] → 0x300
+    EXPECT_EQ(reg(4), 0xCAFEF00Du);
+}
+
+TEST_F(CortexM3Test, LoadStoreWideRegisterOffsetByteHalf) {
+    //   strb.w r0,[r1,r2] = F801 0002 (byte → r1+r2)
+    //   ldrh.w r4,[r1,r3] = F831 4003 (half ← r1+r3)
+    load_program({0xF801, 0x0002, 0xF831, 0x4003});
+    reset_cpu();
+    set_reg(1, 0x100u);
+    set_reg(2, 0x10u); // strb → 0x110
+    set_reg(3, 0x40u); // ldrh → 0x140
+    set_reg(0, 0xABu);
+    uint16_t lit = 0xBEEFu;
+    ASSERT_TRUE(mem_.load(0x140u, {reinterpret_cast<const uint8_t*>(&lit), 2})
+                    .has_value());
+    start_cpu();
+
+    ASSERT_TRUE(cpu_->step().has_value()); // strb.w → 0x110
+    auto b = bus_.read(0x110u, Width::Byte);
+    ASSERT_TRUE(b.has_value());
+    EXPECT_EQ(*b, 0xABu);
+    ASSERT_TRUE(cpu_->step().has_value()); // ldrh.w r4,[r1,r3] → 0x140
+    EXPECT_EQ(reg(4), 0xBEEFu);
+}
+
 TEST_F(CortexM3Test, CmpWideShiftedRegDoesNotWritePc) {
     // 0xEBB0 0F81 = cmp.w r0, r1, lsl #2 (Rd=15, S=1 → flags only).
     // The F103 HAL_RCC_ClockConfig PLL-wait opcode. r0=10, r1=3 → 10-(3<<2)=-2.
@@ -400,4 +450,225 @@ TEST_F(CortexM3Test, TbbUsesPcPlusFourAsBranchBase) {
     EXPECT_EQ(cpu_->pc().value_or(0), 0x0Cu);
     ASSERT_TRUE(cpu_->step().has_value());
     EXPECT_EQ(reg(1), 2u);
+}
+
+// ── T1 静默错误修复单测(coverage matrix §2 #2–#11)──
+
+TEST_F(CortexM3Test, OrnWideRegisterIncludesRn) {
+    // #2: orn.w r0,r1,r2 (ea61 0002) = r1 | ~r2; bug gave ~shifted (dropped Rn).
+    load_program({0xEA61, 0x0002});
+    reset_cpu();
+    set_reg(1, 0x000000FFu);
+    set_reg(2, 0x0000000Fu);
+    start_cpu();
+    ASSERT_TRUE(cpu_->step().has_value());
+    EXPECT_EQ(reg(0), 0xFFFFFFFFu); // 0xFF | ~0x0F
+}
+
+TEST_F(CortexM3Test, RsbsWideCarryReflectsMinuend) {
+    // #3: rsbs r0,r1,#5 (f1d1 0005) = 5 - r1; r1=3 → C=1 (5>=3). mrs r2,apsr.
+    load_program({0xF1D1, 0x0005, 0xF3EF, 0x8200});
+    reset_cpu();
+    set_reg(1, 3u);
+    start_cpu();
+    ASSERT_TRUE(cpu_->step().has_value()); // rsbs
+    ASSERT_TRUE(cpu_->step().has_value()); // mrs r2,apsr
+    EXPECT_EQ(reg(0), 2u);
+    EXPECT_EQ(reg(2), 0x20000000u); // C set; bug gave C=(rn>=imm)=0
+}
+
+TEST_F(CortexM3Test, ShiftBy32InShiftedRegisterOperand) {
+    // #4: add.w r0,r1,r2,lsr #32 (eb01 0012); LSR#32 → shifted=0.
+    load_program({0xEB01, 0x0012});
+    reset_cpu();
+    set_reg(1, 0x10u);
+    set_reg(2, 0xFFFFFFFFu);
+    start_cpu();
+    ASSERT_TRUE(cpu_->step().has_value());
+    EXPECT_EQ(reg(0), 0x10u); // r1 + 0; bug gave r1 + r2
+}
+
+TEST_F(CortexM3Test, CpsFControlsFaultMaskNotPrimask) {
+    // #5: cpsid f (b671) → FAULTMASK, not PRIMASK.
+    load_program({0xB671, 0xF3EF, 0x8013, 0xF3EF, 0x8110}); // cpsid f; mrs r0,faultmask; mrs r1,primask
+    reset_cpu();
+    start_cpu();
+    for (int i = 0; i < 3; ++i) {
+        ASSERT_TRUE(cpu_->step().has_value());
+    }
+    EXPECT_EQ(reg(0), 1u); // faultmask set
+    EXPECT_EQ(reg(1), 0u); // primask untouched (bug had set primask)
+}
+
+TEST_F(CortexM3Test, BkptIsNotSilentlyNopped) {
+    // #6: bkpt #5 (be05) → HardFault entry (PC leaves the bkpt), not a NOP
+    // that simply advances PC to 2.
+    load_program({0xBE05});
+    reset_cpu();
+    start_cpu();
+    [[maybe_unused]] auto _ = cpu_->step();
+    EXPECT_NE(cpu_->pc().value_or(0xDEAD), 2u);
+}
+
+TEST_F(CortexM3Test, MulWideRa15DoesNotFoldPc) {
+    // #7: mul.w r0,r1,r2 (fb01 f002); Ra=15 → no accumulate; bug added raw PC.
+    load_program({0xFB01, 0xF002});
+    reset_cpu();
+    set_reg(1, 3u);
+    set_reg(2, 5u);
+    start_cpu();
+    ASSERT_TRUE(cpu_->step().has_value());
+    EXPECT_EQ(reg(0), 15u);
+}
+
+TEST_F(CortexM3Test, SubwPcUsesAlignedPcPlusFour) {
+    // #8: subw r0,pc,#4 (f2af 0004) at PC=0; base=Align(PC+4,4)=4 → r0=0.
+    // bug used raw PC=0 → r0=0xFFFFFFFC.
+    load_program({0xF2AF, 0x0004});
+    reset_cpu();
+    start_cpu();
+    ASSERT_TRUE(cpu_->step().has_value());
+    EXPECT_EQ(reg(0), 0u);
+}
+
+TEST_F(CortexM3Test, TbhDispatchesViaTableBranchHandler) {
+    // #10: tbh [pc,r0,lsl#1] (e8df f010); H-bit must not misroute to LDRD.
+    // r0=0, table halfword at PC+4 = 0 → target = PC+4.
+    load_program({0xE8DF, 0xF010});
+    reset_cpu();
+    set_reg(0, 0u);
+    start_cpu();
+    ASSERT_TRUE(cpu_->step().has_value());
+    EXPECT_EQ(cpu_->pc().value_or(0), 4u);
+}
+
+TEST_F(CortexM3Test, LdrexStrexBehaveAsPlainLoadStore) {
+    // #11: ldrex r0,[r1] (e851 0f00) → plain load; strex r3,r2,[r1] (e841 2300)
+    // → plain store + Rd=0 (no monitor → always succeeds).
+    load_program({0xE851, 0x0F00, 0xE841, 0x2300});
+    uint32_t seed = 0xDEADBEEFu;
+    ASSERT_TRUE(mem_.load(0x100u, {reinterpret_cast<const uint8_t*>(&seed), 4})
+                    .has_value());
+    reset_cpu();
+    set_reg(1, 0x100u);
+    set_reg(2, 0xCAFEu);
+    start_cpu();
+    ASSERT_TRUE(cpu_->step().has_value()); // ldrex
+    EXPECT_EQ(reg(0), 0xDEADBEEFu);
+    ASSERT_TRUE(cpu_->step().has_value()); // strex
+    EXPECT_EQ(reg(3), 0u); // success status
+    auto v = bus_.read(0x100u, Width::Word);
+    ASSERT_TRUE(v.has_value());
+    EXPECT_EQ(*v, 0xCAFEu);
+}
+
+// ── T2 缺失指令单测(coverage matrix §3)──
+
+TEST_F(CortexM3Test, OrnMvnWideImmediate) {
+    // orn.w r3,r1,#0x11 (f061 0311)=r1|~imm; mvn.w r0,#0x11 (f06f 0011)=~imm.
+    load_program({0xF061, 0x0311, 0xF06F, 0x0011});
+    reset_cpu();
+    set_reg(1, 0x000000FFu);
+    start_cpu();
+    ASSERT_TRUE(cpu_->step().has_value()); // orn → 0xFF | ~0x11
+    EXPECT_EQ(reg(3), 0xFFFFFFFFu);
+    ASSERT_TRUE(cpu_->step().has_value()); // mvn → ~0x11
+    EXPECT_EQ(reg(0), 0xFFFFFFEEu);
+}
+
+TEST_F(CortexM3Test, RorRrxShiftedRegister) {
+    // mov.w r0,r1,ror#4 (ea4f 1031); msr apsr,r2 (set C); mov.w r3,r1,rrx (ea4f 0331).
+    load_program({0xEA4F, 0x1031, 0xF382, 0x8800, 0xEA4F, 0x0331});
+    reset_cpu();
+    set_reg(1, 0x12345678u);
+    set_reg(2, 0x20000000u); // PSR_C
+    start_cpu();
+    ASSERT_TRUE(cpu_->step().has_value()); // ror#4
+    EXPECT_EQ(reg(0), 0x81234567u);
+    ASSERT_TRUE(cpu_->step().has_value()); // msr sets C
+    ASSERT_TRUE(cpu_->step().has_value()); // rrx: (C<<31)|(r1>>1)
+    EXPECT_EQ(reg(3), 0x891A2B3Cu);
+}
+
+TEST_F(CortexM3Test, SmlalUmlalWideAccumulate) {
+    // smlal r0,r1,r2,r3 (fbc2 0103); umlal r0,r1,r2,r3 (fbe2 0103).
+    // r2=r3=0xFFFFFFFF: signed product=1, unsigned=0xFFFFFFFE00000001.
+    load_program({0xFBC2, 0x0103, 0xFBE2, 0x0103});
+    reset_cpu();
+    set_reg(0, 0u);
+    set_reg(1, 0u);
+    set_reg(2, 0xFFFFFFFFu);
+    set_reg(3, 0xFFFFFFFFu);
+    start_cpu();
+    ASSERT_TRUE(cpu_->step().has_value()); // smlal: 0 + 1
+    EXPECT_EQ(reg(0), 1u);
+    EXPECT_EQ(reg(1), 0u);
+    ASSERT_TRUE(cpu_->step().has_value()); // umlal: 1 + 0xFFFFFFFE00000001
+    EXPECT_EQ(reg(0), 2u);
+    EXPECT_EQ(reg(1), 0xFFFFFFFEu);
+}
+
+TEST_F(CortexM3Test, LdrsbLdrshWideSignExtend) {
+    // ldrsb.w r0,[r1,#4] (f991 0004); ldrsh.w r0,[r1,#8] (f9b1 0008).
+    load_program({0xF991, 0x0004, 0xF9B1, 0x0008});
+    uint8_t b = 0x80;
+    uint16_t h = 0x8000;
+    ASSERT_TRUE(mem_.load(0x104u, {&b, 1}).has_value());
+    ASSERT_TRUE(mem_.load(0x108u, {reinterpret_cast<uint8_t*>(&h), 2})
+                    .has_value());
+    reset_cpu();
+    set_reg(1, 0x100u);
+    start_cpu();
+    ASSERT_TRUE(cpu_->step().has_value()); // ldrsb → 0xFFFFFF80
+    EXPECT_EQ(reg(0), 0xFFFFFF80u);
+    ASSERT_TRUE(cpu_->step().has_value()); // ldrsh → 0xFFFF8000
+    EXPECT_EQ(reg(0), 0xFFFF8000u);
+}
+
+TEST_F(CortexM3Test, ClzRbitRevWide) {
+    // clz r0,r1 (fab1 f081); rbit r0,r1 (fa91 f0a1); rev.w r0,r1 (fa91 f081).
+    load_program({0xFAB1, 0xF081, 0xFA91, 0xF0A1, 0xFA91, 0xF081});
+    reset_cpu();
+    set_reg(1, 0x00010000u);
+    start_cpu();
+    ASSERT_TRUE(cpu_->step().has_value()); // clz (bit16 → 15 leading zeros)
+    EXPECT_EQ(reg(0), 15u);
+    ASSERT_TRUE(cpu_->step().has_value()); // rbit (bit16 → bit15)
+    EXPECT_EQ(reg(0), 0x00008000u);
+    ASSERT_TRUE(cpu_->step().has_value()); // rev.w (byte-reverse)
+    EXPECT_EQ(reg(0), 0x00000100u);
+}
+
+TEST_F(CortexM3Test, SsatUsatWideSaturation) {
+    // ssat r0,#5,r1 (f301 0004): 100→15,Q; usat r2,#5,r1 (f381 0205): 100→31,Q.
+    // mrs r3,apsr (f3ef 8300) reads Q.
+    load_program({0xF301, 0x0004, 0xF381, 0x0205, 0xF3EF, 0x8300});
+    reset_cpu();
+    set_reg(1, 100u);
+    start_cpu();
+    ASSERT_TRUE(cpu_->step().has_value()); // ssat → 15
+    EXPECT_EQ(reg(0), 15u);
+    ASSERT_TRUE(cpu_->step().has_value()); // usat → 31
+    EXPECT_EQ(reg(2), 31u);
+    ASSERT_TRUE(cpu_->step().has_value()); // mrs r3,apsr
+    EXPECT_NE(reg(3) & 0x08000000u, 0u); // Q set
+}
+
+TEST_F(CortexM3Test, ClrexNopWideAreNoop) {
+    // clrex (f3bf 8f2f); nop.w (f3af 8000) — both advance PC, no fault.
+    load_program({0xF3BF, 0x8F2F, 0xF3AF, 0x8000});
+    reset_cpu();
+    start_cpu();
+    ASSERT_TRUE(cpu_->step().has_value()); // clrex PC 0→4
+    EXPECT_EQ(cpu_->pc().value_or(0), 4u);
+    ASSERT_TRUE(cpu_->step().has_value()); // nop.w PC 4→8
+    EXPECT_EQ(cpu_->pc().value_or(0), 8u);
+}
+
+TEST_F(CortexM3Test, McrMrcCoprocessorFaults) {
+    // mrc p15 (ee11 0f10) → no coprocessor → IllegalInstruction.
+    load_program({0xEE11, 0x0F10});
+    reset_cpu();
+    start_cpu();
+    EXPECT_FALSE(cpu_->step().has_value()); // faults
 }

@@ -59,6 +59,26 @@ class CortexM3CPU : public CPU {
     Expected<uint16_t> fetch16(addr_t addr);
     CPUExpected<void> execute_16bit(uint16_t insn);
     CPUExpected<void> execute_32bit(uint16_t hw1, uint16_t hw2);
+    // 32-bit Thumb-2 family handlers — split out of execute_32bit so no single
+    // translation unit exceeds the DIRECTIVES 700-line cap. Each returns the
+    // result of its (already mask-matched) block; execute_32bit dispatches.
+    CPUExpected<void> t32_addsub_plain_imm(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_dataproc_imm(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_dataproc_reg(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_misc_reverse(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_ssat_usat(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_shift_reg(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_loadstore_single(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_ldrex_strex(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_tbb_tbh(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_strd_ldrd(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_stm_ldm(uint16_t hw1, uint16_t hw2);
+    // Operand helpers shared across the 32-bit handlers (promoted from the
+    // execute_32bit-local lambdas so the split-out handlers can use them).
+    data_t rr(uint8_t idx);
+    CPUExpected<void> wr(uint8_t idx, data_t val);
+    CPUExpected<data_t> br(addr_t addr, Width w);
+    CPUExpected<void> bw(addr_t addr, data_t val, Width w);
     CPU::CPUExpected<addr_t> read_pc_raw() const;
     CPU::CPUExpected<void> write_reg(uint8_t index, data_t value);
 
