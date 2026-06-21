@@ -204,33 +204,9 @@ CPU::CPUExpected<void> CortexM3CPU::t32_shift_reg(uint16_t hw1, uint16_t hw2) {
     uint8_t rm = hw2 & 0xF;
 
     uint32_t value = rr(rn);
-    uint32_t shift = rr(rm) & 0xFFu;
-    uint32_t result = value;
-
-    switch (shift_type) {
-        case 0: // LSL
-            result = shift == 0 ? value : (shift < 32 ? value << shift : 0);
-            break;
-        case 1: // LSR
-            result = shift == 0 ? value : (shift < 32 ? value >> shift : 0);
-            break;
-        case 2: // ASR
-            if (shift == 0) {
-                result = value;
-            } else if (shift >= 32) {
-                result = (value & 0x80000000u) ? 0xFFFFFFFFu : 0;
-            } else {
-                result = static_cast<uint32_t>(
-                    static_cast<int32_t>(value) >> shift);
-            }
-            break;
-        case 3: { // ROR
-            uint32_t rot = shift & 31u;
-            result =
-                rot == 0 ? value : ((value >> rot) | (value << (32 - rot)));
-            break;
-        }
-    }
+    uint8_t amount = rr(rm) & 0xFFu;
+    auto [result, carry] =
+        barrel_shift(shift_type, value, amount, (xpsr_ & PSR_C) != 0);
 
     auto w = wr(rd, result);
     if (!w) {
@@ -238,6 +214,11 @@ CPU::CPUExpected<void> CortexM3CPU::t32_shift_reg(uint16_t hw1, uint16_t hw2) {
     }
     if (s_bit) {
         update_nz(result);
+        if (carry) {
+            xpsr_ |= PSR_C;
+        } else {
+            xpsr_ &= ~PSR_C;
+        }
     }
     return {};
 }

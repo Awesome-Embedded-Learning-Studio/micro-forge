@@ -129,28 +129,27 @@ CPU::CPUExpected<void> CortexM3CPU::execute_16bit(uint16_t insn) {
         case 0b00000:
         case 0b00001:
         case 0b00010: {
-            uint8_t op = (insn >> 11) & 0x3;
+            uint8_t op = (insn >> 11) & 0x3; // 0=LSL, 1=LSR, 2=ASR
             uint8_t imm = imm5(insn);
             uint8_t rm = rn3(insn);
             uint8_t rd = rd3(insn);
             data_t val = rr(rm);
-            data_t result;
-
-            if (op == 0b00) { // LSL
-                result = imm == 0 ? val : val << imm;
-            } else if (op == 0b01) { // LSR
-                result = imm == 0 ? 0 : val >> imm;
-            } else { // ASR
-                result =
-                    (imm == 0)
-                        ? ((val & 0x80000000u) ? 0xFFFFFFFFu : 0)
-                        : static_cast<data_t>(static_cast<int32_t>(val) >> imm);
-            }
+            // LSR/ASR encoded shift of 0 means shift-by-32; LSL 0 = no shift.
+            uint8_t amount = (op == 0b00) ? imm : (imm == 0 ? 32 : imm);
+            auto [result, carry] =
+                barrel_shift(op, val, amount, (xpsr_ & PSR_C) != 0);
             auto res = wr(rd, result);
             if (!res) {
                 return res;
             }
             update_nz(result);
+            // Shift instructions update C from the shifter carry-out (LSL #0
+            // returns carry_in, so C is unchanged in that case).
+            if (carry) {
+                xpsr_ |= PSR_C;
+            } else {
+                xpsr_ &= ~PSR_C;
+            }
             break;
         }
 
@@ -256,6 +255,9 @@ CPU::CPUExpected<void> CortexM3CPU::execute_16bit(uint16_t insn) {
             uint8_t rd = rd3(insn);
             data_t a = rr(rd), b = rr(rm);
             data_t result;
+            // Set only by the shift-by-register ops (LSL/LSR/ASR/ROR): the
+            // shifter carry-out drives C. nullopt → C unchanged.
+            std::optional<bool> shift_carry;
 
             switch (op) {
                 case 0x0:
@@ -264,25 +266,34 @@ CPU::CPUExpected<void> CortexM3CPU::execute_16bit(uint16_t insn) {
                 case 0x1:
                     result = a ^ b;
                     break;
-                case 0x2:
-                    result = a << (b & 0xFF);
+                case 0x2: { // LSL register
+                    auto s = barrel_shift(0, a, b & 0xFF, (xpsr_ & PSR_C) != 0);
+                    result = s.value;
+                    shift_carry = s.carry;
                     break;
-                case 0x3:
-                    result = a >> (b & 0xFF);
+                }
+                case 0x3: { // LSR register
+                    auto s = barrel_shift(1, a, b & 0xFF, (xpsr_ & PSR_C) != 0);
+                    result = s.value;
+                    shift_carry = s.carry;
                     break;
-                case 0x4:
-                    result = static_cast<data_t>(static_cast<int32_t>(a) >>
-                                                 (b & 0xFF));
+                }
+                case 0x4: { // ASR register
+                    auto s = barrel_shift(2, a, b & 0xFF, (xpsr_ & PSR_C) != 0);
+                    result = s.value;
+                    shift_carry = s.carry;
                     break;
+                }
                 case 0x5:
                     result = a + b + ((xpsr_ & PSR_C) ? 1 : 0);
                     break;
                 case 0x6:
                     result = a - b - ((xpsr_ & PSR_C) ? 0 : 1);
                     break;
-                case 0x7: {
-                    uint8_t n = (b & 0xFF) & 0x1F;
-                    result = n ? ((a >> n) | (a << (32 - n))) : a;
+                case 0x7: { // ROR register
+                    auto s = barrel_shift(3, a, b & 0xFF, (xpsr_ & PSR_C) != 0);
+                    result = s.value;
+                    shift_carry = s.carry;
                     break;
                 }
                 case 0x8:
@@ -317,6 +328,13 @@ CPU::CPUExpected<void> CortexM3CPU::execute_16bit(uint16_t insn) {
                 return res;
             }
             update_nz(result);
+            if (shift_carry) {
+                if (*shift_carry) {
+                    xpsr_ |= PSR_C;
+                } else {
+                    xpsr_ &= ~PSR_C;
+                }
+            }
             break;
         }
 

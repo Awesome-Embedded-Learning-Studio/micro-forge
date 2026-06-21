@@ -223,3 +223,67 @@ TEST_F(CortexM3Test, CbzAndCbnzBranchWithoutTouchingStack) {
     EXPECT_EQ(reg(3), 9u);
     EXPECT_EQ(reg(13), 0x200u);
 }
+
+// ── Shift Carry flag (T1a): ARMv7-M shift instructions update C from the
+//    shifter carry-out. We read flags via `MRS R0, APSR` (0xF3EF 0x8000); the
+//    C flag is APSR bit 29. ──
+
+TEST_F(CortexM3Test, LslImmediateSetsCarryFlag) {
+    // LSLS R1, R2, #1 (0x0051): 0x80000000<<1 = 0, C = shifted-out bit31 = 1.
+    load_program({0x0051, 0xF3EF, 0x8000}); // LSLS R1,R2,#1 ; MRS R0,APSR
+    reset_cpu();
+    start_cpu();
+    set_reg(2, 0x80000000u);
+    step_cpu(); // LSLS
+    step_cpu(); // MRS (32-bit, one step)
+    EXPECT_NE(reg(0) & (1u << 29), 0u) << "LSL #1 of 0x80000000 must set C";
+}
+
+TEST_F(CortexM3Test, LsrImmediateSetsCarryFlag) {
+    // LSRS R1, R2, #1 (0x0851): 1>>1 = 0, C = shifted-out bit0 = 1.
+    load_program({0x0851, 0xF3EF, 0x8000});
+    reset_cpu();
+    start_cpu();
+    set_reg(2, 1u);
+    step_cpu();
+    step_cpu();
+    EXPECT_NE(reg(0) & (1u << 29), 0u) << "LSR #1 of 1 must set C";
+}
+
+TEST_F(CortexM3Test, AsrBy32CarryAndSignExtend) {
+    // ASRS R1, R2 (0x1011, imm5=0 → ASR #32): 0x80000000 → 0xFFFFFFFF,
+    // C = sign bit (bit31) = 1.
+    load_program({0x1011, 0xF3EF, 0x8000});
+    reset_cpu();
+    start_cpu();
+    set_reg(2, 0x80000000u);
+    step_cpu();
+    step_cpu();
+    EXPECT_EQ(reg(1), 0xFFFFFFFFu) << "ASR #32 sign-extends";
+    EXPECT_NE(reg(0) & (1u << 29), 0u) << "ASR #32 C = sign bit";
+}
+
+TEST_F(CortexM3Test, LslByZeroLeavesCarryUnchanged) {
+    // LSLS R1,R2,#1 (0x0051) sets C=1; LSLS R3,R4 (0x0023, LSL #0 = MOV)
+    // must NOT touch C; then MRS.
+    load_program({0x0051, 0x0023, 0xF3EF, 0x8000});
+    reset_cpu();
+    start_cpu();
+    set_reg(2, 0x80000000u); // first LSL forces C=1
+    step_cpu();              // LSLS R1,R2,#1 → C=1
+    step_cpu();              // LSLS R3,R4 (LSL #0) → C unchanged
+    step_cpu();              // MRS R0, APSR
+    EXPECT_NE(reg(0) & (1u << 29), 0u) << "LSL #0 must leave C unchanged";
+}
+
+TEST_F(CortexM3Test, LslRegisterSetsCarryFlag) {
+    // LSLS R1, R2 (register, 0x4091): R1 = R1 << R2; 0x80000000<<1 → 0, C=1.
+    load_program({0x4091, 0xF3EF, 0x8000});
+    reset_cpu();
+    start_cpu();
+    set_reg(1, 0x80000000u);
+    set_reg(2, 1u);
+    step_cpu();
+    step_cpu();
+    EXPECT_NE(reg(0) & (1u << 29), 0u) << "register LSL must set C";
+}
