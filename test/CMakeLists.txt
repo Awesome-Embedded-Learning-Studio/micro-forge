@@ -171,6 +171,19 @@ if(TARGET hello_firmware AND TARGET blink_firmware AND TARGET systick_firmware)
     gtest_discover_tests(test_e2e)
 endif()
 
+# ── armcc/AC6 固件语料 E2E(T5c)──
+# 预编译 .axf fixture 提交进 test/firmware/armcc/;CI 无 Keil 故不重建。
+add_executable(test_firmware_armcc
+    test_firmware_armcc.cpp
+)
+target_link_libraries(test_firmware_armcc
+    PRIVATE micro_forge GTest::gtest_main
+)
+target_compile_definitions(test_firmware_armcc PRIVATE
+    ARMCC_FW_DIR="${CMAKE_CURRENT_SOURCE_DIR}/firmware/armcc"
+)
+gtest_discover_tests(test_firmware_armcc)
+
 # ── CLI 测试(drives the `micro-forge` binary) ──
 if(TARGET micro-forge AND TARGET hello_firmware)
     add_executable(test_cli
