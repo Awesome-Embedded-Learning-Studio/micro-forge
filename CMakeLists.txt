@@ -26,6 +26,8 @@ set(MICRO_FORGE_SOURCES
     src/arch/arm/cortex_m3/cortex_m3.cpp
     src/arch/arm/cortex_m3/cortex_m3_thumb16.cpp
     src/arch/arm/cortex_m3/cortex_m3_thumb32.cpp
+    src/arch/arm/cortex_m3/cortex_m3_thumb32_dataproc.cpp
+    src/arch/arm/cortex_m3/cortex_m3_thumb32_loadstore.cpp
     src/arch/arm/cortex_m3/cortex_m3_interrupt.cpp
     src/arch/arm/cortex_m3/cortex_m3_reset.cpp
     src/arch/toy/cpu.cpp
