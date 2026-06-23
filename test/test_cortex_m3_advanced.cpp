@@ -672,3 +672,60 @@ TEST_F(CortexM3Test, McrMrcCoprocessorFaults) {
     start_cpu();
     EXPECT_FALSE(cpu_->step().has_value()); // faults
 }
+
+// ── Flag sweep: data-proc (shifted register) N/Z/C/V (matrix §5 gap) ──
+// T1a fixed shifter-carry feeding C; these cover the *arithmetic* flag update
+// path after a shifted operand (ADD carry/overflow, SUB borrow). Flags read via
+// `MRS R0, APSR` (0xF3EF 0x8000): N=31, Z=30, C=29, V=28.
+
+TEST_F(CortexM3Test, AddsShiftedRegSetsCarryOverflowClearsN) {
+    // eb11 1302 = adds.w r3, r1, r2, lsl #4.
+    // 0x80000000 + (0x08000000 << 4 = 0x80000000) = 0x1_00000000 → r3=0,
+    // C=1 (carry out), V=1 (signed -2^31 + -2^31 overflow), Z=1, N=0.
+    load_program({0xEB11, 0x1302, 0xF3EF, 0x8000});
+    reset_cpu();
+    set_reg(1, 0x80000000u);
+    set_reg(2, 0x08000000u);
+    start_cpu();
+    step_cpu(); // adds.w
+    step_cpu(); // mrs r0, apsr
+    EXPECT_EQ(reg(3), 0u);
+    EXPECT_NE(reg(0) & (1u << 29), 0u) << "carry out sets C";
+    EXPECT_NE(reg(0) & (1u << 28), 0u) << "signed overflow sets V";
+    EXPECT_NE(reg(0) & (1u << 30), 0u) << "zero result sets Z";
+    EXPECT_EQ(reg(0) & (1u << 31), 0u) << "N clear";
+}
+
+TEST_F(CortexM3Test, SubsShiftedRegBorrowClearsCarrySetsN) {
+    // ebb1 0392 = subs.w r3, r1, r2, lsr #2.
+    // 0x10 - (0x100 >> 2 = 0x40) = -0x30 → r3=0xFFFFFFD0,
+    // C=0 (borrow), N=1, Z=0, V=0 (in range).
+    load_program({0xEBB1, 0x0392, 0xF3EF, 0x8000});
+    reset_cpu();
+    set_reg(1, 0x10u);
+    set_reg(2, 0x100u);
+    start_cpu();
+    step_cpu();
+    step_cpu();
+    EXPECT_EQ(reg(3), 0xFFFFFFD0u);
+    EXPECT_EQ(reg(0) & (1u << 29), 0u) << "borrow clears C";
+    EXPECT_NE(reg(0) & (1u << 31), 0u) << "negative result sets N";
+    EXPECT_EQ(reg(0) & (1u << 30), 0u) << "Z clear";
+}
+
+TEST_F(CortexM3Test, AddsRorOperandComputesResultAndFlags) {
+    // eb11 1332 = adds.w r3, r1, r2, ror #4.
+    // 0 + (0x10000000 ror 4 = 0x01000000) = 0x01000000; no carry/overflow.
+    load_program({0xEB11, 0x1332, 0xF3EF, 0x8000});
+    reset_cpu();
+    set_reg(1, 0u);
+    set_reg(2, 0x10000000u);
+    start_cpu();
+    step_cpu();
+    step_cpu();
+    EXPECT_EQ(reg(3), 0x01000000u);
+    EXPECT_EQ(reg(0) & (1u << 29), 0u) << "no carry";
+    EXPECT_EQ(reg(0) & (1u << 28), 0u) << "no overflow";
+    EXPECT_EQ(reg(0) & (1u << 31), 0u) << "N clear";
+    EXPECT_EQ(reg(0) & (1u << 30), 0u) << "Z clear";
+}
