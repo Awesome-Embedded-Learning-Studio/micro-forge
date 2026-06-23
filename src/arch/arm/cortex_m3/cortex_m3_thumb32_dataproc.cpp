@@ -262,9 +262,18 @@ CPU::CPUExpected<void> CortexM3CPU::t32_misc_reverse(uint16_t hw1,
     uint8_t op2 = (hw2 >> 4) & 0xFu;
     uint32_t v = rr(rn);
 
-    // CLZ (hw1[7:4]=0xB, op2=8) vs REV.W (hw1[7:4]=0x9, op2=8).
-    if (op2 == 0x8u && (hw1 & 0x00F0u) == 0x00B0u) {
+    // op1 = hw1[7:4]. In the 0xFA00 reverse/CLZ space only op1==0xB (CLZ,
+    // op2=8) and op1==0x9 (REV.W/REV16.W/RBIT/REVSH.W, op2 in {8,9,A,B}) are
+    // assigned on Cortex-M3 — objdump-confirmed: rev/rev16/revsh/rbit encode
+    // 0xFA9x, clz 0xFABx. ARMv7E-M DSP instructions (SXTAH/UXTAH/SXTB16/
+    // UXTB16/SEL/QADD/QSUB/QDADD/QDSUB) share this 0xFA00 space with op1 in
+    // {0,1,2,3,8,A}; they must fault, not mis-execute as a reverse op.
+    uint8_t op1 = (hw1 >> 4) & 0xFu;
+    if (op2 == 0x8u && op1 == 0xBu) {
         return wr(rd, std::countl_zero(v));
+    }
+    if (op1 != 0x9u) {
+        return std::unexpected{CPUError::IllegalInstruction};
     }
     uint32_t result;
     switch (op2) {
