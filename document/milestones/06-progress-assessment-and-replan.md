@@ -193,6 +193,15 @@
 - **坑**:`MICRO_FORGE_SOURCES` 是显式 `set()` 列表(非 GLOB_RECURSE,DIRECTIVES A 描述不准),新 `src/*.cpp` 须手动加 CMakeLists。C2c 抢占验证边际价值低(test_interrupt 已覆盖),跳过。
 - 06 进度:EXTI 0% → 端到端通。剩 C3 USART RX-IRQ(raise_irq 第三消费者)。
 
+## 实施记录(2026-06-23 · 第二波 C3 USART RX,第二波收尾)
+
+- **USART RX 注入 + RXNEIE**:USART 加 `inject_rx(byte)`(单字节缓冲 + SR.RXNE bit5),DR read 返回 rx 字节 + 清 RXNE(读=RX/写=TX 共享地址)。RXNEIE(CR1 bit5)+ RXNE → raise USART1(IRQ37)。
+- **raise_irq 第三消费者**:TIM(C2)/EXTI(C1)/USART(C3)三外设全通同一通道 —— 证明 C2 打通的通道通用。
+- **TXEIE 跳过**:模拟器 TX 即时,TXE 常高 → TXEIE 会循环 raise(无 TX 延迟可消耗);固件轮询 TXE 位仍工作。
+- 验证:4 单元(RXNE/DR/RXNEIE enabled/disabled)+ `UsartRxRoundtrip` E2E。**301/301 绿**,无回归。细节 notes 016。
+- **坑**:ARM 异常自动压栈 r0-r3,handler 改它们被返回 POP 覆盖;测试读 handler 结果须用 r4+(不自动压栈)。IRQ≥32 在 ISER1,IPR IRQ37 在 0xE000E424 byte1 需 shift。
+- **第二波全部完成**(C1/C2/C3 + C4 bit-band 早前):06 第二波「外设中断端到端」收口,raise_irq 通道三消费者(TIM/EXTI/USART)全通。下一里程碑候选:第三波 DMA/SPI/FLASH、04 GUI、02 收尾。
+
 
 ## 结论 / 下一步
 

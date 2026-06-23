@@ -8,6 +8,7 @@
 #include "chips/stm32f1/stm32f1_exti.hpp"
 #include "chips/stm32f1/stm32f1_gpio.hpp"
 #include "chips/stm32f1/stm32f1_timer.hpp"
+#include "chips/stm32f1/stm32f1_usart.hpp"
 #include "hooks/events.hpp"
 #include "memory/bus.hpp"
 #include "memory/flat_memory.hpp"
@@ -57,6 +58,7 @@ class InterruptTest : public ::testing::Test {
     chips::stm32f1::Stm32f1Afio afio_;
     chips::stm32f1::Stm32f1Exti exti_;
     chips::stm32f1::Stm32f1Gpio gpioa_{'A'};
+    chips::stm32f1::Stm32f1Usart usart1_;
     std::unique_ptr<CortexM3CPU> cpu_;
 
     void SetUp() override {
@@ -85,6 +87,10 @@ class InterruptTest : public ::testing::Test {
             [this](intr::intr_n_t irq) { (void)cpu_->raise_irq(irq); });
         gpioa_.edge_signal().connect(
             [this](const hooks::GpioEdge& e) { exti_.on_gpio_edge(e); });
+        // USART1 at 0x40013800; RXNE (RXNEIE) → NVIC USART1 line (IRQ 37).
+        ASSERT_TRUE(
+            bus_.map(memory::region(0x40013800, 0x400, usart1_.GetWeak())).has_value());
+        usart1_.set_irq_callback([this]() { (void)cpu_->raise_irq(kUsart1Irqn); });
         scb_.set_vtor_callback(
             [this](uint32_t vtor) { cpu_->set_vector_table_base(vtor); });
         scb_.set_prigroup_callback(
@@ -582,4 +588,39 @@ TEST_F(InterruptTest, ExtiGpioEdgeRoundtrip) {
     EXPECT_EQ(cpu_->pc().value(), kHandler);
     ASSERT_TRUE(cpu_->step().has_value()); // BX LR → return
     EXPECT_FALSE(cpu_->in_handler_mode());
+}
+
+// ── USART RXNE → NVIC → handler roundtrip (C3) ──
+// inject_rx → RXNE + RXNEIE → raise USART1 IRQ (37) → handler reads DR.
+TEST_F(InterruptTest, UsartRxRoundtrip) {
+    constexpr addr_t kHandler = kFlashBase + 0x110;
+    store_vector_table_entry(0, kInitSp);
+    store_vector_table_entry(1, kMainCode);
+    store_vector_table_entry(16 + 37, kHandler | 1u); // USART1 → IRQ37 → vector 53
+    store_instructions(kMainCode, {0xE7FE});          // B .
+    // handler: ldr r4, [r1] (r1=USART1 DR) ; bx lr. r4 is not auto-stacked, so
+    // it survives exception return (r0-r3 are restored by the POP).
+    store_instructions(kHandler, {0x680C, 0x4770});   // ldr r4,[r1,#0] ; bx lr
+    ASSERT_TRUE(cpu_->set_pc(kMainCode).has_value());
+    ASSERT_TRUE(cpu_->set_register_value(1, 0x40013804u).has_value()); // r1 = DR
+
+    // NVIC: enable USART1 (IRQ37 → ISER1 bit5), priority 0xE0 (IPR9 byte1).
+    ASSERT_TRUE(bus_.write(0xE000E104, 1u << 5, Width::Word).has_value());
+    ASSERT_TRUE(bus_.write(0xE000E424, 0xE0u << 8, Width::Word).has_value());
+
+    // USART1 CR1: UE(13) + RXNEIE(5) + RE(2).
+    ASSERT_TRUE(
+        bus_.write(0x4001380C, (1u << 13) | (1u << 5) | (1u << 2), Width::Word)
+            .has_value());
+
+    usart1_.inject_rx('A'); // → RXNE + raise IRQ37
+
+    ASSERT_TRUE(cpu_->step().has_value()); // pending → enter handler
+    EXPECT_TRUE(cpu_->in_handler_mode());
+    ASSERT_TRUE(cpu_->step().has_value()); // ldr r0,[r1] → r0='A', RXNE cleared
+    ASSERT_TRUE(cpu_->step().has_value()); // bx lr → return
+    EXPECT_FALSE(cpu_->in_handler_mode());
+    auto r4 = cpu_->register_value(4);
+    ASSERT_TRUE(r4.has_value());
+    EXPECT_EQ(*r4, static_cast<uint32_t>('A'));
 }

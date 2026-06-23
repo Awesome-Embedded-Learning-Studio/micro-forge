@@ -279,6 +279,42 @@ TEST(UsartTest, MmioThroughBus) {
     EXPECT_EQ(captured, 'A');
 }
 
+TEST(UsartTest, InjectRxSetsRxne) {
+    Stm32f1Usart usart;
+    usart.inject_rx('X');
+    auto sr = usart.read(0x00, Width::Word);
+    ASSERT_TRUE(sr.has_value());
+    EXPECT_TRUE(*sr & (1u << 5)); // RXNE
+}
+
+TEST(UsartTest, DrReadReturnsByteAndClearsRxne) {
+    Stm32f1Usart usart;
+    usart.inject_rx('Q');
+    auto dr = usart.read(0x04, Width::Word);
+    ASSERT_TRUE(dr.has_value());
+    EXPECT_EQ(*dr, static_cast<data_t>('Q'));
+    auto sr = usart.read(0x00, Width::Word);
+    ASSERT_TRUE(sr.has_value());
+    EXPECT_FALSE(*sr & (1u << 5)); // RXNE cleared
+}
+
+TEST(UsartTest, RxneIrqRaisedWhenEnabled) {
+    Stm32f1Usart usart;
+    ASSERT_TRUE(usart.write(0x0C, 1u << 5, Width::Word).has_value()); // CR1 RXNEIE
+    bool fired = false;
+    usart.set_irq_callback([&] { fired = true; });
+    usart.inject_rx('A');
+    EXPECT_TRUE(fired);
+}
+
+TEST(UsartTest, RxneIrqNotRaisedWhenDisabled) {
+    Stm32f1Usart usart;
+    bool fired = false;
+    usart.set_irq_callback([&] { fired = true; });
+    usart.inject_rx('A'); // RXNEIE not set
+    EXPECT_FALSE(fired);
+}
+
 // ── Timer Tests ──
 
 TEST(TimerTest, TickIncrements) {

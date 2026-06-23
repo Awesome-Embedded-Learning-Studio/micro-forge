@@ -88,6 +88,13 @@ Stm32f103Soc::create() {
     p.gpiob.edge_signal().connect(exti_edge);
     p.gpioc.edge_signal().connect(exti_edge);
 
+    // Wire USART RXNE (RXNEIE) → NVIC USART1 line (IRQ 37).
+    p.usart1.set_irq_callback([cm3_weak]() {
+        if (cm3_weak.IsValid()) {
+            (void)cm3_weak->raise_irq(kUsart1Irqn);
+        }
+    });
+
     // Wire SCB VTOR write → CPU vector_table_base_ update
     p.scb.set_vtor_callback([cm3_weak](uint32_t vtor) {
         if (cm3_weak.IsValid()) {
