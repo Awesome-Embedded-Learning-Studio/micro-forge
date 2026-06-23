@@ -64,6 +64,13 @@ Stm32f103Soc::create() {
         }
     });
 
+    // Wire Timer UIF (edge, DIER.UIE) → NVIC TIM2 line (IRQ 28).
+    p.tim2.set_irq_callback([cm3_weak]() {
+        if (cm3_weak.IsValid()) {
+            (void)cm3_weak->raise_irq(kTim2Irqn);
+        }
+    });
+
     // Wire SCB VTOR write → CPU vector_table_base_ update
     p.scb.set_vtor_callback([cm3_weak](uint32_t vtor) {
         if (cm3_weak.IsValid()) {

@@ -4,6 +4,7 @@
 #include "chips/stm32f1/clock_domains.hpp"
 #include "chips/stm32f1/interrupt_config.hpp"
 #include "chips/stm32f1/memory_bus.hpp"
+#include "chips/stm32f1/stm32f1_timer.hpp"
 #include "memory/bus.hpp"
 #include "memory/flat_memory.hpp"
 #include "periph/nvic.hpp"
@@ -48,6 +49,7 @@ class InterruptTest : public ::testing::Test {
     NvicPeripheral nvic_;
     ScbPeripheral scb_;
     std::unique_ptr<SysTickPeripheral> systick_;
+    chips::stm32f1::Stm32f1Timer tim2_;
     std::unique_ptr<CortexM3CPU> cpu_;
 
     void SetUp() override {
@@ -61,6 +63,10 @@ class InterruptTest : public ::testing::Test {
         cpu_ = std::make_unique<CortexM3CPU>(bus_.GetWeak());
         cpu_->set_nvic(nvic_);
         cpu_->set_scb(scb_);
+        // TIM2 at 0x40000000; UIF edge → NVIC TIM2 line (IRQ 28).
+        ASSERT_TRUE(
+            bus_.map(memory::region(0x40000000, 0x400, tim2_.GetWeak())).has_value());
+        tim2_.set_irq_callback([this]() { (void)cpu_->raise_irq(kTim2Irqn); });
         scb_.set_vtor_callback(
             [this](uint32_t vtor) { cpu_->set_vector_table_base(vtor); });
         scb_.set_prigroup_callback(
@@ -486,4 +492,46 @@ TEST_F(InterruptTest, PriorityGroupingAffectsPreemption) {
     ASSERT_TRUE(cpu_->step().has_value()); // stays in handler A
     EXPECT_TRUE(cpu_->in_handler_mode());
     EXPECT_EQ(cpu_->pc().value(), kHandlerA + 4);
+}
+
+// ── Timer UIF → NVIC → handler roundtrip (C2) ──
+// Coordinator drives TIM2 tick → UIF edge → raise_irq(28) → NVIC pending →
+// handler entry → BX LR return. First end-to-end use of the raise_irq channel.
+TEST_F(InterruptTest, TimerUifRoundtrip) {
+    constexpr addr_t kHandler = kFlashBase + 0x110;
+    store_vector_table_entry(0, kInitSp);
+    store_vector_table_entry(1, kMainCode);
+    store_vector_table_entry(16 + kTim2Irqn, kHandler | 1u); // TIM2 → vector 44
+    store_instructions(kMainCode, {0xE7FE});   // B .
+    store_instructions(kHandler, {0x4770});     // BX LR
+    ASSERT_TRUE(cpu_->set_pc(kMainCode).has_value());
+
+    // NVIC: enable TIM2 (bit 28), priority 0xE0 (below thread 0xF0).
+    ASSERT_TRUE(bus_.write(0xE000E100, 1u << kTim2Irqn, Width::Word).has_value());
+    ASSERT_TRUE(bus_.write(0xE000E400 + kTim2Irqn, 0xE0u, Width::Word).has_value());
+
+    // TIM2: PSC=0, ARR=5, DIER.UIE, CR1.CEN
+    ASSERT_TRUE(bus_.write(0x40000028, 0u, Width::Word).has_value());  // PSC
+    ASSERT_TRUE(bus_.write(0x4000002C, 5u, Width::Word).has_value());  // ARR
+    ASSERT_TRUE(bus_.write(0x4000000C, 1u, Width::Word).has_value());  // DIER.UIE
+    ASSERT_TRUE(bus_.write(0x40000000, 1u, Width::Word).has_value());  // CR1.CEN
+
+    VirtualClock clk(stm32f103_default_clocks);
+    SimulationCoordinator coord(std::move(clk));
+    coord.set_cpu(cpu_->GetWeak());
+    coord.add_tickable(tim2_.GetWeak(), domain_index(ClockDomain::Apb1));
+
+    bool entered = false, returned = false;
+    for (size_t i = 0; i < 80; ++i) {
+        ASSERT_TRUE(coord.step().has_value());
+        if (cpu_->in_handler_mode() && !entered) {
+            entered = true;
+        }
+        if (entered && !cpu_->in_handler_mode()) {
+            returned = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(entered) << "TIM2 UIF did not raise an IRQ that entered the handler";
+    EXPECT_TRUE(returned) << "TIM2 handler did not return";
 }

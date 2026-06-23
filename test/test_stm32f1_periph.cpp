@@ -358,6 +358,42 @@ TEST(TimerTest, MmioThroughBus) {
     EXPECT_EQ(*cnt, 10u);
 }
 
+TEST(TimerTest, UifEdgeWithUieTriggersIrqCallback) {
+    // UIF 0→1 edge + DIER.UIE → irq_callback fires exactly once; re-overflow
+    // while UIF stays set does not re-fire (edge); clearing UIF re-arms.
+    Stm32f1Timer tim;
+    int count = 0;
+    tim.set_irq_callback([&] { ++count; });
+    tim.set_prescaler(0);     // divisor 1
+    tim.set_auto_reload(5);
+    ASSERT_TRUE(tim.write(0x0C, 1u, Width::Word).has_value()); // DIER.UIE
+    tim.enable(true);         // CR1.CEN
+
+    tim.tick(5);              // cnt 0→5 → overflow, UIF edge
+    EXPECT_TRUE(tim.update_flag());
+    EXPECT_EQ(count, 1);
+
+    tim.tick(10);             // UIF still set → no re-fire (edge)
+    EXPECT_EQ(count, 1);
+
+    tim.clear_update_flag();  // re-arm
+    tim.tick(5);
+    EXPECT_EQ(count, 2);
+}
+
+TEST(TimerTest, UifWithoutUieDoesNotFireCallback) {
+    Stm32f1Timer tim;
+    bool fired = false;
+    tim.set_irq_callback([&] { fired = true; });
+    tim.set_prescaler(0);
+    tim.set_auto_reload(5);
+    tim.enable(true);
+    // DIER.UIE not set
+    tim.tick(5);
+    EXPECT_TRUE(tim.update_flag());  // UIF still set
+    EXPECT_FALSE(fired);             // but no IRQ raised
+}
+
 // ── FLASH Tests ──
 
 TEST(FlashTest, AcrDefault) {

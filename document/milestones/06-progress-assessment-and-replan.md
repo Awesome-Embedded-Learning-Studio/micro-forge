@@ -172,6 +172,15 @@
 
 **02 仍剩**:仅 tail-chaining(同步模拟器天然退化,见上)。**03 外设中断路径**(EXTI / Timer UIF→IRQ E2E / USART RX-RXNE-TXE IRQ)进入第二波 C1–C3。
 
+## 实施记录(2026-06-23 · 第二波 C2a/b)
+
+继 Thumb-2 全覆盖里程碑收口(T0-T4 + T5c,notes 012/013)后,焦点转第二波外设中断端到端。C2 Timer 落地两件事:
+
+- **打通 `raise_irq` 公共通道**:原 `CortexM3CPU::raise_irq` 是 no-op(`return {};`)—— **整个外设→NVIC 注入通道从未接通**(SysTick 靠独立 `sys_tick_irq()` 绕过)。实现为 `nvic_->set_pending(irq)` 一行;这是所有 MMIO IRQ(TIM/USART/EXTI)的公共入口。
+- **Timer UIF → NVIC → handler 端到端**:Timer 仿 SysTick `set_irq_callback` 模式,`tick()` 在 UIF **0→1 edge + `DIER.UIE`** 时回调一次;SoC 接 `raise_irq(kTim2Irqn=28)`;`kTim2Irqn` 常量落 interrupt_config.hpp(vector index 44)。
+- 验证:单元(edge/UIE 语义)+ `TimerUifRoundtrip` E2E(coordinator Apb1 驱动 tick → handler 往返)。**289/289 绿**,固件 E2E/CLI 无回归。细节见 notes 014。
+- **C2 进度**:Timer UIF→IRQ E2E 由 ~50%(UIF 产生但无端到端)提升到通道打通 + 往返验证。剩 C2c 抢占/嵌套场景(检验第一波 A 的 `active_priorities_`),再 C1 EXTI / C3 USART RX-IRQ。
+
 
 ## 结论 / 下一步
 
