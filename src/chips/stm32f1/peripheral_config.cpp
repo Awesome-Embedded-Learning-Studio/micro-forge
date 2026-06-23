@@ -59,6 +59,12 @@ Expected<void> configure_peripherals(memory::Bus& bus, Stm32f103Parts& parts) {
         return result;
     }
 
+    result = map_checked(0x4001'0400_addr, 0x400_addr,
+                         parts.exti.GetWeak());
+    if (!result) {
+        return result;
+    }
+
     return {};
 }
 

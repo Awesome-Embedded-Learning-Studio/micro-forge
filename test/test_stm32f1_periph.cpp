@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "chips/stm32f1/stm32f1_afio.hpp"
+#include "chips/stm32f1/stm32f1_exti.hpp"
 #include "chips/stm32f1/stm32f1_flash.hpp"
 #include "chips/stm32f1/stm32f1_gpio.hpp"
 #include "chips/stm32f1/stm32f1_rcc.hpp"
@@ -392,6 +393,85 @@ TEST(TimerTest, UifWithoutUieDoesNotFireCallback) {
     tim.tick(5);
     EXPECT_TRUE(tim.update_flag());  // UIF still set
     EXPECT_FALSE(fired);             // but no IRQ raised
+}
+
+// ── EXTI Tests ──
+
+TEST(ExtiTest, RegisterReadWrite) {
+    Stm32f1Exti exti;
+    ASSERT_TRUE(exti.write(0x00, 0x100u, Width::Word).has_value()); // IMR
+    ASSERT_TRUE(exti.write(0x08, 0x200u, Width::Word).has_value()); // RTSR
+    auto imr = exti.read(0x00, Width::Word);
+    auto rtsr = exti.read(0x08, Width::Word);
+    ASSERT_TRUE(imr.has_value() && rtsr.has_value());
+    EXPECT_EQ(*imr, 0x100u);
+    EXPECT_EQ(*rtsr, 0x200u);
+}
+
+TEST(ExtiTest, PendingClearsOnWrite1) {
+    Stm32f1Exti exti;
+    ASSERT_TRUE(exti.write(0x00, 1u, Width::Word).has_value()); // IMR line0
+    ASSERT_TRUE(exti.write(0x10, 1u, Width::Word).has_value()); // SWIER line0
+    EXPECT_TRUE(exti.pending(0));
+    ASSERT_TRUE(exti.write(0x14, 1u, Width::Word).has_value()); // PR w1c
+    EXPECT_FALSE(exti.pending(0));
+}
+
+TEST(ExtiTest, RisingEdgeOnRoutedPortTriggers) {
+    Stm32f1Afio afio;
+    Stm32f1Exti exti;
+    exti.set_afio(afio);
+    intr::intr_n_t raised = 0xFF;
+    exti.set_irq_callback([&](intr::intr_n_t irq) { raised = irq; });
+    ASSERT_TRUE(afio.write(0x08, 0u, Width::Word).has_value());      // EXTICR1 → PA
+    ASSERT_TRUE(exti.write(0x00, 1u << 3, Width::Word).has_value()); // IMR line3
+    ASSERT_TRUE(exti.write(0x08, 1u << 3, Width::Word).has_value()); // RTSR line3
+    exti.on_gpio_edge({{}, 'A', 3, true});
+    EXPECT_TRUE(exti.pending(3));
+    EXPECT_EQ(raised, 9u); // EXTI3 → IRQ9
+}
+
+TEST(ExtiTest, EdgeOnWrongPortDoesNotTrigger) {
+    Stm32f1Afio afio;
+    Stm32f1Exti exti;
+    exti.set_afio(afio);
+    bool fired = false;
+    exti.set_irq_callback([&](intr::intr_n_t) { fired = true; });
+    ASSERT_TRUE(afio.write(0x08, 0u, Width::Word).has_value());      // line3 → PA
+    ASSERT_TRUE(exti.write(0x00, 1u << 3, Width::Word).has_value()); // IMR
+    ASSERT_TRUE(exti.write(0x08, 1u << 3, Width::Word).has_value()); // RTSR
+    exti.on_gpio_edge({{}, 'B', 3, true}); // PB3 but routed to PA → no trigger
+    EXPECT_FALSE(fired);
+    EXPECT_FALSE(exti.pending(3));
+}
+
+TEST(ExtiTest, ImrMasksLine) {
+    Stm32f1Afio afio;
+    Stm32f1Exti exti;
+    exti.set_afio(afio);
+    bool fired = false;
+    exti.set_irq_callback([&](intr::intr_n_t) { fired = true; });
+    ASSERT_TRUE(afio.write(0x08, 0u, Width::Word).has_value());
+    ASSERT_TRUE(exti.write(0x08, 1u << 3, Width::Word).has_value()); // RTSR line3
+    // IMR line3 NOT set
+    exti.on_gpio_edge({{}, 'A', 3, true});
+    EXPECT_FALSE(fired);
+    EXPECT_FALSE(exti.pending(3));
+}
+
+TEST(ExtiTest, FallingOnlyDoesNotTriggerOnRising) {
+    Stm32f1Afio afio;
+    Stm32f1Exti exti;
+    exti.set_afio(afio);
+    int count = 0;
+    exti.set_irq_callback([&](intr::intr_n_t) { ++count; });
+    ASSERT_TRUE(afio.write(0x08, 0u, Width::Word).has_value());
+    ASSERT_TRUE(exti.write(0x00, 1u << 3, Width::Word).has_value()); // IMR
+    ASSERT_TRUE(exti.write(0x0C, 1u << 3, Width::Word).has_value()); // FTSR only
+    exti.on_gpio_edge({{}, 'A', 3, true});  // rising, only falling armed
+    EXPECT_EQ(count, 0);
+    exti.on_gpio_edge({{}, 'A', 3, false}); // falling → triggers
+    EXPECT_EQ(count, 1);
 }
 
 // ── FLASH Tests ──

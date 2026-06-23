@@ -37,6 +37,7 @@ set(MICRO_FORGE_SOURCES
     src/chips/stm32f1/peripheral_config.cpp
     src/chips/stm32f1/stm32f103_soc.cpp
     src/chips/stm32f1/stm32f1_afio.cpp
+    src/chips/stm32f1/stm32f1_exti.cpp
     src/chips/stm32f1/stm32f1_flash.cpp
     src/chips/stm32f1/stm32f1_gpio.cpp
     src/chips/stm32f1/stm32f1_rcc.cpp

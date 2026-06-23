@@ -40,4 +40,11 @@ Expected<void> Stm32f1Afio::write(addr_t offset, data_t data, Width w) {
     }
 }
 
+uint8_t Stm32f1Afio::exti_line_port(uint8_t line) const {
+    if (line > 15) {
+        return 0;
+    }
+    return (exticr_[line / 4] >> ((line % 4) * 4)) & 0xFu;
+}
+
 } // namespace micro_forge::chips::stm32f1

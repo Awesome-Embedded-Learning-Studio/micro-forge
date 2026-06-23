@@ -132,10 +132,18 @@ void Stm32f1Gpio::simulate_input(uint8_t pin, bool high) {
     if (pin > 15) {
         return;
     }
+    bool was_high = (idr_ >> pin) & 1u;
     if (high) {
         idr_ |= (1u << pin);
     } else {
         idr_ &= ~(1u << pin);
+    }
+    // An external input edge feeds EXTI the same way an output edge does.
+    bool now_high = (idr_ >> pin) & 1u;
+    if (was_high != now_high && !edge_signal_.empty()) {
+        edge_signal_.emit(hooks::GpioEdge{
+            {cycle_source_ ? cycle_source_() : 0},
+            static_cast<char>(port_id_), pin, now_high});
     }
 }
 

@@ -181,6 +181,18 @@
 - 验证:单元(edge/UIE 语义)+ `TimerUifRoundtrip` E2E(coordinator Apb1 驱动 tick → handler 往返)。**289/289 绿**,固件 E2E/CLI 无回归。细节见 notes 014。
 - **C2 进度**:Timer UIF→IRQ E2E 由 ~50%(UIF 产生但无端到端)提升到通道打通 + 往返验证。剩 C2c 抢占/嵌套场景(检验第一波 A 的 `active_priorities_`),再 C1 EXTI / C3 USART RX-IRQ。
 
+## 实施记录(2026-06-23 · 第二波 C1 EXTI)
+
+继 C2 打通 raise_irq 公共通道后,EXTI 作为第二个消费者落地(证通道通用):
+
+- **EXTI 控制器**(`Stm32f1Exti` @0x40010400):IMR/EMR/RTSR/FTSR/SWIER/PR(PR rc_w1)。GPIO 边沿 → AFIO EXTICR 路由校验 → IMR+RTSR/FTSR 沿匹配 → set PR + raise(线→IRQ:0-4=6-10,5-9=23,10-15=40)。
+- **AFIO EXTICR 终于有消费者**:加 `exti_line_port(line)` getter,EXTI 据此路由。
+- **GPIO simulate_input 补 edge emit**:原只 ODR 变化 emit;EXTI 监听外部输入边沿,故输入边沿同路径喂 EXTI。
+- **SoC 接线**:`gpioa/b/c.edge_signal()` → EXTI;EXTI → `raise_irq`(复用 C2 通道)。
+- 验证:6 单元(寄存器/PR/路由/屏蔽/沿选择)+ `ExtiGpioEdgeRoundtrip` E2E(simulate_input PA2 → handler 往返)。**296/296 绿**,无回归。细节 notes 015。
+- **坑**:`MICRO_FORGE_SOURCES` 是显式 `set()` 列表(非 GLOB_RECURSE,DIRECTIVES A 描述不准),新 `src/*.cpp` 须手动加 CMakeLists。C2c 抢占验证边际价值低(test_interrupt 已覆盖),跳过。
+- 06 进度:EXTI 0% → 端到端通。剩 C3 USART RX-IRQ(raise_irq 第三消费者)。
+
 
 ## 结论 / 下一步
 

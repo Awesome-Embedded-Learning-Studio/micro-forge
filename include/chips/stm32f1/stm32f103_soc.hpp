@@ -3,6 +3,7 @@
 #include "chips/machine.hpp"
 #include "chips/stm32f1/clock_domains.hpp"
 #include "chips/stm32f1/stm32f1_afio.hpp"
+#include "chips/stm32f1/stm32f1_exti.hpp"
 #include "chips/stm32f1/stm32f1_flash.hpp"
 #include "chips/stm32f1/stm32f1_gpio.hpp"
 #include "chips/stm32f1/stm32f1_rcc.hpp"
@@ -45,6 +46,7 @@ struct Stm32f103Parts {
     Stm32f1Gpio gpioc{'C'};
     Stm32f1Usart usart1;
     Stm32f1Timer tim2;
+    Stm32f1Exti exti;
 
     Stm32f103Parts() = default;
 

@@ -4,7 +4,11 @@
 #include "chips/stm32f1/clock_domains.hpp"
 #include "chips/stm32f1/interrupt_config.hpp"
 #include "chips/stm32f1/memory_bus.hpp"
+#include "chips/stm32f1/stm32f1_afio.hpp"
+#include "chips/stm32f1/stm32f1_exti.hpp"
+#include "chips/stm32f1/stm32f1_gpio.hpp"
 #include "chips/stm32f1/stm32f1_timer.hpp"
+#include "hooks/events.hpp"
 #include "memory/bus.hpp"
 #include "memory/flat_memory.hpp"
 #include "periph/nvic.hpp"
@@ -50,6 +54,9 @@ class InterruptTest : public ::testing::Test {
     ScbPeripheral scb_;
     std::unique_ptr<SysTickPeripheral> systick_;
     chips::stm32f1::Stm32f1Timer tim2_;
+    chips::stm32f1::Stm32f1Afio afio_;
+    chips::stm32f1::Stm32f1Exti exti_;
+    chips::stm32f1::Stm32f1Gpio gpioa_{'A'};
     std::unique_ptr<CortexM3CPU> cpu_;
 
     void SetUp() override {
@@ -67,6 +74,17 @@ class InterruptTest : public ::testing::Test {
         ASSERT_TRUE(
             bus_.map(memory::region(0x40000000, 0x400, tim2_.GetWeak())).has_value());
         tim2_.set_irq_callback([this]() { (void)cpu_->raise_irq(kTim2Irqn); });
+        // EXTI: AFIO (0x40010000) + EXTI (0x40010400). GPIOA driven directly
+        // via simulate_input (no bus map needed); its edges feed EXTI.
+        ASSERT_TRUE(
+            bus_.map(memory::region(0x40010000, 0x400, afio_.GetWeak())).has_value());
+        ASSERT_TRUE(
+            bus_.map(memory::region(0x40010400, 0x400, exti_.GetWeak())).has_value());
+        exti_.set_afio(afio_);
+        exti_.set_irq_callback(
+            [this](intr::intr_n_t irq) { (void)cpu_->raise_irq(irq); });
+        gpioa_.edge_signal().connect(
+            [this](const hooks::GpioEdge& e) { exti_.on_gpio_edge(e); });
         scb_.set_vtor_callback(
             [this](uint32_t vtor) { cpu_->set_vector_table_base(vtor); });
         scb_.set_prigroup_callback(
@@ -534,4 +552,34 @@ TEST_F(InterruptTest, TimerUifRoundtrip) {
     }
     EXPECT_TRUE(entered) << "TIM2 UIF did not raise an IRQ that entered the handler";
     EXPECT_TRUE(returned) << "TIM2 handler did not return";
+}
+
+// ── EXTI GPIO edge → NVIC → handler roundtrip (C1) ──
+// simulate_input rising edge on PA2 → GPIO edge_signal → EXTI (EXTICR routes
+// line 2 to PA, IMR+RTSR match) → raise EXTI2 IRQ (8) → handler entry/return.
+TEST_F(InterruptTest, ExtiGpioEdgeRoundtrip) {
+    constexpr addr_t kHandler = kFlashBase + 0x110;
+    store_vector_table_entry(0, kInitSp);
+    store_vector_table_entry(1, kMainCode);
+    store_vector_table_entry(16 + 8, kHandler | 1u); // EXTI2 → IRQ8 → vector 24
+    store_instructions(kMainCode, {0xE7FE});   // B .
+    store_instructions(kHandler, {0x4770});     // BX LR
+    ASSERT_TRUE(cpu_->set_pc(kMainCode).has_value());
+
+    // NVIC: enable EXTI2 (IRQ8), priority 0xE0 (IPR2 byte0, word-aligned).
+    ASSERT_TRUE(bus_.write(0xE000E100, 1u << 8, Width::Word).has_value());
+    ASSERT_TRUE(bus_.write(0xE000E408, 0xE0u, Width::Word).has_value());
+
+    // AFIO EXTICR1: line 2 → port A (0). EXTI: IMR line2 + RTSR line2.
+    ASSERT_TRUE(bus_.write(0x40010008, 0u, Width::Word).has_value());      // EXTICR1
+    ASSERT_TRUE(bus_.write(0x40010400, 1u << 2, Width::Word).has_value()); // IMR
+    ASSERT_TRUE(bus_.write(0x40010408, 1u << 2, Width::Word).has_value()); // RTSR
+
+    gpioa_.simulate_input(2, true); // rising edge PA2 → EXTI → raise IRQ8
+
+    ASSERT_TRUE(cpu_->step().has_value()); // pending → enter handler
+    EXPECT_TRUE(cpu_->in_handler_mode());
+    EXPECT_EQ(cpu_->pc().value(), kHandler);
+    ASSERT_TRUE(cpu_->step().has_value()); // BX LR → return
+    EXPECT_FALSE(cpu_->in_handler_mode());
 }
