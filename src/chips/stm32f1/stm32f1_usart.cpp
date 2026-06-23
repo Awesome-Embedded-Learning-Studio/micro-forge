@@ -13,7 +13,9 @@ Expected<data_t> Stm32f1Usart::read(addr_t offset, Width w) {
         case 0x00:
             return sr_;
         case 0x04:
-            return dr_;
+            // DR read returns the received byte and clears RXNE.
+            sr_ &= ~(1u << 5);
+            return rx_dr_;
         case 0x08:
             return brr_;
         case 0x0C:
@@ -51,6 +53,10 @@ Expected<void> Stm32f1Usart::write(addr_t offset, data_t data, Width w) {
             return {};
         case 0x0C:
             cr1_ = data;
+            // Enabling RXNEIE while RXNE is already pending must raise now.
+            if ((cr1_ & (1u << 5)) && (sr_ & (1u << 5)) && irq_cb_) {
+                irq_cb_();
+            }
             return {};
         case 0x10:
             cr2_ = data;
@@ -78,6 +84,14 @@ bool Stm32f1Usart::can_send() const {
 
 void Stm32f1Usart::set_output(OutputCallback cb) {
     output_ = std::move(cb);
+}
+
+void Stm32f1Usart::inject_rx(uint8_t byte) {
+    rx_dr_ = byte;
+    sr_ |= (1u << 5); // RXNE
+    if ((cr1_ & (1u << 5)) && irq_cb_) { // RXNEIE enabled
+        irq_cb_();
+    }
 }
 
 } // namespace micro_forge::chips::stm32f1

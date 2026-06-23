@@ -14,6 +14,10 @@ class Stm32f1Afio : public periph::Device {
     Expected<void> write(addr_t offset, data_t data, Width w) override;
     std::string_view name() const noexcept override { return "AFIO"; }
 
+    // EXTI line N → owning GPIO port index (0=PA,1=PB,2=PC,3=PD,4=PE),
+    // decoded from EXTICR. Consumed by Stm32f1Exti to route GPIO edges.
+    uint8_t exti_line_port(uint8_t line) const;
+
     WeakPtr<Stm32f1Afio> GetWeak() { return weak_factory_.GetWeakPtr(); }
 
   private:

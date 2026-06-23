@@ -4,6 +4,12 @@
 #include "chips/stm32f1/clock_domains.hpp"
 #include "chips/stm32f1/interrupt_config.hpp"
 #include "chips/stm32f1/memory_bus.hpp"
+#include "chips/stm32f1/stm32f1_afio.hpp"
+#include "chips/stm32f1/stm32f1_exti.hpp"
+#include "chips/stm32f1/stm32f1_gpio.hpp"
+#include "chips/stm32f1/stm32f1_timer.hpp"
+#include "chips/stm32f1/stm32f1_usart.hpp"
+#include "hooks/events.hpp"
 #include "memory/bus.hpp"
 #include "memory/flat_memory.hpp"
 #include "periph/nvic.hpp"
@@ -48,6 +54,11 @@ class InterruptTest : public ::testing::Test {
     NvicPeripheral nvic_;
     ScbPeripheral scb_;
     std::unique_ptr<SysTickPeripheral> systick_;
+    chips::stm32f1::Stm32f1Timer tim2_;
+    chips::stm32f1::Stm32f1Afio afio_;
+    chips::stm32f1::Stm32f1Exti exti_;
+    chips::stm32f1::Stm32f1Gpio gpioa_{'A'};
+    chips::stm32f1::Stm32f1Usart usart1_;
     std::unique_ptr<CortexM3CPU> cpu_;
 
     void SetUp() override {
@@ -61,6 +72,25 @@ class InterruptTest : public ::testing::Test {
         cpu_ = std::make_unique<CortexM3CPU>(bus_.GetWeak());
         cpu_->set_nvic(nvic_);
         cpu_->set_scb(scb_);
+        // TIM2 at 0x40000000; UIF edge → NVIC TIM2 line (IRQ 28).
+        ASSERT_TRUE(
+            bus_.map(memory::region(0x40000000, 0x400, tim2_.GetWeak())).has_value());
+        tim2_.set_irq_callback([this]() { (void)cpu_->raise_irq(kTim2Irqn); });
+        // EXTI: AFIO (0x40010000) + EXTI (0x40010400). GPIOA driven directly
+        // via simulate_input (no bus map needed); its edges feed EXTI.
+        ASSERT_TRUE(
+            bus_.map(memory::region(0x40010000, 0x400, afio_.GetWeak())).has_value());
+        ASSERT_TRUE(
+            bus_.map(memory::region(0x40010400, 0x400, exti_.GetWeak())).has_value());
+        exti_.set_afio(afio_);
+        exti_.set_irq_callback(
+            [this](intr::intr_n_t irq) { (void)cpu_->raise_irq(irq); });
+        gpioa_.edge_signal().connect(
+            [this](const hooks::GpioEdge& e) { exti_.on_gpio_edge(e); });
+        // USART1 at 0x40013800; RXNE (RXNEIE) → NVIC USART1 line (IRQ 37).
+        ASSERT_TRUE(
+            bus_.map(memory::region(0x40013800, 0x400, usart1_.GetWeak())).has_value());
+        usart1_.set_irq_callback([this]() { (void)cpu_->raise_irq(kUsart1Irqn); });
         scb_.set_vtor_callback(
             [this](uint32_t vtor) { cpu_->set_vector_table_base(vtor); });
         scb_.set_prigroup_callback(
@@ -486,4 +516,111 @@ TEST_F(InterruptTest, PriorityGroupingAffectsPreemption) {
     ASSERT_TRUE(cpu_->step().has_value()); // stays in handler A
     EXPECT_TRUE(cpu_->in_handler_mode());
     EXPECT_EQ(cpu_->pc().value(), kHandlerA + 4);
+}
+
+// ── Timer UIF → NVIC → handler roundtrip (C2) ──
+// Coordinator drives TIM2 tick → UIF edge → raise_irq(28) → NVIC pending →
+// handler entry → BX LR return. First end-to-end use of the raise_irq channel.
+TEST_F(InterruptTest, TimerUifRoundtrip) {
+    constexpr addr_t kHandler = kFlashBase + 0x110;
+    store_vector_table_entry(0, kInitSp);
+    store_vector_table_entry(1, kMainCode);
+    store_vector_table_entry(16 + kTim2Irqn, kHandler | 1u); // TIM2 → vector 44
+    store_instructions(kMainCode, {0xE7FE});   // B .
+    store_instructions(kHandler, {0x4770});     // BX LR
+    ASSERT_TRUE(cpu_->set_pc(kMainCode).has_value());
+
+    // NVIC: enable TIM2 (bit 28), priority 0xE0 (below thread 0xF0).
+    ASSERT_TRUE(bus_.write(0xE000E100, 1u << kTim2Irqn, Width::Word).has_value());
+    ASSERT_TRUE(bus_.write(0xE000E400 + kTim2Irqn, 0xE0u, Width::Word).has_value());
+
+    // TIM2: PSC=0, ARR=5, DIER.UIE, CR1.CEN
+    ASSERT_TRUE(bus_.write(0x40000028, 0u, Width::Word).has_value());  // PSC
+    ASSERT_TRUE(bus_.write(0x4000002C, 5u, Width::Word).has_value());  // ARR
+    ASSERT_TRUE(bus_.write(0x4000000C, 1u, Width::Word).has_value());  // DIER.UIE
+    ASSERT_TRUE(bus_.write(0x40000000, 1u, Width::Word).has_value());  // CR1.CEN
+
+    VirtualClock clk(stm32f103_default_clocks);
+    SimulationCoordinator coord(std::move(clk));
+    coord.set_cpu(cpu_->GetWeak());
+    coord.add_tickable(tim2_.GetWeak(), domain_index(ClockDomain::Apb1));
+
+    bool entered = false, returned = false;
+    for (size_t i = 0; i < 80; ++i) {
+        ASSERT_TRUE(coord.step().has_value());
+        if (cpu_->in_handler_mode() && !entered) {
+            entered = true;
+        }
+        if (entered && !cpu_->in_handler_mode()) {
+            returned = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(entered) << "TIM2 UIF did not raise an IRQ that entered the handler";
+    EXPECT_TRUE(returned) << "TIM2 handler did not return";
+}
+
+// ── EXTI GPIO edge → NVIC → handler roundtrip (C1) ──
+// simulate_input rising edge on PA2 → GPIO edge_signal → EXTI (EXTICR routes
+// line 2 to PA, IMR+RTSR match) → raise EXTI2 IRQ (8) → handler entry/return.
+TEST_F(InterruptTest, ExtiGpioEdgeRoundtrip) {
+    constexpr addr_t kHandler = kFlashBase + 0x110;
+    store_vector_table_entry(0, kInitSp);
+    store_vector_table_entry(1, kMainCode);
+    store_vector_table_entry(16 + 8, kHandler | 1u); // EXTI2 → IRQ8 → vector 24
+    store_instructions(kMainCode, {0xE7FE});   // B .
+    store_instructions(kHandler, {0x4770});     // BX LR
+    ASSERT_TRUE(cpu_->set_pc(kMainCode).has_value());
+
+    // NVIC: enable EXTI2 (IRQ8), priority 0xE0 (IPR2 byte0, word-aligned).
+    ASSERT_TRUE(bus_.write(0xE000E100, 1u << 8, Width::Word).has_value());
+    ASSERT_TRUE(bus_.write(0xE000E408, 0xE0u, Width::Word).has_value());
+
+    // AFIO EXTICR1: line 2 → port A (0). EXTI: IMR line2 + RTSR line2.
+    ASSERT_TRUE(bus_.write(0x40010008, 0u, Width::Word).has_value());      // EXTICR1
+    ASSERT_TRUE(bus_.write(0x40010400, 1u << 2, Width::Word).has_value()); // IMR
+    ASSERT_TRUE(bus_.write(0x40010408, 1u << 2, Width::Word).has_value()); // RTSR
+
+    gpioa_.simulate_input(2, true); // rising edge PA2 → EXTI → raise IRQ8
+
+    ASSERT_TRUE(cpu_->step().has_value()); // pending → enter handler
+    EXPECT_TRUE(cpu_->in_handler_mode());
+    EXPECT_EQ(cpu_->pc().value(), kHandler);
+    ASSERT_TRUE(cpu_->step().has_value()); // BX LR → return
+    EXPECT_FALSE(cpu_->in_handler_mode());
+}
+
+// ── USART RXNE → NVIC → handler roundtrip (C3) ──
+// inject_rx → RXNE + RXNEIE → raise USART1 IRQ (37) → handler reads DR.
+TEST_F(InterruptTest, UsartRxRoundtrip) {
+    constexpr addr_t kHandler = kFlashBase + 0x110;
+    store_vector_table_entry(0, kInitSp);
+    store_vector_table_entry(1, kMainCode);
+    store_vector_table_entry(16 + 37, kHandler | 1u); // USART1 → IRQ37 → vector 53
+    store_instructions(kMainCode, {0xE7FE});          // B .
+    // handler: ldr r4, [r1] (r1=USART1 DR) ; bx lr. r4 is not auto-stacked, so
+    // it survives exception return (r0-r3 are restored by the POP).
+    store_instructions(kHandler, {0x680C, 0x4770});   // ldr r4,[r1,#0] ; bx lr
+    ASSERT_TRUE(cpu_->set_pc(kMainCode).has_value());
+    ASSERT_TRUE(cpu_->set_register_value(1, 0x40013804u).has_value()); // r1 = DR
+
+    // NVIC: enable USART1 (IRQ37 → ISER1 bit5), priority 0xE0 (IPR9 byte1).
+    ASSERT_TRUE(bus_.write(0xE000E104, 1u << 5, Width::Word).has_value());
+    ASSERT_TRUE(bus_.write(0xE000E424, 0xE0u << 8, Width::Word).has_value());
+
+    // USART1 CR1: UE(13) + RXNEIE(5) + RE(2).
+    ASSERT_TRUE(
+        bus_.write(0x4001380C, (1u << 13) | (1u << 5) | (1u << 2), Width::Word)
+            .has_value());
+
+    usart1_.inject_rx('A'); // → RXNE + raise IRQ37
+
+    ASSERT_TRUE(cpu_->step().has_value()); // pending → enter handler
+    EXPECT_TRUE(cpu_->in_handler_mode());
+    ASSERT_TRUE(cpu_->step().has_value()); // ldr r0,[r1] → r0='A', RXNE cleared
+    ASSERT_TRUE(cpu_->step().has_value()); // bx lr → return
+    EXPECT_FALSE(cpu_->in_handler_mode());
+    auto r4 = cpu_->register_value(4);
+    ASSERT_TRUE(r4.has_value());
+    EXPECT_EQ(*r4, static_cast<uint32_t>('A'));
 }

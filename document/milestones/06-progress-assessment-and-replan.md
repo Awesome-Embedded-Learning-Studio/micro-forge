@@ -172,6 +172,36 @@
 
 **02 仍剩**:仅 tail-chaining(同步模拟器天然退化,见上)。**03 外设中断路径**(EXTI / Timer UIF→IRQ E2E / USART RX-RXNE-TXE IRQ)进入第二波 C1–C3。
 
+## 实施记录(2026-06-23 · 第二波 C2a/b)
+
+继 Thumb-2 全覆盖里程碑收口(T0-T4 + T5c,notes 012/013)后,焦点转第二波外设中断端到端。C2 Timer 落地两件事:
+
+- **打通 `raise_irq` 公共通道**:原 `CortexM3CPU::raise_irq` 是 no-op(`return {};`)—— **整个外设→NVIC 注入通道从未接通**(SysTick 靠独立 `sys_tick_irq()` 绕过)。实现为 `nvic_->set_pending(irq)` 一行;这是所有 MMIO IRQ(TIM/USART/EXTI)的公共入口。
+- **Timer UIF → NVIC → handler 端到端**:Timer 仿 SysTick `set_irq_callback` 模式,`tick()` 在 UIF **0→1 edge + `DIER.UIE`** 时回调一次;SoC 接 `raise_irq(kTim2Irqn=28)`;`kTim2Irqn` 常量落 interrupt_config.hpp(vector index 44)。
+- 验证:单元(edge/UIE 语义)+ `TimerUifRoundtrip` E2E(coordinator Apb1 驱动 tick → handler 往返)。**289/289 绿**,固件 E2E/CLI 无回归。细节见 notes 014。
+- **C2 进度**:Timer UIF→IRQ E2E 由 ~50%(UIF 产生但无端到端)提升到通道打通 + 往返验证。剩 C2c 抢占/嵌套场景(检验第一波 A 的 `active_priorities_`),再 C1 EXTI / C3 USART RX-IRQ。
+
+## 实施记录(2026-06-23 · 第二波 C1 EXTI)
+
+继 C2 打通 raise_irq 公共通道后,EXTI 作为第二个消费者落地(证通道通用):
+
+- **EXTI 控制器**(`Stm32f1Exti` @0x40010400):IMR/EMR/RTSR/FTSR/SWIER/PR(PR rc_w1)。GPIO 边沿 → AFIO EXTICR 路由校验 → IMR+RTSR/FTSR 沿匹配 → set PR + raise(线→IRQ:0-4=6-10,5-9=23,10-15=40)。
+- **AFIO EXTICR 终于有消费者**:加 `exti_line_port(line)` getter,EXTI 据此路由。
+- **GPIO simulate_input 补 edge emit**:原只 ODR 变化 emit;EXTI 监听外部输入边沿,故输入边沿同路径喂 EXTI。
+- **SoC 接线**:`gpioa/b/c.edge_signal()` → EXTI;EXTI → `raise_irq`(复用 C2 通道)。
+- 验证:6 单元(寄存器/PR/路由/屏蔽/沿选择)+ `ExtiGpioEdgeRoundtrip` E2E(simulate_input PA2 → handler 往返)。**296/296 绿**,无回归。细节 notes 015。
+- **坑**:`MICRO_FORGE_SOURCES` 是显式 `set()` 列表(非 GLOB_RECURSE,DIRECTIVES A 描述不准),新 `src/*.cpp` 须手动加 CMakeLists。C2c 抢占验证边际价值低(test_interrupt 已覆盖),跳过。
+- 06 进度:EXTI 0% → 端到端通。剩 C3 USART RX-IRQ(raise_irq 第三消费者)。
+
+## 实施记录(2026-06-23 · 第二波 C3 USART RX,第二波收尾)
+
+- **USART RX 注入 + RXNEIE**:USART 加 `inject_rx(byte)`(单字节缓冲 + SR.RXNE bit5),DR read 返回 rx 字节 + 清 RXNE(读=RX/写=TX 共享地址)。RXNEIE(CR1 bit5)+ RXNE → raise USART1(IRQ37)。
+- **raise_irq 第三消费者**:TIM(C2)/EXTI(C1)/USART(C3)三外设全通同一通道 —— 证明 C2 打通的通道通用。
+- **TXEIE 跳过**:模拟器 TX 即时,TXE 常高 → TXEIE 会循环 raise(无 TX 延迟可消耗);固件轮询 TXE 位仍工作。
+- 验证:4 单元(RXNE/DR/RXNEIE enabled/disabled)+ `UsartRxRoundtrip` E2E。**301/301 绿**,无回归。细节 notes 016。
+- **坑**:ARM 异常自动压栈 r0-r3,handler 改它们被返回 POP 覆盖;测试读 handler 结果须用 r4+(不自动压栈)。IRQ≥32 在 ISER1,IPR IRQ37 在 0xE000E424 byte1 需 shift。
+- **第二波全部完成**(C1/C2/C3 + C4 bit-band 早前):06 第二波「外设中断端到端」收口,raise_irq 通道三消费者(TIM/EXTI/USART)全通。下一里程碑候选:第三波 DMA/SPI/FLASH、04 GUI、02 收尾。
+
 
 ## 结论 / 下一步
 

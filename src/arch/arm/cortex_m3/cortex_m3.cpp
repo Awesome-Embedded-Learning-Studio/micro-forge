@@ -101,7 +101,13 @@ CPU::CPUExpected<addr_t> CortexM3CPU::set_pc(addr_t new_pc) {
     return new_pc;
 }
 
-CPU::CPUExpected<void> CortexM3CPU::raise_irq(intr::intr_n_t) {
+CPU::CPUExpected<void> CortexM3CPU::raise_irq(intr::intr_n_t irq) {
+    // External peripheral → NVIC pending injection. This is the single channel
+    // every MMIO IRQ (TIM/USART/EXTI…) funnels through; SysTick bypasses it via
+    // sys_tick_irq() (system exception 15, not an NVIC line).
+    if (nvic_) {
+        nvic_->set_pending(static_cast<uint8_t>(irq));
+    }
     return {};
 }
 

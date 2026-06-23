@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "chips/stm32f1/stm32f1_afio.hpp"
+#include "chips/stm32f1/stm32f1_exti.hpp"
 #include "chips/stm32f1/stm32f1_flash.hpp"
 #include "chips/stm32f1/stm32f1_gpio.hpp"
 #include "chips/stm32f1/stm32f1_rcc.hpp"
@@ -278,6 +279,42 @@ TEST(UsartTest, MmioThroughBus) {
     EXPECT_EQ(captured, 'A');
 }
 
+TEST(UsartTest, InjectRxSetsRxne) {
+    Stm32f1Usart usart;
+    usart.inject_rx('X');
+    auto sr = usart.read(0x00, Width::Word);
+    ASSERT_TRUE(sr.has_value());
+    EXPECT_TRUE(*sr & (1u << 5)); // RXNE
+}
+
+TEST(UsartTest, DrReadReturnsByteAndClearsRxne) {
+    Stm32f1Usart usart;
+    usart.inject_rx('Q');
+    auto dr = usart.read(0x04, Width::Word);
+    ASSERT_TRUE(dr.has_value());
+    EXPECT_EQ(*dr, static_cast<data_t>('Q'));
+    auto sr = usart.read(0x00, Width::Word);
+    ASSERT_TRUE(sr.has_value());
+    EXPECT_FALSE(*sr & (1u << 5)); // RXNE cleared
+}
+
+TEST(UsartTest, RxneIrqRaisedWhenEnabled) {
+    Stm32f1Usart usart;
+    ASSERT_TRUE(usart.write(0x0C, 1u << 5, Width::Word).has_value()); // CR1 RXNEIE
+    bool fired = false;
+    usart.set_irq_callback([&] { fired = true; });
+    usart.inject_rx('A');
+    EXPECT_TRUE(fired);
+}
+
+TEST(UsartTest, RxneIrqNotRaisedWhenDisabled) {
+    Stm32f1Usart usart;
+    bool fired = false;
+    usart.set_irq_callback([&] { fired = true; });
+    usart.inject_rx('A'); // RXNEIE not set
+    EXPECT_FALSE(fired);
+}
+
 // ── Timer Tests ──
 
 TEST(TimerTest, TickIncrements) {
@@ -356,6 +393,121 @@ TEST(TimerTest, MmioThroughBus) {
     auto cnt = bus.read(0x4000'0034, Width::Word);
     ASSERT_TRUE(cnt.has_value());
     EXPECT_EQ(*cnt, 10u);
+}
+
+TEST(TimerTest, UifEdgeWithUieTriggersIrqCallback) {
+    // UIF 0→1 edge + DIER.UIE → irq_callback fires exactly once; re-overflow
+    // while UIF stays set does not re-fire (edge); clearing UIF re-arms.
+    Stm32f1Timer tim;
+    int count = 0;
+    tim.set_irq_callback([&] { ++count; });
+    tim.set_prescaler(0);     // divisor 1
+    tim.set_auto_reload(5);
+    ASSERT_TRUE(tim.write(0x0C, 1u, Width::Word).has_value()); // DIER.UIE
+    tim.enable(true);         // CR1.CEN
+
+    tim.tick(5);              // cnt 0→5 → overflow, UIF edge
+    EXPECT_TRUE(tim.update_flag());
+    EXPECT_EQ(count, 1);
+
+    tim.tick(10);             // UIF still set → no re-fire (edge)
+    EXPECT_EQ(count, 1);
+
+    tim.clear_update_flag();  // re-arm
+    tim.tick(5);
+    EXPECT_EQ(count, 2);
+}
+
+TEST(TimerTest, UifWithoutUieDoesNotFireCallback) {
+    Stm32f1Timer tim;
+    bool fired = false;
+    tim.set_irq_callback([&] { fired = true; });
+    tim.set_prescaler(0);
+    tim.set_auto_reload(5);
+    tim.enable(true);
+    // DIER.UIE not set
+    tim.tick(5);
+    EXPECT_TRUE(tim.update_flag());  // UIF still set
+    EXPECT_FALSE(fired);             // but no IRQ raised
+}
+
+// ── EXTI Tests ──
+
+TEST(ExtiTest, RegisterReadWrite) {
+    Stm32f1Exti exti;
+    ASSERT_TRUE(exti.write(0x00, 0x100u, Width::Word).has_value()); // IMR
+    ASSERT_TRUE(exti.write(0x08, 0x200u, Width::Word).has_value()); // RTSR
+    auto imr = exti.read(0x00, Width::Word);
+    auto rtsr = exti.read(0x08, Width::Word);
+    ASSERT_TRUE(imr.has_value() && rtsr.has_value());
+    EXPECT_EQ(*imr, 0x100u);
+    EXPECT_EQ(*rtsr, 0x200u);
+}
+
+TEST(ExtiTest, PendingClearsOnWrite1) {
+    Stm32f1Exti exti;
+    ASSERT_TRUE(exti.write(0x00, 1u, Width::Word).has_value()); // IMR line0
+    ASSERT_TRUE(exti.write(0x10, 1u, Width::Word).has_value()); // SWIER line0
+    EXPECT_TRUE(exti.pending(0));
+    ASSERT_TRUE(exti.write(0x14, 1u, Width::Word).has_value()); // PR w1c
+    EXPECT_FALSE(exti.pending(0));
+}
+
+TEST(ExtiTest, RisingEdgeOnRoutedPortTriggers) {
+    Stm32f1Afio afio;
+    Stm32f1Exti exti;
+    exti.set_afio(afio);
+    intr::intr_n_t raised = 0xFF;
+    exti.set_irq_callback([&](intr::intr_n_t irq) { raised = irq; });
+    ASSERT_TRUE(afio.write(0x08, 0u, Width::Word).has_value());      // EXTICR1 → PA
+    ASSERT_TRUE(exti.write(0x00, 1u << 3, Width::Word).has_value()); // IMR line3
+    ASSERT_TRUE(exti.write(0x08, 1u << 3, Width::Word).has_value()); // RTSR line3
+    exti.on_gpio_edge({{}, 'A', 3, true});
+    EXPECT_TRUE(exti.pending(3));
+    EXPECT_EQ(raised, 9u); // EXTI3 → IRQ9
+}
+
+TEST(ExtiTest, EdgeOnWrongPortDoesNotTrigger) {
+    Stm32f1Afio afio;
+    Stm32f1Exti exti;
+    exti.set_afio(afio);
+    bool fired = false;
+    exti.set_irq_callback([&](intr::intr_n_t) { fired = true; });
+    ASSERT_TRUE(afio.write(0x08, 0u, Width::Word).has_value());      // line3 → PA
+    ASSERT_TRUE(exti.write(0x00, 1u << 3, Width::Word).has_value()); // IMR
+    ASSERT_TRUE(exti.write(0x08, 1u << 3, Width::Word).has_value()); // RTSR
+    exti.on_gpio_edge({{}, 'B', 3, true}); // PB3 but routed to PA → no trigger
+    EXPECT_FALSE(fired);
+    EXPECT_FALSE(exti.pending(3));
+}
+
+TEST(ExtiTest, ImrMasksLine) {
+    Stm32f1Afio afio;
+    Stm32f1Exti exti;
+    exti.set_afio(afio);
+    bool fired = false;
+    exti.set_irq_callback([&](intr::intr_n_t) { fired = true; });
+    ASSERT_TRUE(afio.write(0x08, 0u, Width::Word).has_value());
+    ASSERT_TRUE(exti.write(0x08, 1u << 3, Width::Word).has_value()); // RTSR line3
+    // IMR line3 NOT set
+    exti.on_gpio_edge({{}, 'A', 3, true});
+    EXPECT_FALSE(fired);
+    EXPECT_FALSE(exti.pending(3));
+}
+
+TEST(ExtiTest, FallingOnlyDoesNotTriggerOnRising) {
+    Stm32f1Afio afio;
+    Stm32f1Exti exti;
+    exti.set_afio(afio);
+    int count = 0;
+    exti.set_irq_callback([&](intr::intr_n_t) { ++count; });
+    ASSERT_TRUE(afio.write(0x08, 0u, Width::Word).has_value());
+    ASSERT_TRUE(exti.write(0x00, 1u << 3, Width::Word).has_value()); // IMR
+    ASSERT_TRUE(exti.write(0x0C, 1u << 3, Width::Word).has_value()); // FTSR only
+    exti.on_gpio_edge({{}, 'A', 3, true});  // rising, only falling armed
+    EXPECT_EQ(count, 0);
+    exti.on_gpio_edge({{}, 'A', 3, false}); // falling → triggers
+    EXPECT_EQ(count, 1);
 }
 
 // ── FLASH Tests ──

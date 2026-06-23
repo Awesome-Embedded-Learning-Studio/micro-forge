@@ -66,8 +66,16 @@ void Stm32f1Timer::tick(uint64_t cycles) {
     cnt_ += static_cast<uint32_t>(prescaled);
 
     if (arr_ > 0 && cnt_ >= arr_) {
-        sr_ |= 0x0001; // UIF
         cnt_ = cnt_ % arr_;
+        // Update event: set UIF on the 0→1 edge only. With DIER.UIE (bit0)
+        // enabled, raise the TIM IRQ once per edge (NVIC set_pending is
+        // idempotent, but edge semantics avoid re-raising while UIF stays set).
+        if (!(sr_ & 0x0001u)) {
+            sr_ |= 0x0001u; // UIF
+            if ((dier_ & 0x0001u) && irq_cb_) {
+                irq_cb_();
+            }
+        }
     }
 }
 

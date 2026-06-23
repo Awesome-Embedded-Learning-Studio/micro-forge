@@ -1,6 +1,7 @@
 #include "chips/stm32f1/stm32f103_soc.hpp"
 #include "arch/arm/cortex_m3/cortex_m3.hpp"
 #include "arch/arm/cortex_m3/cortex_m3_reset.hpp"
+#include "hooks/events.hpp"
 #include "chips/stm32f1/interrupt_config.hpp"
 #include "chips/stm32f1/memory_bus.hpp"
 #include "chips/stm32f1/peripheral_config.hpp"
@@ -61,6 +62,36 @@ Stm32f103Soc::create() {
     p.systick.set_irq_callback([cm3_weak]() {
         if (cm3_weak.IsValid()) {
             cm3_weak->sys_tick_irq();
+        }
+    });
+
+    // Wire Timer UIF (edge, DIER.UIE) → NVIC TIM2 line (IRQ 28).
+    p.tim2.set_irq_callback([cm3_weak]() {
+        if (cm3_weak.IsValid()) {
+            (void)cm3_weak->raise_irq(kTim2Irqn);
+        }
+    });
+
+    // Wire EXTI: GPIO edges → EXTI (EXTICR routing) → NVIC.
+    p.exti.set_afio(p.afio);
+    p.exti.set_irq_callback([cm3_weak](intr::intr_n_t irq) {
+        if (cm3_weak.IsValid()) {
+            (void)cm3_weak->raise_irq(irq);
+        }
+    });
+    auto exti_edge = [exti_weak = p.exti.GetWeak()](const hooks::GpioEdge& e) {
+        if (exti_weak.IsValid()) {
+            exti_weak->on_gpio_edge(e);
+        }
+    };
+    p.gpioa.edge_signal().connect(exti_edge);
+    p.gpiob.edge_signal().connect(exti_edge);
+    p.gpioc.edge_signal().connect(exti_edge);
+
+    // Wire USART RXNE (RXNEIE) → NVIC USART1 line (IRQ 37).
+    p.usart1.set_irq_callback([cm3_weak]() {
+        if (cm3_weak.IsValid()) {
+            (void)cm3_weak->raise_irq(kUsart1Irqn);
         }
     });
 
