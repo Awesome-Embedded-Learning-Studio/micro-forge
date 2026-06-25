@@ -46,6 +46,11 @@ param(
 )
 $ErrorActionPreference = "Stop"
 
+# Banner — confirms you are running a current copy (rev 2026-06-25c: per-opt
+# dir creation + C-only opt injection + PassThru exit code). If you do NOT see
+# this line, the file at D:\mf is stale — re-copy from the repo.
+Write-Host "build_corpus_opt.ps1 rev 2026-06-25c . Root=$Root . DryRun=$([bool]$DryRun) . OptLevels=$($OptLevels -join ',')" -ForegroundColor DarkGray
+
 $ExampleMap = @{
     "GPIO/GPIO_IOToggle" = "gpio_iotoggle"
     "TIM/TIM_TimeBase"   = "tim_timebase"
@@ -81,6 +86,12 @@ function Set-UvprojxAc6Opt {
             $val = $val -replace '--C99\s*', '' -replace '(^|\s)-O[0-3z]+\s*', ' '
             $mc.InnerText = ($val.Trim() + ' -' + $OptLevel).Trim()
         }
+    }
+    # Insurance: ensure the destination dir exists before creating the writer
+    # (the caller pre-creates $workDir, but guarantee it here too).
+    $destDir = Split-Path -Parent $Dest
+    if (-not (Test-Path -LiteralPath $destDir)) {
+        New-Item -ItemType Directory -Force -Path $destDir | Out-Null
     }
     $enc = New-Object System.Text.UTF8Encoding($false)
     $writer = New-Object System.Xml.XmlTextWriter($Dest, $enc)
