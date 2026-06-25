@@ -103,7 +103,9 @@ foreach ($ex in $Examples) {
     foreach ($opt in $OptLevels) {
         $optFlag = '-' + $opt   # "O0" -> "-O0"
         # Copy the whole MDK-ARM dir per opt so outputs/objects are isolated.
+        # Copy-Item won't create $workDir for a wildcard source, so make it first.
         $workDir = "$mdkArm-$opt"
+        New-Item -ItemType Directory -Force -Path $workDir | Out-Null
         Copy-Item -Path "$mdkArm\*" -Destination $workDir -Recurse -Force
         $log     = Join-Path $workDir "build.$opt.log"
         $fixture = "$OutRoot\nucleo_f103rb_$stem.ac6-$opt.axf"
