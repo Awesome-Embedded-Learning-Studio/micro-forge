@@ -89,3 +89,33 @@ TEST(FirmwareArmcc, GpioIoToggleBootsClean) {
               "")
         << "GPIO_IOToggle (armcc/AC6) failed to boot clean";
 }
+
+// ── Multi-optimization-level corpus (E2 Tier-2, notes 018) ──
+// Same three examples rebuilt at AC6 -O0/-O2/-Oz (AC6 has no -Os; -Oz is its
+// min-size flag). Different -O emits different Thumb-2 mixes (e.g. -O2 may use
+// adc.w/sdiv that -O0 avoids), so each variant must boot clean independently.
+// Built via test/firmware/armcc/build_corpus_opt.ps1 (Windows NTFS); .text
+// grows O0 > O2 > Oz, confirming the levels are distinct.
+
+namespace {
+void expect_opt_boots_clean(const char* stem, const char* opt) {
+    // ARMCC_FW_DIR has no trailing '/', so add it (the original tests get it via
+    // the "/nucleo_..." string-literal concatenation).
+    std::string path = std::string(ARMCC_FW_DIR) + "/nucleo_f103rb_" + stem +
+                       ".ac6-" + opt + ".axf";
+    EXPECT_EQ(boot_clean_or_diag(path.c_str(), 2'000'000), "")
+        << std::string(stem) + " -" + opt + " (armcc/AC6) failed to boot clean";
+}
+} // namespace
+
+TEST(FirmwareArmcc, GpioIoToggleOptO0BootsClean) { expect_opt_boots_clean("gpio_iotoggle", "O0"); }
+TEST(FirmwareArmcc, GpioIoToggleOptO2BootsClean) { expect_opt_boots_clean("gpio_iotoggle", "O2"); }
+TEST(FirmwareArmcc, GpioIoToggleOptOzBootsClean) { expect_opt_boots_clean("gpio_iotoggle", "Oz"); }
+
+TEST(FirmwareArmcc, TimTimeBaseOptO0BootsClean) { expect_opt_boots_clean("tim_timebase", "O0"); }
+TEST(FirmwareArmcc, TimTimeBaseOptO2BootsClean) { expect_opt_boots_clean("tim_timebase", "O2"); }
+TEST(FirmwareArmcc, TimTimeBaseOptOzBootsClean) { expect_opt_boots_clean("tim_timebase", "Oz"); }
+
+TEST(FirmwareArmcc, UartPrintfOptO0BootsClean) { expect_opt_boots_clean("uart_printf", "O0"); }
+TEST(FirmwareArmcc, UartPrintfOptO2BootsClean) { expect_opt_boots_clean("uart_printf", "O2"); }
+TEST(FirmwareArmcc, UartPrintfOptOzBootsClean) { expect_opt_boots_clean("uart_printf", "Oz"); }
