@@ -314,14 +314,24 @@ CPU::CPUExpected<void> CortexM3CPU::execute_32bit(uint16_t hw1, uint16_t hw2) {
             int32_t a = static_cast<int32_t>(rr(rn));
             int32_t b = static_cast<int32_t>(rr(rm));
             if (b == 0) {
-                return wr(rd, 0);
+                // Cortex-M3 SDIV/0 (CCR.DIV_0_TRP==0, reset default) returns 0
+                // for BOTH signs — confirmed vs qemu-system-arm (mps2-an385);
+                // see scripts/qemu_sdiv_oracle.sh + notes 017. (DIV_0_TRP==1
+                // UsageFault is a configurable-fault feature, not modelled.)
+                return wr(rd, 0u);
+            }
+            // INT_MIN / -1 is signed overflow (UB in C); ARMv7-M saturates to
+            // INT_MIN. Guard before the C division to avoid UB.
+            if (static_cast<uint32_t>(a) == 0x80000000u && b == -1) {
+                return wr(rd, 0x80000000u);
             }
             return wr(rd, static_cast<uint32_t>(a / b));
         }
         uint32_t a = rr(rn);
         uint32_t b = rr(rm);
         if (b == 0) {
-            return wr(rd, 0);
+            // UDIV/0 → 0 (DIV_0_TRP==0 default).
+            return wr(rd, 0u);
         }
         return wr(rd, a / b);
     }
