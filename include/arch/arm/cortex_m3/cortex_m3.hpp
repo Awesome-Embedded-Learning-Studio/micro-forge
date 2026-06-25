@@ -90,6 +90,13 @@ class CortexM3CPU : public CPU {
     enum class FlagPostOperation { Add, Sub };
     void update_flags(FlagPostOperation p, data_t a, data_t b, data_t result);
 
+    // ADC/SBC flag updates with an explicit carry-in. Unlike update_flags(Add/
+    // Sub), C and V are derived from a 64-bit sum so the carry-in folds in
+    // correctly even when the second operand is 0xFFFFFFFF (folding Cin into the
+    // operand before a plain add/sub would wrap there and mis-report C).
+    void set_adc_flags(data_t a, data_t b, data_t cin, data_t result);
+    void set_sbc_flags(data_t a, data_t b, data_t cin, data_t result);
+
     /* If we get false, then we need to jump */
     bool condition_need_execute(uint8_t command);
     CPUExpected<void> push_stack(data_t val);

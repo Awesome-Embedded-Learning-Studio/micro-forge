@@ -729,3 +729,178 @@ TEST_F(CortexM3Test, AddsRorOperandComputesResultAndFlags) {
     EXPECT_EQ(reg(0) & (1u << 31), 0u) << "N clear";
     EXPECT_EQ(reg(0) & (1u << 30), 0u) << "Z clear";
 }
+
+// ── ADC.W/SBC.W (shifted register) — matrix F32-6 gap (Tier-1a) ──
+// op 10/11 were absent from t32_dataproc_reg's switch → IllegalInstruction.
+// Flags use a carry-in-aware path (set_adc_flags/set_sbc_flags) so the
+// 0xFFFFFFFF+C edge reports C correctly. Encodings via objdump -mcpu=cortex-m3.
+
+TEST_F(CortexM3Test, AdcShiftedRegCarryOutAndZero) {
+    // eb51 1302 = adcs.w r3, r1, r2, lsl #4. 0xFFFFFFFF + 0 + C(1) = 0;
+    // C=1 (carry-out), Z=1, N=0, V=0.
+    load_program({0xF386, 0x8800, 0xEB51, 0x1302, 0xF3EF, 0x8000});
+    reset_cpu();
+    set_reg(1, 0xFFFFFFFFu);
+    set_reg(2, 0u);
+    set_reg(6, 1u << 29); // C=1
+    start_cpu();
+    step_cpu();
+    step_cpu();
+    step_cpu();
+    EXPECT_EQ(reg(3), 0u);
+    EXPECT_NE(reg(0) & (1u << 29), 0u) << "carry-out sets C";
+    EXPECT_NE(reg(0) & (1u << 30), 0u) << "zero result sets Z";
+    EXPECT_EQ(reg(0) & (1u << 31), 0u) << "N clear";
+    EXPECT_EQ(reg(0) & (1u << 28), 0u) << "V clear";
+}
+
+TEST_F(CortexM3Test, AdcShiftedRegNoShiftSignedOverflow) {
+    // eb51 0302 = adcs.w r3, r1, r2 (no shift). C=0 at reset.
+    // 0x7FFFFFFF + 1 + 0 = 0x80000000; V=1 (pos+pos→neg), N=1, C=0, Z=0.
+    load_program({0xEB51, 0x0302, 0xF3EF, 0x8000});
+    reset_cpu();
+    set_reg(1, 0x7FFFFFFFu);
+    set_reg(2, 1u);
+    start_cpu();
+    step_cpu();
+    step_cpu();
+    EXPECT_EQ(reg(3), 0x80000000u);
+    EXPECT_NE(reg(0) & (1u << 31), 0u) << "negative result sets N";
+    EXPECT_NE(reg(0) & (1u << 28), 0u) << "signed overflow sets V";
+    EXPECT_EQ(reg(0) & (1u << 29), 0u) << "no carry-out";
+    EXPECT_EQ(reg(0) & (1u << 30), 0u) << "Z clear";
+}
+
+TEST_F(CortexM3Test, SbcShiftedRegNoBorrowKeepsCarry) {
+    // eb71 0302 = sbcs.w r3, r1, r2. C=1 (no borrow subtracted).
+    // 5 - 1 - !C(0) = 4; C stays 1 (no borrow), N=0, Z=0, V=0.
+    load_program({0xF386, 0x8800, 0xEB71, 0x0302, 0xF3EF, 0x8000});
+    reset_cpu();
+    set_reg(1, 5u);
+    set_reg(2, 1u);
+    set_reg(6, 1u << 29);
+    start_cpu();
+    step_cpu();
+    step_cpu();
+    step_cpu();
+    EXPECT_EQ(reg(3), 4u);
+    EXPECT_NE(reg(0) & (1u << 29), 0u) << "no borrow keeps C set";
+    EXPECT_EQ(reg(0) & (1u << 31), 0u) << "N clear";
+    EXPECT_EQ(reg(0) & (1u << 28), 0u) << "V clear";
+}
+
+TEST_F(CortexM3Test, SbcShiftedRegBorrowClearsCarry) {
+    // eb71 03d2 = sbcs.w r3, r1, r2, lsr #3. C=1.
+    // 0x10 - (0xFF >> 3 = 0x1F) - 0 = 0xFFFFFFF1; C=0 (borrow), N=1, V=0.
+    load_program({0xF386, 0x8800, 0xEB71, 0x03D2, 0xF3EF, 0x8000});
+    reset_cpu();
+    set_reg(1, 0x10u);
+    set_reg(2, 0xFFu);
+    set_reg(6, 1u << 29);
+    start_cpu();
+    step_cpu();
+    step_cpu();
+    step_cpu();
+    EXPECT_EQ(reg(3), 0xFFFFFFF1u);
+    EXPECT_EQ(reg(0) & (1u << 29), 0u) << "borrow clears C";
+    EXPECT_NE(reg(0) & (1u << 31), 0u) << "negative result sets N";
+    EXPECT_EQ(reg(0) & (1u << 28), 0u) << "V clear (in range)";
+}
+
+// ── ADCS/SBCS (16-bit register) — matrix F16-3 gap (Tier-1b) ──
+// op 5/6 computed the right result but only called update_nz; C/V never set.
+
+TEST_F(CortexM3Test, Adcs16BitSetsCarryAndZero) {
+    // 414b = adcs r3, r1 → R3 = R3 + R1 + C. C=1.
+    // 0xFFFFFFFF + 0 + 1 = 0; C=1, Z=1, N=0, V=0.
+    load_program({0xF386, 0x8800, 0x414B, 0xF3EF, 0x8000});
+    reset_cpu();
+    set_reg(3, 0xFFFFFFFFu); // Rdn (source + dest)
+    set_reg(1, 0u);          // Rm
+    set_reg(6, 1u << 29);
+    start_cpu();
+    step_cpu();
+    step_cpu();
+    step_cpu();
+    EXPECT_EQ(reg(3), 0u);
+    EXPECT_NE(reg(0) & (1u << 29), 0u) << "carry-out sets C";
+    EXPECT_NE(reg(0) & (1u << 30), 0u) << "zero result sets Z";
+    EXPECT_EQ(reg(0) & (1u << 28), 0u) << "V clear";
+}
+
+TEST_F(CortexM3Test, Sbcs16BitBorrowClearsCarry) {
+    // 418b = sbcs r3, r1 → R3 = R3 - R1 - !C. C=1.
+    // 5 - 7 - 0 = 0xFFFFFFFE; C=0 (borrow), N=1, V=0.
+    load_program({0xF386, 0x8800, 0x418B, 0xF3EF, 0x8000});
+    reset_cpu();
+    set_reg(3, 5u);
+    set_reg(1, 7u);
+    set_reg(6, 1u << 29);
+    start_cpu();
+    step_cpu();
+    step_cpu();
+    step_cpu();
+    EXPECT_EQ(reg(3), 0xFFFFFFFEu);
+    EXPECT_EQ(reg(0) & (1u << 29), 0u) << "borrow clears C";
+    EXPECT_NE(reg(0) & (1u << 31), 0u) << "negative sets N";
+    EXPECT_EQ(reg(0) & (1u << 28), 0u) << "V clear";
+}
+
+// ── SDIV/UDIV divide-by-zero + overflow (Tier-1c) ──
+// ARMv7-M (CCR.DIV_0_TRP=0, reset default): UDIV/0→0; SDIV/0→0 if dividend≥0
+// else INT_MIN; INT_MIN/-1 saturates to INT_MIN (C UB otherwise).
+
+TEST_F(CortexM3Test, SdivByZeroNegativeYieldsZero) {
+    // fb91 f3f2 = sdiv r3, r1, r2. Cortex-M3 SDIV/0 → 0 for BOTH signs
+    // (confirmed vs qemu-system-arm mps2-an385, notes 017). The substantive
+    // fix in this batch is the INT_MIN/-1 saturation guard below.
+    load_program({0xFB91, 0xF3F2});
+    reset_cpu();
+    set_reg(1, 0xFFFFFFFFu); // -1
+    set_reg(2, 0u);
+    start_cpu();
+    step_cpu();
+    EXPECT_EQ(reg(3), 0u);
+}
+
+TEST_F(CortexM3Test, SdivByZeroNonNegativeYieldsZero) {
+    load_program({0xFB91, 0xF3F2});
+    reset_cpu();
+    set_reg(1, 5u);
+    set_reg(2, 0u);
+    start_cpu();
+    step_cpu();
+    EXPECT_EQ(reg(3), 0u);
+}
+
+TEST_F(CortexM3Test, SdivIntMinOverMinusOneSaturates) {
+    // fb91 f3f2 = sdiv r3, r1, r2. INT_MIN / -1 saturates to INT_MIN.
+    load_program({0xFB91, 0xF3F2});
+    reset_cpu();
+    set_reg(1, 0x80000000u);
+    set_reg(2, 0xFFFFFFFFu);
+    start_cpu();
+    step_cpu();
+    EXPECT_EQ(reg(3), 0x80000000u);
+}
+
+TEST_F(CortexM3Test, SdivNormalRoundsTowardZero) {
+    load_program({0xFB91, 0xF3F2});
+    reset_cpu();
+    set_reg(1, 100u);
+    set_reg(2, 7u);
+    start_cpu();
+    step_cpu();
+    EXPECT_EQ(reg(3), 14u);
+}
+
+TEST_F(CortexM3Test, UdivByZeroYieldsZero) {
+    // fbb1 f3f2 = udiv r3, r1, r2. 123 / 0 → 0.
+    load_program({0xFBB1, 0xF3F2});
+    reset_cpu();
+    set_reg(1, 123u);
+    set_reg(2, 0u);
+    start_cpu();
+    step_cpu();
+    EXPECT_EQ(reg(3), 0u);
+}

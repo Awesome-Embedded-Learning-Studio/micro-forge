@@ -183,6 +183,44 @@ void CortexM3CPU::update_flags(FlagPostOperation p, data_t a, data_t b,
     }
 }
 
+void CortexM3CPU::set_adc_flags(data_t a, data_t b, data_t cin, data_t result) {
+    // ADC = a + b + cin. Carry-out is bit 32 of the full sum; V is signed
+    // overflow (operands share sign, result flips it).
+    xpsr_ &= ~(PSR_N | PSR_Z | PSR_C | PSR_V);
+    if (result & 0x80000000u) {
+        xpsr_ |= PSR_N;
+    }
+    if (result == 0) {
+        xpsr_ |= PSR_Z;
+    }
+    uint64_t sum = static_cast<uint64_t>(a) + b + cin;
+    if (sum >> 32) {
+        xpsr_ |= PSR_C;
+    }
+    if (((~(a ^ b)) & (a ^ result)) & 0x80000000u) {
+        xpsr_ |= PSR_V;
+    }
+}
+
+void CortexM3CPU::set_sbc_flags(data_t a, data_t b, data_t cin, data_t result) {
+    // SBC = a - b - !cin == a + ~b + cin (mod 2^32). The carry-out of that sum
+    // is the ARM "no borrow" C flag; V is signed overflow of a - b.
+    xpsr_ &= ~(PSR_N | PSR_Z | PSR_C | PSR_V);
+    if (result & 0x80000000u) {
+        xpsr_ |= PSR_N;
+    }
+    if (result == 0) {
+        xpsr_ |= PSR_Z;
+    }
+    uint64_t sum = static_cast<uint64_t>(a) + (~b) + cin;
+    if (sum >> 32) {
+        xpsr_ |= PSR_C;
+    }
+    if (((a ^ b) & (a ^ result)) & 0x80000000u) {
+        xpsr_ |= PSR_V;
+    }
+}
+
 bool CortexM3CPU::condition_need_execute(uint8_t c) {
     bool N = xpsr_ & PSR_N;
     bool Z = xpsr_ & PSR_Z;

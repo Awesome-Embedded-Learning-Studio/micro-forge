@@ -297,12 +297,26 @@ CPU::CPUExpected<void> CortexM3CPU::execute_16bit(uint16_t insn) {
                     shift_carry = s.carry;
                     break;
                 }
-                case 0x5:
-                    result = a + b + ((xpsr_ & PSR_C) ? 1 : 0);
-                    break;
-                case 0x6:
-                    result = a - b - ((xpsr_ & PSR_C) ? 0 : 1);
-                    break;
+                case 0x5: { // ADCS: a + b + C — full N/Z/C/V (was update_nz only)
+                    data_t cin = (xpsr_ & PSR_C) ? 1u : 0u;
+                    result = a + b + cin;
+                    auto res = wr(rd, result);
+                    if (!res) {
+                        return res;
+                    }
+                    set_adc_flags(a, b, cin, result);
+                    return {};
+                }
+                case 0x6: { // SBCS: a - b - !C — full N/Z/C/V (was update_nz only)
+                    data_t cin = (xpsr_ & PSR_C) ? 1u : 0u;
+                    result = a - b - ((xpsr_ & PSR_C) ? 0u : 1u);
+                    auto res = wr(rd, result);
+                    if (!res) {
+                        return res;
+                    }
+                    set_sbc_flags(a, b, cin, result);
+                    return {};
+                }
                 case 0x7: { // ROR register
                     auto s = barrel_shift(3, a, b & 0xFF, (xpsr_ & PSR_C) != 0);
                     result = s.value;

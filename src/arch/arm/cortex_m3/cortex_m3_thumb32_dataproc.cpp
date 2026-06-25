@@ -102,14 +102,13 @@ CPU::CPUExpected<void> CortexM3CPU::t32_dataproc_imm(uint16_t hw1, uint16_t hw2)
     }
 
     if (s_bit) {
+        data_t cin = (xpsr_ & PSR_C) ? 1u : 0u;
         if (op2 == 8) { // ADD
             update_flags(FlagPostOperation::Add, rn_val, imm32, result);
-        } else if (op2 == 10) { // ADC
-            update_flags(FlagPostOperation::Add, rn_val,
-                         imm32 + ((xpsr_ & PSR_C) ? 1u : 0u), result);
+        } else if (op2 == 10) { // ADC = rn + imm + C
+            set_adc_flags(rn_val, imm32, cin, result);
         } else if (op2 == 11) { // SBC = rn - imm - !C
-            update_flags(FlagPostOperation::Sub, rn_val,
-                         imm32 + ((xpsr_ & PSR_C) ? 0u : 1u), result);
+            set_sbc_flags(rn_val, imm32, cin, result);
         } else if (op2 == 13) { // SUB = rn - imm
             update_flags(FlagPostOperation::Sub, rn_val, imm32, result);
         } else if (op2 == 14) { // RSB = imm - rn; minuend is the immediate.
@@ -195,6 +194,14 @@ CPU::CPUExpected<void> CortexM3CPU::t32_dataproc_reg(uint16_t hw1, uint16_t hw2)
         case 8:
             result = rn_val + shifted;
             break;
+        case 10: { // ADC = Rn + shifted + C
+            result = rn_val + shifted + ((xpsr_ & PSR_C) ? 1u : 0u);
+            break;
+        }
+        case 11: { // SBC = Rn - shifted - !C
+            result = rn_val - shifted - ((xpsr_ & PSR_C) ? 0u : 1u);
+            break;
+        }
         case 13:
             result = rn_val - shifted;
             break;
@@ -206,8 +213,13 @@ CPU::CPUExpected<void> CortexM3CPU::t32_dataproc_reg(uint16_t hw1, uint16_t hw2)
     }
 
     if (s_bit) {
+        data_t cin = (xpsr_ & PSR_C) ? 1u : 0u;
         if (op == 8) { // ADD
             update_flags(FlagPostOperation::Add, rn_val, shifted, result);
+        } else if (op == 10) { // ADC
+            set_adc_flags(rn_val, shifted, cin, result);
+        } else if (op == 11) { // SBC
+            set_sbc_flags(rn_val, shifted, cin, result);
         } else if (op == 13) { // SUB = rn - shifted
             update_flags(FlagPostOperation::Sub, rn_val, shifted, result);
         } else if (op == 14) { // RSB = shifted - rn; minuend is the operand.
