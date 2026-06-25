@@ -24,6 +24,8 @@ PowerShell,把现有 3 个 CubeF1 示例(GPIO/TIM/UART)在 AC6 的 **-O0/-O2/-Oz
 - **必须在 Windows NTFS 跑**(WSL 9p 建不了 Keil `.__i`);产物落 `D:\mf\out\`,用户从 WSL `cp /mnt/d/mf/out/*.ac6-*.axf test/firmware/armcc/` 回库。
 - opt 级若被 Keil 结构化 Optimization 字段覆盖(非 MiscControls),在 GUI 同步设或在脚本里调 —— 这块以用户(Keil 侧专家)实测为准,脚本为权威起点。
 - `-DryRun` 只 patch+打印不编,便于先核对 .uvprojx 改动。
+- **结构事实(实测 vendored `third_party/STM32CubeF1`,纠正 REGENERATE 口径)**:工程文件是 **`Project.uvprojx`**(不是 `STM32F103RB_Nucleo.uvprojx`);`<TargetName>/<OutputName>=STM32F103RB_Nucleo`,`<OutputDirectory>STM32F103RB_Nucleo\` → 产物 `MDK-ARM\STM32F103RB_Nucleo\STM32F103RB_Nucleo.axf`;include 路径 `../../../../../../Drivers` 是 **6 级**(不是 5),故 Drivers/ 与 Projects/ 必须在 CubeF1 根顶层。脚本据此修了初版两 bug(工程名错 + 跨优化级产物撞),并**按优化级复制整个 MDK-ARM 目录**(`MDK-ARM-<opt>`)做产物/对象隔离;opt 标志经 XML **只注入 Cads(C 编译器)** 的 MiscControls(不碰汇编)。
+- **重建 D:\mf**:`scripts/prepare_corpus.sh`(WSL,写 `/mnt/d/mf`)从 vendored 树拷最小子树(Drivers/BSP + HAL_Driver + CMSIS/{Device,Core,Include},**砍掉 DSP/Lib/docs/NN 等 ~111M 无关大块**;3 个 Examples),保持 6 级深度。`/mnt/d` 从 WSL 可读写(只有 Keil *build* 必须 Windows 原生跑)。实测重建后 22M,深度校验通过。
 
 ### 门禁集成(Tier 2 收尾,待 .axf 就位)
 `test/test_firmware_armcc.cpp` 每个 opt 变体加一个 `TEST(FirmwareArmcc, <Ex>Opt<O>BootsClean)`,加载对应 `.ac6-<opt>.axf` 跑 `reset→main→while(1)` 断言 0-fault(复用现有 `Stm32f103Soc::load_elf`)。.axf 由用户用脚本产出后提交(CI 无 Keil,二进制入库,同现有 3 份)。这部分代码待 .axf 落地再写,避免空 fixture。
