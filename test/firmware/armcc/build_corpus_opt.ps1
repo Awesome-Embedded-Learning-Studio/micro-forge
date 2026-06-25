@@ -36,10 +36,10 @@ param(
 )
 $ErrorActionPreference = "Stop"
 
-# Banner — confirms you run a current copy (rev 2026-06-25d: in-place per-opt
-# .uvprojx + OutputDirectory isolation, no dir copy). If you do NOT see this
-# line, D:\mf\build_corpus_opt.ps1 is stale — re-copy from the repo.
-Write-Host "build_corpus_opt.ps1 rev 2026-06-25d . Root=$Root . DryRun=$([bool]$DryRun) . OptLevels=$($OptLevels -join ',')" -ForegroundColor DarkGray
+# Banner — confirms you run a current copy (rev 2026-06-25e: GetElementsByTagName
+# for C MiscControls so --C99 is actually removed). If you do NOT see this line,
+# D:\mf\build_corpus_opt.ps1 is stale — re-copy from the repo.
+Write-Host "build_corpus_opt.ps1 rev 2026-06-25e . Root=$Root . DryRun=$([bool]$DryRun) . OptLevels=$($OptLevels -join ',')" -ForegroundColor DarkGray
 
 $ExampleMap = @{
     "GPIO/GPIO_IOToggle" = "gpio_iotoggle"
@@ -74,12 +74,16 @@ function Set-UvprojxAc6Opt {
             $on = $tco.SelectSingleNode('OutputName')
             if ($on) { $on.InnerText = "STM32F103RB_Nucleo-$OptLevel" }
         }
-        # Patch 2+4 (C compiler only): drop AC5 --C99 and stale -O, set the opt flag.
-        $mc = $t.SelectSingleNode('TargetOption/Cads/VariousControls/MiscControls')
-        if ($mc) {
-            $val = $mc.InnerText
-            $val = $val -replace '--C99\s*', '' -replace '(^|\s)-O[0-3z]+\s*', ' '
-            $mc.InnerText = ($val.Trim() + ' -' + $OptLevel).Trim()
+        # Patch 2+4 (C compiler only): drop AC5 --C99 and stale -O, set opt flag.
+        # GetElementsByTagName dodges the exact Cads nesting depth (a bare XPath
+        # TargetOption/Cads/.../MiscControls failed to match on this .uvprojx).
+        foreach ($mc in $t.GetElementsByTagName('MiscControls')) {
+            $gp = $mc.ParentNode.ParentNode   # MiscControls -> VariousControls -> Cads|Aads
+            if ($gp -and $gp.LocalName -eq 'Cads') {
+                $val = $mc.InnerText
+                $val = $val -replace '--C99\s*', '' -replace '(^|\s)-O[0-3z]+\s*', ' '
+                $mc.InnerText = ($val.Trim() + ' -' + $OptLevel).Trim()
+            }
         }
     }
     $enc = New-Object System.Text.UTF8Encoding($false)
