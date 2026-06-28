@@ -11,43 +11,10 @@ using namespace thumb;
 // ── 16-bit Thumb decode ──
 
 CPU::CPUExpected<void> CortexM3CPU::execute_16bit(uint16_t insn) {
-
-    auto rr = [&](uint8_t idx) -> data_t {
-        return regs_.unchecked(idx);
-    };
-    auto wr = [&](uint8_t idx, data_t val) -> CPUExpected<void> {
-        auto res = write_reg(idx, val);
-        if (!res) {
-            return std::unexpected{res.error()};
-        }
-        return {};
-    };
-    // Bus read helper: returns error on failure
-    auto br = [&](addr_t addr, Width w) -> CPUExpected<data_t> {
-        if (!bus_) {
-            record_bus_fault(BusError::InvalidDevice, addr, w);
-            return std::unexpected{CPUError::DataAccessFault};
-        }
-        auto v = bus_->read(addr, w);
-        if (!v) {
-            record_bus_fault(v.error(), addr, w);
-            return std::unexpected{CPUError::DataAccessFault};
-        }
-        return *v;
-    };
-    // Bus write helper: returns error on failure
-    auto bw = [&](addr_t addr, data_t val, Width w) -> CPUExpected<void> {
-        if (!bus_) {
-            record_bus_fault(BusError::InvalidDevice, addr, w);
-            return std::unexpected{CPUError::DataAccessFault};
-        }
-        auto v = bus_->write(addr, val, w);
-        if (!v) {
-            record_bus_fault(v.error(), addr, w);
-            return std::unexpected{CPUError::DataAccessFault};
-        }
-        return {};
-    };
+    // rr/wr/br/bw are shared member functions (defined in cortex_m3_thumb32.cpp,
+    // declared in the header). The per-function lambdas that used to live here
+    // were byte-for-byte duplicates of them — removed for DRY. Same call syntax,
+    // same bodies, no behavior change.
 
     // ── CPS effect {i,f}: CPSIE (enable) / CPSID (disable) ──
     // 0xB66x (CPSIE) / 0xB67x (CPSID); bit4 = 0/1 (enable/disable),
