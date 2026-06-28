@@ -13,7 +13,7 @@ using namespace thumb;
 CPU::CPUExpected<void> CortexM3CPU::execute_16bit(uint16_t insn) {
 
     auto rr = [&](uint8_t idx) -> data_t {
-        return regs_.read(idx).value_or(0);
+        return regs_.unchecked(idx);
     };
     auto wr = [&](uint8_t idx, data_t val) -> CPUExpected<void> {
         auto res = write_reg(idx, val);

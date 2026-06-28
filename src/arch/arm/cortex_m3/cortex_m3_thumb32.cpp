@@ -12,7 +12,7 @@ using namespace thumb;
 // Promoted from execute_32bit-local lambdas so the family handlers split into
 // cortex_m3_thumb32_{loadstore,dataproc}.cpp can use them. Bodies unchanged.
 data_t CortexM3CPU::rr(uint8_t idx) {
-    return regs_.read(idx).value_or(0);
+    return regs_.unchecked(idx);
 }
 CPU::CPUExpected<void> CortexM3CPU::wr(uint8_t idx, data_t val) {
     auto res = write_reg(idx, val);
