@@ -18,7 +18,12 @@ namespace micro_forge::cpu {
 namespace arm::cortex_m3 {
 class CortexM3CPU : public CPU {
   public:
-    explicit CortexM3CPU(WeakPtr<memory::Bus> bus) : bus_(bus) {}
+    // Raw observer pointer, not WeakPtr: the Bus is owned by Machine and
+    // outlives the CPU (both are SoC members; Bus is constructed first). This
+    // matches the existing nvic_/scb_ pattern — a WeakPtr here was a misuse
+    // (the ownership tree is a clean unique_ptr, no cycle to break) and cost a
+    // control-block deref + IsValid on every fetch/load/store.
+    explicit CortexM3CPU(memory::Bus* bus) : bus_(bus) {}
     // CPU Interfaces
     CPUExpected<void> reset() override;
     CPUExpected<void> step() override;
@@ -36,8 +41,6 @@ class CortexM3CPU : public CPU {
     CPUExpected<ticks_t> cycles() const override;
 
     void launch() noexcept { current_status_ = State::Running; };
-
-    WeakPtr<memory::Bus> memory_bus() { return bus_; }
 
     void set_nvic(periph::NvicPeripheral& nvic) { nvic_ = &nvic; }
     void set_scb(periph::ScbPeripheral& scb) { scb_ = &scb; }
@@ -121,7 +124,7 @@ class CortexM3CPU : public CPU {
                             uint16_t hw2, bool is32);
 
   private:
-    WeakPtr<memory::Bus> bus_;
+    memory::Bus* bus_ = nullptr;
     reg::Registers<REGCNT> regs_;
     State current_status_ = State::Halted;
     std::optional<FaultRecord> last_fault_;

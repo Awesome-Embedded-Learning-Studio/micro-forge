@@ -50,7 +50,7 @@ Stm32f103Soc::create() {
 
     // CPU
     auto cm3 =
-        std::make_unique<cpu::arm::cortex_m3::CortexM3CPU>(m.bus->GetWeak());
+        std::make_unique<cpu::arm::cortex_m3::CortexM3CPU>(m.bus.get());
     auto cm3_weak = cm3->GetWeak();
     auto* cm3_ptr = cm3.get();
     m.cpu = std::move(cm3);

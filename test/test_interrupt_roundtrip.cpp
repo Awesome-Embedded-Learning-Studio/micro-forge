@@ -69,7 +69,7 @@ class InterruptTest : public ::testing::Test {
                                                                 *systick_, scb_)
                         .has_value());
 
-        cpu_ = std::make_unique<CortexM3CPU>(bus_.GetWeak());
+        cpu_ = std::make_unique<CortexM3CPU>(&bus_);
         cpu_->set_nvic(nvic_);
         cpu_->set_scb(scb_);
         // TIM2 at 0x40000000; UIF edge → NVIC TIM2 line (IRQ 28).

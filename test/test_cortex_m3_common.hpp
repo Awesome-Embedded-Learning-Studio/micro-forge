@@ -29,7 +29,7 @@ class CortexM3Test : public ::testing::Test {
     void SetUp() override {
         ASSERT_TRUE(bus_.map(memory::region(kMemBase, kMemSize, mem_.GetWeak()))
                         .has_value());
-        cpu_ = std::make_unique<CortexM3CPU>(bus_.GetWeak());
+        cpu_ = std::make_unique<CortexM3CPU>(&bus_);
     }
 
     void load_program(const std::vector<uint16_t>& insns, addr_t base = 0) {

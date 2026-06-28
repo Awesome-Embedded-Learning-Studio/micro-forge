@@ -46,8 +46,7 @@ class TickCounter : public periph::Device {
 class CoordinatorTest : public ::testing::Test {
   protected:
     void SetUp() override {
-        auto bus_ptr = bus_.GetWeak();
-        cpu_ = std::make_unique<cpu::arm::cortex_m3::CortexM3CPU>(bus_ptr);
+        cpu_ = std::make_unique<cpu::arm::cortex_m3::CortexM3CPU>(&bus_);
         (void)cpu_->reset();
         cpu_->launch();
 
