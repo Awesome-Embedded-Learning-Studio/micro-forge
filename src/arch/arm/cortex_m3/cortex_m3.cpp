@@ -335,17 +335,18 @@ Expected<uint16_t> CortexM3CPU::fetch16(addr_t addr) {
     if (!bus_) {
         return std::unexpected{BusError::InvalidDevice};
     }
-    auto lo = bus_->read(addr, Width::Byte);
-    if (!lo) {
-        record_bus_fault(lo.error(), addr, Width::Byte);
-        return std::unexpected{lo.error()};
+    // One HalfWord read replaces two Byte reads: instruction fetch only ever
+    // hits FlatMemory (flash/SRAM), whose read() builds the little-endian
+    // halfword via the same byte-shift loop, so the result is bit-identical to
+    // the old `lo | (hi << 8)` reconstruction — but halves the Bus::read calls
+    // per fetch (bit-band check + find_region + WeakPtr + virtual dispatch +
+    // eager trace-arg eval each happen once, not twice).
+    auto half = bus_->read(addr, Width::HalfWord);
+    if (!half) {
+        record_bus_fault(half.error(), addr, Width::HalfWord);
+        return std::unexpected{half.error()};
     }
-    auto hi = bus_->read(addr + 1, Width::Byte);
-    if (!hi) {
-        record_bus_fault(hi.error(), addr + 1, Width::Byte);
-        return std::unexpected{hi.error()};
-    }
-    return static_cast<uint16_t>(*lo | (*hi << 8));
+    return static_cast<uint16_t>(*half);
 }
 
 // ── Step ──
