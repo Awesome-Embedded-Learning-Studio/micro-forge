@@ -59,6 +59,12 @@ class CortexM3CPU : public CPU {
     const std::optional<FaultRecord>& last_fault() const { return last_fault_; }
 
   private:
+    // step() split into interrupt gating (step_take_interrupt) and the
+    // fetch/IT/dispatch/fault pipeline (step_execute_one). StepFlow signals
+    // whether take_interrupt consumed the step (exception entry).
+    enum class StepFlow { Continue, Return };
+    CPUExpected<StepFlow> step_take_interrupt();
+    CPUExpected<void> step_execute_one();
     Expected<uint16_t> fetch16(addr_t addr);
     CPUExpected<void> execute_16bit(uint16_t insn);
     CPUExpected<void> execute_32bit(uint16_t hw1, uint16_t hw2);

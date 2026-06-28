@@ -351,16 +351,10 @@ Expected<uint16_t> CortexM3CPU::fetch16(addr_t addr) {
 
 // ── Step ──
 
-CPU::CPUExpected<void> CortexM3CPU::step() {
-    if (current_status_ != State::Running) {
-        return std::unexpected{CPUError::NotRunning};
-    }
-    clear_pending_bus_fault();
-
-    // Check for pending interrupts before instruction fetch.
-    // If an interrupt is taken, this step is consumed by the entry sequence
-    // (stacking + vector fetch). Handler instructions start executing next
-    // step.
+CPU::CPUExpected<CortexM3CPU::StepFlow> CortexM3CPU::step_take_interrupt() {
+    // Check for pending interrupts before instruction fetch. If an interrupt is
+    // taken, this step is consumed by the entry sequence (stacking + vector
+    // fetch); handler instructions start executing next step.
     const size_t depth_before = active_priorities_.size();
     auto irq_res = check_and_handle_interrupt();
     if (!irq_res) {
@@ -371,9 +365,12 @@ CPU::CPUExpected<void> CortexM3CPU::step() {
         // An exception entry consumed this step (covers first entry and
         // preemption of a running handler).
         cycles_++;
-        return {};
+        return StepFlow::Return;
     }
+    return StepFlow::Continue;
+}
 
+CPU::CPUExpected<void> CortexM3CPU::step_execute_one() {
     auto pc_res = read_pc_raw();
     if (!pc_res) {
         current_status_ = State::Faulted;
@@ -473,6 +470,22 @@ CPU::CPUExpected<void> CortexM3CPU::step() {
 
     cycles_++;
     return {};
+}
+
+CPU::CPUExpected<void> CortexM3CPU::step() {
+    if (current_status_ != State::Running) {
+        return std::unexpected{CPUError::NotRunning};
+    }
+    clear_pending_bus_fault();
+
+    auto irq = step_take_interrupt();
+    if (!irq) {
+        return std::unexpected{irq.error()};
+    }
+    if (*irq == StepFlow::Return) {
+        return {};
+    }
+    return step_execute_one();
 }
 
 } // namespace micro_forge::cpu::arm::cortex_m3
