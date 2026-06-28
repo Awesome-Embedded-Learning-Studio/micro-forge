@@ -46,6 +46,54 @@ CPU::CPUExpected<void> CortexM3CPU::bw(addr_t addr, data_t val, Width w) {
     return {};
 }
 
+// ── 32-bit Thumb-2 family matchers + dispatch tables ──
+// Pure hw1/hw2 predicates, one per decode family. The tables in execute_32bit
+// pair each matcher with its handler IN MATCH-PRIORITY ORDER (load-bearing:
+// SSAT before dataproc-imm, LDREX/TBB before STRD) so dispatch priority is
+// visible and each row is independently testable. See CODING-TASTE §4.
+namespace {
+struct T32Dispatch {
+    bool (*match)(uint16_t hw1, uint16_t hw2);
+    CPU::CPUExpected<void> (CortexM3CPU::*handler)(uint16_t hw1, uint16_t hw2);
+};
+bool t32m_ssat_usat(uint16_t hw1, uint16_t) {
+    return (hw1 & 0xFFD0u) == 0xF300u || (hw1 & 0xFFD0u) == 0xF380u;
+}
+bool t32m_addsub_imm(uint16_t hw1, uint16_t hw2) {
+    return (hw1 & 0xF800u) == 0xF000u && (hw1 & 0x0200u) != 0u &&
+           (hw2 & 0x8000u) == 0u;
+}
+bool t32m_dataproc_imm(uint16_t hw1, uint16_t hw2) {
+    return (hw1 & 0xF800u) == 0xF000u && (hw1 & 0x0200u) == 0u &&
+           (hw2 & 0x8000u) == 0u;
+}
+bool t32m_loadstore_single(uint16_t hw1, uint16_t) {
+    return (hw1 & 0xFE00u) == 0xF800u;
+}
+bool t32m_dataproc_reg(uint16_t hw1, uint16_t hw2) {
+    return (hw1 & 0xFE00u) == 0xEA00u && (hw2 & 0x8000u) == 0u;
+}
+bool t32m_shift_reg(uint16_t hw1, uint16_t hw2) {
+    return (hw1 & 0xFF00u) == 0xFA00u && (hw2 & 0xF0F0u) == 0xF000u;
+}
+bool t32m_misc_reverse(uint16_t hw1, uint16_t hw2) {
+    return (hw1 & 0xFF00u) == 0xFA00u && (hw2 & 0xF000u) == 0xF000u &&
+           (hw2 & 0x00F0u) != 0u;
+}
+bool t32m_tbb_tbh(uint16_t hw1, uint16_t hw2) {
+    return (hw1 & 0xFFF0u) == 0xE8D0u && (hw2 & 0xFFE0u) == 0xF000u;
+}
+bool t32m_ldrex_strex(uint16_t hw1, uint16_t) {
+    return (hw1 & 0xFF60u) == 0xE840u;
+}
+bool t32m_strd_ldrd(uint16_t hw1, uint16_t) {
+    return (hw1 & 0xFE40u) == 0xE840u;
+}
+bool t32m_stm_ldm(uint16_t hw1, uint16_t) {
+    return (hw1 & 0xFE40u) == 0xE800u;
+}
+} // namespace
+
 // ── 32-bit Thumb-2 decode ──
 //
 // This is the dispatcher: each mask is checked in the same order as before the
@@ -278,30 +326,20 @@ CPU::CPUExpected<void> CortexM3CPU::execute_32bit(uint16_t hw1, uint16_t hw2) {
         return wr(rd, result);
     }
 
-    // ── SSAT / USAT (saturate; writes APSR.Q) ──
-    // Must precede dataproc-imm, which also matches 0xF3xx (insn[25]=0) and
-    // would misread SSAT as ADD-imm. mask 0xFFD0 frees hw1[5] (shift type).
-    if ((hw1 & 0xFFD0u) == 0xF300u || (hw1 & 0xFFD0u) == 0xF380u) {
-        return t32_ssat_usat(hw1, hw2);
-    }
-
-    // ── Add/subtract (plain imm12): insn[25]=1 (hw1[9]) ──
-    if ((hw1 & 0xF800) == 0xF000 && (hw1 & 0x0200) != 0 &&
-        (hw2 & 0x8000) == 0) {
-        return t32_addsub_plain_imm(hw1, hw2);
-    }
-
-    // ── Data processing (modified immediate): insn[25]=0 ──
-    if ((hw1 & 0xF800) == 0xF000 && (hw1 & 0x0200) == 0 &&
-        (hw2 & 0x8000) == 0) {
-        return t32_dataproc_imm(hw1, hw2);
-    }
-
-    // ── Load/Store single (immediate): str/ldr/strb/ldrb/strh/ldrh .W ──
-    // 0xFE00 mask covers both 0xF8xx (unsigned str/ldr/b/h) and 0xF9xx
-    // (signed LDRSB.W/LDRSH.W); the handler sign-extends the 0xF9xx forms.
-    if ((hw1 & 0xFE00) == 0xF800) {
-        return t32_loadstore_single(hw1, hw2);
+    // ── Data-side family dispatch (table-driven; table order = priority) ──
+    // SSAT/USAT must precede dataproc-imm (both match 0xF3xx with insn[25]=0);
+    // addsub-imm (insn[25]=1) and dataproc-imm (insn[25]=0) split on hw1[9].
+    // loadstore_single (0xFE00) covers 0xF8xx unsigned + 0xF9xx signed forms.
+    static const T32Dispatch t32_data_families[] = {
+        {t32m_ssat_usat, &CortexM3CPU::t32_ssat_usat},
+        {t32m_addsub_imm, &CortexM3CPU::t32_addsub_plain_imm},
+        {t32m_dataproc_imm, &CortexM3CPU::t32_dataproc_imm},
+        {t32m_loadstore_single, &CortexM3CPU::t32_loadstore_single},
+    };
+    for (const auto& entry : t32_data_families) {
+        if (entry.match(hw1, hw2)) {
+            return (this->*entry.handler)(hw1, hw2);
+        }
     }
 
     // ── UDIV / SDIV ──
@@ -380,46 +418,23 @@ CPU::CPUExpected<void> CortexM3CPU::execute_32bit(uint16_t hw1, uint16_t hw2) {
         return wr(rdhi, static_cast<uint32_t>(result >> 32));
     }
 
-    // ── Data processing (shifted register): AND, ORR, EOR, ADD, SUB, etc. ──
-    if ((hw1 & 0xFE00) == 0xEA00 && (hw2 & 0x8000) == 0) {
-        return t32_dataproc_reg(hw1, hw2);
-    }
-
-    // ── Shift register (LSL/LSR/ASR/ROR register) ──
-    if ((hw1 & 0xFF00) == 0xFA00 && (hw2 & 0xF0F0) == 0xF000) {
-        return t32_shift_reg(hw1, hw2);
-    }
-
-    // ── CLZ / RBIT / REV.W / REV16.W / REVSH.W ──
-    // 0xFA00 with op2 (hw2[7:4]) != 0; shift_reg above already took op2==0.
-    if ((hw1 & 0xFF00u) == 0xFA00u && (hw2 & 0xF000u) == 0xF000u &&
-        (hw2 & 0x00F0u) != 0u) {
-        return t32_misc_reverse(hw1, hw2);
-    }
-
-    // ── TBB / TBH (Table Branch) ──
-    // hw2 mask 0xFFE0 (not 0xF0F0) frees hw2[4:0] — TBH's H-bit at [4] and
-    // Rm at [3:0] — so TBH (0xF010) and TBB with Rm≠0 (e.g. 0xF004) are not
-    // disqualified; otherwise they fall through to STRD/LDRD or LDREX.
-    if ((hw1 & 0xFFF0) == 0xE8D0 && (hw2 & 0xFFE0) == 0xF000) {
-        return t32_tbb_tbh(hw1, hw2);
-    }
-
-    // ── LDREX / STREX (+B/+H) — single-core sim, no exclusive monitor ──
-    // Plain LD; STREX always reports success (Rd=0). Must precede the
-    // STRD/LDRD mask (0xFE40==0xE840), which otherwise swallows them.
-    if ((hw1 & 0xFF60u) == 0xE840u) {
-        return t32_ldrex_strex(hw1, hw2);
-    }
-
-    // ── STRD / LDRD (Store/Load Dual, immediate offset) ──
-    if ((hw1 & 0xFE40) == 0xE840) {
-        return t32_strd_ldrd(hw1, hw2);
-    }
-
-    // ── STM / LDM (Store/Load Multiple) ──
-    if ((hw1 & 0xFE40) == 0xE800) {
-        return t32_stm_ldm(hw1, hw2);
+    // ── Register-side family dispatch (table-driven; table order = priority) ──
+    // misc_reverse (op2≠0) must follow shift_reg (op2==0); LDREX (0xFF60) and
+    // TBB/TBH (0xE8D0) must precede STRD/LDRD (0xFE40) — STRD's mask is wider
+    // and would swallow them.
+    static const T32Dispatch t32_reg_families[] = {
+        {t32m_dataproc_reg, &CortexM3CPU::t32_dataproc_reg},
+        {t32m_shift_reg, &CortexM3CPU::t32_shift_reg},
+        {t32m_misc_reverse, &CortexM3CPU::t32_misc_reverse},
+        {t32m_tbb_tbh, &CortexM3CPU::t32_tbb_tbh},
+        {t32m_ldrex_strex, &CortexM3CPU::t32_ldrex_strex},
+        {t32m_strd_ldrd, &CortexM3CPU::t32_strd_ldrd},
+        {t32m_stm_ldm, &CortexM3CPU::t32_stm_ldm},
+    };
+    for (const auto& entry : t32_reg_families) {
+        if (entry.match(hw1, hw2)) {
+            return (this->*entry.handler)(hw1, hw2);
+        }
     }
 
     return std::unexpected{CPUError::IllegalInstruction};
