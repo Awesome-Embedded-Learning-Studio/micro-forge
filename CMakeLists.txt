@@ -12,6 +12,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(MICRO_FORGE_ARCH_BIT 32 CACHE STRING "Target architecture bit width (32 or 64)")
 set(ARCH_BIT ${MICRO_FORGE_ARCH_BIT})
 
+option(MICRO_FORGE_COVERAGE "Instrument micro_forge with gcov for coverage (COVERAGE-METHODOLOGY §2; build in a dedicated dir, e.g. -B build-cov -DMICRO_FORGE_COVERAGE=ON)" OFF)
+
 add_compile_options(-Wall -Wextra -Werror)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -66,6 +68,16 @@ target_include_directories(micro_forge PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_BINARY_DIR}
 )
+
+# gcov instrumentation (COVERAGE-METHODOLOGY §2): instrument the library under
+# test only — PRIVATE compile flags stay off gtest and the test drivers, while an
+# INTERFACE link option pulls libgcov into every consumer so the test exes flush
+# .gcda at exit. Opt-in (default OFF) to keep the day-to-day build fast.
+if(MICRO_FORGE_COVERAGE)
+    target_compile_options(micro_forge PRIVATE -fprofile-arcs -ftest-coverage)
+    target_link_options(micro_forge INTERFACE --coverage)
+    message(STATUS "micro_forge: gcov instrumentation ON — report via 'source scripts/use-python.sh && gcovr'")
+endif()
 
 # Unified CLI runner.
 add_executable(micro-forge src/cli/main.cpp src/cli/snapshot.cpp)
