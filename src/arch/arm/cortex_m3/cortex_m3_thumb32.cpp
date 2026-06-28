@@ -418,10 +418,10 @@ CPU::CPUExpected<void> CortexM3CPU::execute_32bit(uint16_t hw1, uint16_t hw2) {
         return wr(rdhi, static_cast<uint32_t>(result >> 32));
     }
 
-    // ── Register-side family dispatch (table-driven; table order = priority) ──
-    // misc_reverse (op2≠0) must follow shift_reg (op2==0); LDREX (0xFF60) and
-    // TBB/TBH (0xE8D0) must precede STRD/LDRD (0xFE40) — STRD's mask is wider
-    // and would swallow them.
+    // ── Register-side family dispatch (table-driven; table order = priority)
+    // ── misc_reverse (op2≠0) must follow shift_reg (op2==0); LDREX (0xFF60)
+    // and TBB/TBH (0xE8D0) must precede STRD/LDRD (0xFE40) — STRD's mask is
+    // wider and would swallow them.
     static const T32Dispatch t32_reg_families[] = {
         {t32m_dataproc_reg, &CortexM3CPU::t32_dataproc_reg},
         {t32m_shift_reg, &CortexM3CPU::t32_shift_reg},

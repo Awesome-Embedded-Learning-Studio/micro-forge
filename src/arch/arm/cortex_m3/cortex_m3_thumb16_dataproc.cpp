@@ -15,7 +15,8 @@ using namespace thumb;
 // accessors. An arm that ended in `break` (falling through to the function's
 // trailing `return {}`) now ends in `return {}` directly; a switch with no
 // default gains an unreachable trailing `return IllegalInstruction` (the old
-// arms fell through to the next prefix probe, which a standalone handler can't).
+// arms fell through to the next prefix probe, which a standalone handler
+// can't).
 
 // Sign/zero extend byte/halfword (0xB200): SXTH/SXTB/UXTH/UXTB.
 CPU::CPUExpected<void> CortexM3CPU::t16_extend(uint16_t insn) {
@@ -73,8 +74,7 @@ CPU::CPUExpected<void> CortexM3CPU::t16_shift_imm(uint16_t insn) {
     data_t val = rr(rm);
     // LSR/ASR encoded shift of 0 means shift-by-32; LSL 0 = no shift.
     uint8_t amount = (op == 0b00) ? imm : (imm == 0 ? 32 : imm);
-    auto [result, carry] =
-        barrel_shift(op, val, amount, (xpsr_ & PSR_C) != 0);
+    auto [result, carry] = barrel_shift(op, val, amount, (xpsr_ & PSR_C) != 0);
     auto res = wr(rd, result);
     if (!res) {
         return res;
@@ -166,7 +166,7 @@ CPU::CPUExpected<void> CortexM3CPU::t16_special_bx(uint16_t insn) {
         }
         case 0b10:
             return wr(rd, rr(rm)); // MOV high
-        case 0b11: { // BX / BLX register — bit[7]: 0=BX, 1=BLX
+        case 0b11: {               // BX / BLX register — bit[7]: 0=BX, 1=BLX
             bool is_blx = (insn >> 7) & 1;
             data_t target = rr(rm);
             if (is_blx) {
