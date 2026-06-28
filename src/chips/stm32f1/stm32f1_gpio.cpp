@@ -141,9 +141,10 @@ void Stm32f1Gpio::simulate_input(uint8_t pin, bool high) {
     // An external input edge feeds EXTI the same way an output edge does.
     bool now_high = (idr_ >> pin) & 1u;
     if (was_high != now_high && !edge_signal_.empty()) {
-        edge_signal_.emit(hooks::GpioEdge{
-            {cycle_source_ ? cycle_source_() : 0},
-            static_cast<char>(port_id_), pin, now_high});
+        edge_signal_.emit(hooks::GpioEdge{{cycle_source_ ? cycle_source_() : 0},
+                                          static_cast<char>(port_id_),
+                                          pin,
+                                          now_high});
     }
 }
 
@@ -166,9 +167,11 @@ void Stm32f1Gpio::on_odr_changed(uint32_t old_odr, uint32_t new_odr) {
                 on_pin_change_(i, high);
             }
             if (!edge_signal_.empty()) {
-                edge_signal_.emit(hooks::GpioEdge{
-                    {cycle_source_ ? cycle_source_() : 0},
-                    static_cast<char>(port_id_), i, high});
+                edge_signal_.emit(
+                    hooks::GpioEdge{{cycle_source_ ? cycle_source_() : 0},
+                                    static_cast<char>(port_id_),
+                                    i,
+                                    high});
             }
         }
     }

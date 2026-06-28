@@ -17,8 +17,7 @@ namespace micro_forge::hooks {
 //
 // Single-producer (the sim thread) / single-consumer safe via a relaxed
 // atomic head; drain() is meant to be called from one consumer.
-template <typename E>
-class RingSink {
+template <typename E> class RingSink {
   public:
     explicit RingSink(std::size_t capacity)
         : buf_(capacity == 0 ? 1 : capacity) {}
@@ -39,7 +38,8 @@ class RingSink {
         std::size_t avail = produced < buf_.size() ? produced : buf_.size();
         std::vector<E> out;
         out.reserve(avail);
-        std::size_t start = (produced > buf_.size()) ? (h - buf_.size()) : tail_;
+        std::size_t start =
+            (produced > buf_.size()) ? (h - buf_.size()) : tail_;
         for (std::size_t i = 0; i < avail; ++i) {
             out.push_back(buf_[(start + i) % buf_.size()]);
         }

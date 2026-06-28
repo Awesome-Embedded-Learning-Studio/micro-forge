@@ -19,11 +19,12 @@ cpu::CPU::CPUExpected<void> SimulationCoordinator::step() {
         return std::unexpected(cpu::CPU::CPUError::NotRunning);
     }
 
-    auto prev_result = cpu_->cycles();
-    if (!prev_result.has_value()) {
-        return std::unexpected(prev_result.error());
-    }
-    uint64_t prev = *prev_result;
+    // prev is the cycle count after the *previous* step — cached in
+    // last_cycles_ to avoid a second virtual cycles() round-trip per step
+    // (was 2×/step, now 1×). It starts at 0, matching the post-reset
+    // cycles_ == 0 invariant, and the coordinator is the sole driver of
+    // cpu->step(), so the two stay in lockstep.
+    uint64_t prev = last_cycles_;
 
     auto step_result = cpu_->step();
     if (!step_result.has_value()) {
@@ -35,6 +36,7 @@ cpu::CPU::CPUExpected<void> SimulationCoordinator::step() {
         return std::unexpected(curr_result.error());
     }
     uint64_t delta = *curr_result - prev;
+    last_cycles_ = *curr_result;
 
     if (delta > 0) {
         clock_.advance(delta);

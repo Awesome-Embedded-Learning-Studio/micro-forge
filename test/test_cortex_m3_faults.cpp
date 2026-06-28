@@ -159,8 +159,8 @@ TEST_F(CortexM3Test, SvcEntersException11AndReturns) {
     EXPECT_EQ(reg(0), 1u);
 }
 
-// ── ARMv7E-M DSP (Cortex-M3 scope-out): must clean-fault, not silently decode ──
-// Cortex-M3 = ARMv7-M base (no DSP extension). These instructions are
+// ── ARMv7E-M DSP (Cortex-M3 scope-out): must clean-fault, not silently decode
+// ── Cortex-M3 = ARMv7-M base (no DSP extension). These instructions are
 // UndefinedInstruction on M3. Encodings sourced authoritatively from
 // `arm-none-eabi-as -mcpu=cortex-m4` + objdump (the M3 assembler rejects them).
 // Guards the dispatch table against silent mis-decode: several land inside an
@@ -172,16 +172,15 @@ TEST_F(CortexM3Test, V7emDspInstructionsCleanFault) {
         const char* name;
     };
     const Case cases[] = {
-        {0xFA82, 0xF081, "qadd"},     {0xFA82, 0xF0A1, "qsub"},
-        {0xFA82, 0xF091, "qdadd"},    {0xFA82, 0xF0B1, "qdsub"},
-        {0xEAC1, 0x1002, "pkhbt"},    {0xEAC1, 0x1022, "pkhtb"},
-        {0xFAA1, 0xF082, "sel"},
-        {0xFA01, 0xF082, "sxtah"},    {0xFA11, 0xF082, "uxtah"},
-        {0xFA2F, 0xF081, "sxtb16"},   {0xFA3F, 0xF081, "uxtb16"},
-        {0xFBE2, 0x0163, "umaal"},
-        {0xFB21, 0x3002, "smlad"},    {0xFB41, 0x3002, "smlsd"},
-        {0xFBC2, 0x01C3, "smlald"},   {0xFBC2, 0x01D3, "smlaldx"},
-        {0xFB71, 0xF002, "usad8"},    {0xFB71, 0x3002, "usada8"},
+        {0xFA82, 0xF081, "qadd"},   {0xFA82, 0xF0A1, "qsub"},
+        {0xFA82, 0xF091, "qdadd"},  {0xFA82, 0xF0B1, "qdsub"},
+        {0xEAC1, 0x1002, "pkhbt"},  {0xEAC1, 0x1022, "pkhtb"},
+        {0xFAA1, 0xF082, "sel"},    {0xFA01, 0xF082, "sxtah"},
+        {0xFA11, 0xF082, "uxtah"},  {0xFA2F, 0xF081, "sxtb16"},
+        {0xFA3F, 0xF081, "uxtb16"}, {0xFBE2, 0x0163, "umaal"},
+        {0xFB21, 0x3002, "smlad"},  {0xFB41, 0x3002, "smlsd"},
+        {0xFBC2, 0x01C3, "smlald"}, {0xFBC2, 0x01D3, "smlaldx"},
+        {0xFB71, 0xF002, "usad8"},  {0xFB71, 0x3002, "usada8"},
     };
     for (const auto& c : cases) {
         load_program({c.hw1, c.hw2});
@@ -190,8 +189,7 @@ TEST_F(CortexM3Test, V7emDspInstructionsCleanFault) {
         auto res = cpu_->step();
         EXPECT_FALSE(res.has_value()) << c.name << " should fault";
         if (!res.has_value()) {
-            EXPECT_EQ(res.error(), CPU::CPUError::IllegalInstruction)
-                << c.name;
+            EXPECT_EQ(res.error(), CPU::CPUError::IllegalInstruction) << c.name;
         }
         auto st = cpu_->state();
         ASSERT_TRUE(st.has_value()) << c.name;

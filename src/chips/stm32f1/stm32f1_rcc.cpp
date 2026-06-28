@@ -37,8 +37,8 @@ Expected<void> Stm32f1Rcc::write(addr_t offset, data_t data, Width w) {
         case 0x04: {
             cfgr_ = data;
             // SW write immediately reflected in SWS
-            cfgr_ = (cfgr_ & ~(kSwMask << kSwsShift))
-                  | (((cfgr_ >> kSwShift) & kSwMask) << kSwsShift);
+            cfgr_ = (cfgr_ & ~(kSwMask << kSwsShift)) |
+                    (((cfgr_ >> kSwShift) & kSwMask) << kSwsShift);
             return {};
         }
         case 0x08:
@@ -105,16 +105,25 @@ void Stm32f1Rcc::apply_cr_write(uint32_t data) {
     cr_ = (data & ~kRoMask) | (cr_ & kRoMask);
 
     // HSION written → keep HSIRDY aligned
-    if (cr_ & kHsiOn) cr_ |= kHsiRdy;
-    else              cr_ &= ~kHsiRdy;
+    if (cr_ & kHsiOn) {
+        cr_ |= kHsiRdy;
+    } else {
+        cr_ &= ~kHsiRdy;
+    }
 
     // HSEON written → HSERDY immediately ready
-    if (cr_ & kHseOn) cr_ |= kHseRdy;
-    else              cr_ &= ~kHseRdy;
+    if (cr_ & kHseOn) {
+        cr_ |= kHseRdy;
+    } else {
+        cr_ &= ~kHseRdy;
+    }
 
     // PLLON written → PLLRDY immediately ready
-    if (cr_ & kPllOn) cr_ |= kPllRdy;
-    else              cr_ &= ~kPllRdy;
+    if (cr_ & kPllOn) {
+        cr_ |= kPllRdy;
+    } else {
+        cr_ &= ~kPllRdy;
+    }
 }
 
 } // namespace micro_forge::chips::stm32f1

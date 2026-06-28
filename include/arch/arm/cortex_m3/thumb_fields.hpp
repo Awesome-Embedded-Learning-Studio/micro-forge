@@ -134,8 +134,9 @@ inline ShiftOut barrel_shift(uint8_t type, uint32_t value, uint8_t amount,
                 bool sign = (value & 0x80000000u) != 0;
                 return {sign ? 0xFFFFFFFFu : 0u, sign};
             }
-            return {static_cast<uint32_t>(static_cast<int32_t>(value) >> amount),
-                    ((value >> (amount - 1)) & 1u) != 0};
+            return {
+                static_cast<uint32_t>(static_cast<int32_t>(value) >> amount),
+                ((value >> (amount - 1)) & 1u) != 0};
         }
         default: { // ROR (amount > 0)
             uint8_t r = amount & 31u;

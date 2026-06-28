@@ -15,8 +15,7 @@ namespace micro_forge::hooks {
 // in a consumer that drains off-path. That keeps the simulator deterministic
 // and the inner loop tight: the "non-blocking" property is enforced by
 // discipline at the slot boundary, not by a thread pool.
-template <typename E>
-class Signal {
+template <typename E> class Signal {
   public:
     using Slot = std::function<void(const E&)>;
     using Token = std::size_t;

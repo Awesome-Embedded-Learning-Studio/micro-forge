@@ -50,7 +50,8 @@ TEST(BusTest, BitBandPeripheralReadReturnsBit) {
 
     // Set bit 16 of word 0x40000000 directly.
     ASSERT_TRUE(bus.write(0x40000000, 0x00010000u, Width::Word).has_value());
-    // Alias for bit 16: byte 0x40000002 bit 0 → 0x42000000 + (2<<5) = 0x42000040.
+    // Alias for bit 16: byte 0x40000002 bit 0 → 0x42000000 + (2<<5) =
+    // 0x42000040.
     auto v = bus.read(0x42000040, Width::Word);
     ASSERT_TRUE(v.has_value());
     EXPECT_EQ(*v, 1u);

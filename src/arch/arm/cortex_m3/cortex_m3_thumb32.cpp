@@ -353,8 +353,8 @@ CPU::CPUExpected<void> CortexM3CPU::execute_32bit(uint16_t hw1, uint16_t hw2) {
 
     // ── SMULL/UMULL (no accumulate) and SMLAL/UMLAL (accumulate) ──
     uint16_t mp_hw1 = hw1 & 0xFFF0u;
-    if ((mp_hw1 == 0xFB80u || mp_hw1 == 0xFBA0u ||
-         mp_hw1 == 0xFBC0u || mp_hw1 == 0xFBE0u) &&
+    if ((mp_hw1 == 0xFB80u || mp_hw1 == 0xFBA0u || mp_hw1 == 0xFBC0u ||
+         mp_hw1 == 0xFBE0u) &&
         (hw2 & 0x00F0u) == 0x0000u) {
         uint8_t rn = hw1 & 0xFu;
         uint8_t rm = hw2 & 0xFu;
@@ -369,10 +369,10 @@ CPU::CPUExpected<void> CortexM3CPU::execute_32bit(uint16_t hw1, uint16_t hw2) {
                       static_cast<int64_t>(static_cast<int32_t>(rr(rm))))
                 : static_cast<uint64_t>(rr(rn)) * static_cast<uint64_t>(rr(rm));
         // SMLAL/UMLAL accumulate the existing RdHi:RdLo (read before write).
-        uint64_t result = accumulate
-                              ? product + (static_cast<uint64_t>(rr(rdhi)) << 32) +
-                                    rr(rdlo)
-                              : product;
+        uint64_t result =
+            accumulate
+                ? product + (static_cast<uint64_t>(rr(rdhi)) << 32) + rr(rdlo)
+                : product;
         auto lo = wr(rdlo, static_cast<uint32_t>(result));
         if (!lo) {
             return lo;

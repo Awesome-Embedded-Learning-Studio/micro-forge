@@ -9,10 +9,10 @@
 #include <sys/wait.h>
 
 #ifndef MICRO_FORGE_BIN
-#error "MICRO_FORGE_BIN must be defined"
+#    error "MICRO_FORGE_BIN must be defined"
 #endif
 #ifndef CLI_HELLO_ELF
-#error "CLI_HELLO_ELF must be defined"
+#    error "CLI_HELLO_ELF must be defined"
 #endif
 
 namespace {
@@ -48,7 +48,8 @@ std::string read_file(const std::string& path) {
 
 // run hello.elf → stdout contains "Hello", exit 0.
 TEST(Cli, RunHelloOutputsString) {
-    auto r = run_cli(std::string("run ") + CLI_HELLO_ELF + " --max-steps 100000");
+    auto r =
+        run_cli(std::string("run ") + CLI_HELLO_ELF + " --max-steps 100000");
     EXPECT_EQ(r.code, 0) << r.out;
     EXPECT_NE(r.out.find("Hello"), std::string::npos) << r.out;
 }
@@ -74,7 +75,8 @@ TEST(Cli, SnapshotJsonHasCpuRegion) {
     EXPECT_EQ(js.find("\"ra\""), std::string::npos);
 }
 
-// A firmware whose reset vector points at unmapped 0x10000000 → Faulted, exit 1.
+// A firmware whose reset vector points at unmapped 0x10000000 → Faulted,
+// exit 1.
 TEST(Cli, UnmappedPcFaults) {
     {
         std::ofstream f("/tmp/cli_bad.bin", std::ios::binary);

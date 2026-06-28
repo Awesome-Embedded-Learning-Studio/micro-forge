@@ -25,24 +25,36 @@ void hex_kv(std::ostream& o, const char* key, unsigned v) {
 
 const char* state_json(CPU::State s) {
     switch (s) {
-        case CPU::State::Running: return "Running";
-        case CPU::State::Halted:  return "Halted";
-        case CPU::State::Faulted: return "Faulted";
+        case CPU::State::Running:
+            return "Running";
+        case CPU::State::Halted:
+            return "Halted";
+        case CPU::State::Faulted:
+            return "Faulted";
     }
     return "Unknown";
 }
 
 const char* fault_kind_json(CPU::CPUError k) {
     switch (k) {
-        case CPU::CPUError::IllegalInstruction:    return "IllegalInstruction";
-        case CPU::CPUError::DataAccessFault:       return "DataAccessFault";
-        case CPU::CPUError::InstructionFetchFault: return "InstructionFetchFault";
-        case CPU::CPUError::InvalidPc:             return "InvalidPc";
-        case CPU::CPUError::ExceptionEntryFault:   return "ExceptionEntryFault";
-        case CPU::CPUError::ExceptionReturnFault:  return "ExceptionReturnFault";
-        case CPU::CPUError::NotRunning:            return "NotRunning";
-        case CPU::CPUError::RegisterIndexOverflow: return "RegisterIndexOverflow";
-        case CPU::CPUError::FailedPollIntr:        return "FailedPollIntr";
+        case CPU::CPUError::IllegalInstruction:
+            return "IllegalInstruction";
+        case CPU::CPUError::DataAccessFault:
+            return "DataAccessFault";
+        case CPU::CPUError::InstructionFetchFault:
+            return "InstructionFetchFault";
+        case CPU::CPUError::InvalidPc:
+            return "InvalidPc";
+        case CPU::CPUError::ExceptionEntryFault:
+            return "ExceptionEntryFault";
+        case CPU::CPUError::ExceptionReturnFault:
+            return "ExceptionReturnFault";
+        case CPU::CPUError::NotRunning:
+            return "NotRunning";
+        case CPU::CPUError::RegisterIndexOverflow:
+            return "RegisterIndexOverflow";
+        case CPU::CPUError::FailedPollIntr:
+            return "FailedPollIntr";
     }
     return "Unknown";
 }
@@ -52,11 +64,21 @@ void json_string(std::ostream& o, std::string_view s) {
     o << '\"';
     for (char c : s) {
         switch (c) {
-            case '"':  o << "\\\""; break;
-            case '\\': o << "\\\\"; break;
-            case '\n': o << "\\n";  break;
-            case '\r': o << "\\r";  break;
-            case '\t': o << "\\t";  break;
+            case '"':
+                o << "\\\"";
+                break;
+            case '\\':
+                o << "\\\\";
+                break;
+            case '\n':
+                o << "\\n";
+                break;
+            case '\r':
+                o << "\\r";
+                break;
+            case '\t':
+                o << "\\t";
+                break;
             default:
                 if (static_cast<unsigned char>(c) < 0x20) {
                     char b[8];
@@ -86,9 +108,11 @@ void write_snapshot_json(Stm32f103Soc& soc, std::ostream& out,
             << "\", ";
         hex_kv(out, "pc", static_cast<unsigned>(cm3->pc().value_or(0)));
         out << ", ";
-        hex_kv(out, "lr", static_cast<unsigned>(cm3->register_value(14).value_or(0)));
+        hex_kv(out, "lr",
+               static_cast<unsigned>(cm3->register_value(14).value_or(0)));
         out << ", ";
-        hex_kv(out, "sp", static_cast<unsigned>(cm3->register_value(13).value_or(0)));
+        hex_kv(out, "sp",
+               static_cast<unsigned>(cm3->register_value(13).value_or(0)));
         out << ", \"regs\": {";
         for (int r = 0; r <= 12; ++r) {
             if (r) {

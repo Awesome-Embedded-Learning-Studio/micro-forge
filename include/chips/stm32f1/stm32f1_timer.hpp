@@ -27,7 +27,8 @@ class Stm32f1Timer : public periph::Device, public periph::Timer {
     bool update_flag() const override;
     void clear_update_flag() override;
 
-    // Peripheral → CPU IRQ channel: invoked on UIF 0→1 edge when DIER.UIE is set.
+    // Peripheral → CPU IRQ channel: invoked on UIF 0→1 edge when DIER.UIE is
+    // set.
     void set_irq_callback(std::function<void()> cb) { irq_cb_ = std::move(cb); }
 
     WeakPtr<Stm32f1Timer> GetWeak() { return weak_factory_.GetWeakPtr(); }

@@ -297,7 +297,8 @@ CPU::CPUExpected<void> CortexM3CPU::execute_16bit(uint16_t insn) {
                     shift_carry = s.carry;
                     break;
                 }
-                case 0x5: { // ADCS: a + b + C — full N/Z/C/V (was update_nz only)
+                case 0x5: { // ADCS: a + b + C — full N/Z/C/V (was update_nz
+                            // only)
                     data_t cin = (xpsr_ & PSR_C) ? 1u : 0u;
                     result = a + b + cin;
                     auto res = wr(rd, result);
@@ -307,7 +308,8 @@ CPU::CPUExpected<void> CortexM3CPU::execute_16bit(uint16_t insn) {
                     set_adc_flags(a, b, cin, result);
                     return {};
                 }
-                case 0x6: { // SBCS: a - b - !C — full N/Z/C/V (was update_nz only)
+                case 0x6: { // SBCS: a - b - !C — full N/Z/C/V (was update_nz
+                            // only)
                     data_t cin = (xpsr_ & PSR_C) ? 1u : 0u;
                     result = a - b - ((xpsr_ & PSR_C) ? 0u : 1u);
                     auto res = wr(rd, result);
@@ -651,7 +653,9 @@ CPU::CPUExpected<void> CortexM3CPU::execute_16bit(uint16_t insn) {
             for (int i = 0; i < 8; i++) {
                 if (rlist & (1 << i)) {
                     auto res = bw(addr, rr(i), Width::Word);
-                    if (!res) return res;
+                    if (!res) {
+                        return res;
+                    }
                     addr += 4;
                 }
             }
@@ -670,17 +674,23 @@ CPU::CPUExpected<void> CortexM3CPU::execute_16bit(uint16_t insn) {
             for (int i = 0; i < 8; i++) {
                 if (rlist & (1 << i)) {
                     auto v = br(addr, Width::Word);
-                    if (!v) return std::unexpected{v.error()};
+                    if (!v) {
+                        return std::unexpected{v.error()};
+                    }
                     auto res = write_reg(i, *v);
-                    if (!res) return res;
+                    if (!res) {
+                        return res;
+                    }
                     addr += 4;
                 }
             }
             if (rlist) {
-                // writeback only if Rn is NOT in the lowest-numbered register loaded
+                // writeback only if Rn is NOT in the lowest-numbered register
+                // loaded
                 return write_reg(rn, addr);
             }
-            // Empty rlist: LDMIA rN!, {} → load PC from [addr], writeback addr+0x40
+            // Empty rlist: LDMIA rN!, {} → load PC from [addr], writeback
+            // addr+0x40
             return write_reg(rn, addr + 0x40);
         }
 

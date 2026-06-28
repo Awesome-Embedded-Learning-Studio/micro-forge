@@ -8,13 +8,20 @@ Expected<data_t> Stm32f1Exti::read(addr_t offset, Width w) {
         return std::unexpected(BusError::Unaligned);
     }
     switch (offset) {
-        case 0x00: return imr_;
-        case 0x04: return emr_;
-        case 0x08: return rtsr_;
-        case 0x0C: return ftsr_;
-        case 0x10: return swier_;
-        case 0x14: return pr_;
-        default: return std::unexpected(BusError::PeripheralFault);
+        case 0x00:
+            return imr_;
+        case 0x04:
+            return emr_;
+        case 0x08:
+            return rtsr_;
+        case 0x0C:
+            return ftsr_;
+        case 0x10:
+            return swier_;
+        case 0x14:
+            return pr_;
+        default:
+            return std::unexpected(BusError::PeripheralFault);
     }
 }
 
@@ -23,10 +30,18 @@ Expected<void> Stm32f1Exti::write(addr_t offset, data_t data, Width w) {
         return std::unexpected(BusError::Unaligned);
     }
     switch (offset) {
-        case 0x00: imr_ = data; return {};
-        case 0x04: emr_ = data; return {};
-        case 0x08: rtsr_ = data; return {};
-        case 0x0C: ftsr_ = data; return {};
+        case 0x00:
+            imr_ = data;
+            return {};
+        case 0x04:
+            emr_ = data;
+            return {};
+        case 0x08:
+            rtsr_ = data;
+            return {};
+        case 0x0C:
+            ftsr_ = data;
+            return {};
         case 0x10:
             // SWIER: writing 1 software-triggers a line if IMR is enabled and
             // it is not already pending. Bits without IMR are ignored.
@@ -42,7 +57,8 @@ Expected<void> Stm32f1Exti::write(addr_t offset, data_t data, Width w) {
             // PR is rc_w1: writing 1 clears the pending bit.
             pr_ &= ~data;
             return {};
-        default: return std::unexpected(BusError::PeripheralFault);
+        default:
+            return std::unexpected(BusError::PeripheralFault);
     }
 }
 

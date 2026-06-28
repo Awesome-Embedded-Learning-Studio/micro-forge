@@ -77,9 +77,8 @@ TEST_F(CortexM3Test, LdrWidePcRelativeLiteralSmallOffset) {
     // Program at 0 → addr = Align(0+4,4)+8 = 0xC.
     load_program({0xF8DF, 0x4008});
     uint32_t literal = 0xDEADBEEFu;
-    ASSERT_TRUE(
-        mem_.load(0x0C, {reinterpret_cast<const uint8_t*>(&literal), 4})
-            .has_value());
+    ASSERT_TRUE(mem_.load(0x0C, {reinterpret_cast<const uint8_t*>(&literal), 4})
+                    .has_value());
     reset_cpu();
     start_cpu();
     ASSERT_TRUE(cpu_->step().has_value());
@@ -257,7 +256,8 @@ TEST_F(CortexM3Test, CmpWideShiftedRegDoesNotWritePc) {
 
 TEST_F(CortexM3Test, OrrRegisterUsesBits5to3AsRm) {
     // 0x4301 = orrs r1, r0 (Rm=R0=bits[5:3], Rd=R1=bits[2:0]).
-    // Regression for the data-proc-register Rm field bug (was reading bits[8:6]).
+    // Regression for the data-proc-register Rm field bug (was reading
+    // bits[8:6]).
     load_program({0x4301});
     reset_cpu();
     set_reg(0, 0x0Fu);
@@ -455,7 +455,8 @@ TEST_F(CortexM3Test, TbbUsesPcPlusFourAsBranchBase) {
 // ── T1 静默错误修复单测(coverage matrix §2 #2–#11)──
 
 TEST_F(CortexM3Test, OrnWideRegisterIncludesRn) {
-    // #2: orn.w r0,r1,r2 (ea61 0002) = r1 | ~r2; bug gave ~shifted (dropped Rn).
+    // #2: orn.w r0,r1,r2 (ea61 0002) = r1 | ~r2; bug gave ~shifted (dropped
+    // Rn).
     load_program({0xEA61, 0x0002});
     reset_cpu();
     set_reg(1, 0x000000FFu);
@@ -490,7 +491,8 @@ TEST_F(CortexM3Test, ShiftBy32InShiftedRegisterOperand) {
 
 TEST_F(CortexM3Test, CpsFControlsFaultMaskNotPrimask) {
     // #5: cpsid f (b671) → FAULTMASK, not PRIMASK.
-    load_program({0xB671, 0xF3EF, 0x8013, 0xF3EF, 0x8110}); // cpsid f; mrs r0,faultmask; mrs r1,primask
+    load_program({0xB671, 0xF3EF, 0x8013, 0xF3EF,
+                  0x8110}); // cpsid f; mrs r0,faultmask; mrs r1,primask
     reset_cpu();
     start_cpu();
     for (int i = 0; i < 3; ++i) {
@@ -556,7 +558,7 @@ TEST_F(CortexM3Test, LdrexStrexBehaveAsPlainLoadStore) {
     ASSERT_TRUE(cpu_->step().has_value()); // ldrex
     EXPECT_EQ(reg(0), 0xDEADBEEFu);
     ASSERT_TRUE(cpu_->step().has_value()); // strex
-    EXPECT_EQ(reg(3), 0u); // success status
+    EXPECT_EQ(reg(3), 0u);                 // success status
     auto v = bus_.read(0x100u, Width::Word);
     ASSERT_TRUE(v.has_value());
     EXPECT_EQ(*v, 0xCAFEu);
@@ -577,7 +579,8 @@ TEST_F(CortexM3Test, OrnMvnWideImmediate) {
 }
 
 TEST_F(CortexM3Test, RorRrxShiftedRegister) {
-    // mov.w r0,r1,ror#4 (ea4f 1031); msr apsr,r2 (set C); mov.w r3,r1,rrx (ea4f 0331).
+    // mov.w r0,r1,ror#4 (ea4f 1031); msr apsr,r2 (set C); mov.w r3,r1,rrx (ea4f
+    // 0331).
     load_program({0xEA4F, 0x1031, 0xF382, 0x8800, 0xEA4F, 0x0331});
     reset_cpu();
     set_reg(1, 0x12345678u);
@@ -614,8 +617,8 @@ TEST_F(CortexM3Test, LdrsbLdrshWideSignExtend) {
     uint8_t b = 0x80;
     uint16_t h = 0x8000;
     ASSERT_TRUE(mem_.load(0x104u, {&b, 1}).has_value());
-    ASSERT_TRUE(mem_.load(0x108u, {reinterpret_cast<uint8_t*>(&h), 2})
-                    .has_value());
+    ASSERT_TRUE(
+        mem_.load(0x108u, {reinterpret_cast<uint8_t*>(&h), 2}).has_value());
     reset_cpu();
     set_reg(1, 0x100u);
     start_cpu();
@@ -651,7 +654,7 @@ TEST_F(CortexM3Test, SsatUsatWideSaturation) {
     ASSERT_TRUE(cpu_->step().has_value()); // usat → 31
     EXPECT_EQ(reg(2), 31u);
     ASSERT_TRUE(cpu_->step().has_value()); // mrs r3,apsr
-    EXPECT_NE(reg(3) & 0x08000000u, 0u); // Q set
+    EXPECT_NE(reg(3) & 0x08000000u, 0u);   // Q set
 }
 
 TEST_F(CortexM3Test, ClrexNopWideAreNoop) {

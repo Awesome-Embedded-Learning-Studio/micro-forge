@@ -15,7 +15,7 @@ using namespace thumb;
 //       0=offset+, C=offset-, B=post+, 9=post-, F=pre+, D=pre-.
 // Dispatched from execute_32bit when (hw1 & 0xFF00) == 0xF800.
 CPU::CPUExpected<void> CortexM3CPU::t32_loadstore_single(uint16_t hw1,
-                                                    uint16_t hw2) {
+                                                         uint16_t hw2) {
     uint8_t rn = hw1 & 0xF;
     bool load = (hw1 >> 4) & 1;
     uint8_t size = (hw1 >> 5) & 0x3;
@@ -120,9 +120,9 @@ CPU::CPUExpected<void> CortexM3CPU::t32_loadstore_single(uint16_t hw1,
         if (sign) { // LDRSB.W / LDRSH.W: sign-extend byte/half to 32 bits.
             val = (width == Width::Byte)
                       ? static_cast<data_t>(
-                          static_cast<int32_t>(static_cast<int8_t>(val)))
+                            static_cast<int32_t>(static_cast<int8_t>(val)))
                       : static_cast<data_t>(
-                          static_cast<int32_t>(static_cast<int16_t>(val)));
+                            static_cast<int32_t>(static_cast<int16_t>(val)));
         }
         auto w = wr(rt, val);
         if (!w) {
@@ -177,7 +177,8 @@ CPU::CPUExpected<void> CortexM3CPU::t32_tbb_tbh(uint16_t hw1, uint16_t hw2) {
 // STREX → plain store with Rd=0 (no monitor → always "succeeds").
 //   hw1[4]=L: STREX(0) / LDREX(1).   hw1[7]: 0=word, 1=byte/half.
 //   word:   LDREX Rd=hw2[15:12];  STREX Rt=hw2[15:12], Rd=hw2[11:8].
-//   byte/h: LDREX Rd=hw2[15:12];  STREX Rt=hw2[15:12], Rd=hw2[3:0]; size=hw2[7:4].
+//   byte/h: LDREX Rd=hw2[15:12];  STREX Rt=hw2[15:12], Rd=hw2[3:0];
+//   size=hw2[7:4].
 CPU::CPUExpected<void> CortexM3CPU::t32_ldrex_strex(uint16_t hw1,
                                                     uint16_t hw2) {
     uint8_t rn = hw1 & 0xFu;
@@ -313,9 +314,8 @@ CPU::CPUExpected<void> CortexM3CPU::t32_stm_ldm(uint16_t hw1, uint16_t hw2) {
     }
 
     if (W) {
-        uint32_t new_rn = decrement
-                              ? rn_val - static_cast<uint32_t>(count * 4)
-                              : rn_val + static_cast<uint32_t>(count * 4);
+        uint32_t new_rn = decrement ? rn_val - static_cast<uint32_t>(count * 4)
+                                    : rn_val + static_cast<uint32_t>(count * 4);
         return wr(rn, new_rn);
     }
     return {};

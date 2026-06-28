@@ -153,10 +153,10 @@ TEST(ElfLoaderTest, PayloadTailLengthsWriteExactBytes) {
         ASSERT_TRUE(result.has_value()) << "payload len=" << len;
 
         for (size_t i = 0; i < len; ++i) {
-            auto byte = bus.read(0x08000000 + static_cast<uint32_t>(i),
-                                 Width::Byte);
-            ASSERT_TRUE(byte.has_value()) << "payload len=" << len
-                                          << " byte=" << i;
+            auto byte =
+                bus.read(0x08000000 + static_cast<uint32_t>(i), Width::Byte);
+            ASSERT_TRUE(byte.has_value())
+                << "payload len=" << len << " byte=" << i;
             EXPECT_EQ(*byte, payload[i]);
         }
     }
@@ -225,10 +225,10 @@ TEST(BinaryLoaderTest, PayloadTailLengthsWriteExactBytes) {
         ASSERT_TRUE(result.has_value()) << "payload len=" << len;
 
         for (size_t i = 0; i < len; ++i) {
-            auto byte = bus.read(0x08000000 + static_cast<uint32_t>(i),
-                                 Width::Byte);
-            ASSERT_TRUE(byte.has_value()) << "payload len=" << len
-                                          << " byte=" << i;
+            auto byte =
+                bus.read(0x08000000 + static_cast<uint32_t>(i), Width::Byte);
+            ASSERT_TRUE(byte.has_value())
+                << "payload len=" << len << " byte=" << i;
             EXPECT_EQ(*byte, payload[i]);
         }
     }

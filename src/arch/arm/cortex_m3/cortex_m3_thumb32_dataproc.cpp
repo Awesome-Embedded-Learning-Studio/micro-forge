@@ -10,9 +10,10 @@ using namespace thumb;
 // ── Add/subtract (plain imm12): insn[25]=1 (hw1[9]) ──
 // addw/subw (S=0) and adds.w/subs.w (S=1). imm12 = i:imm3:imm8 packed.
 // PLAIN (not Thumb2ExpandImm). op = hw1[8:5]: 0000=ADD, 0101=SUB; S=hw1[4].
-// Dispatched when (hw1 & 0xF800)==0xF000 && (hw1 & 0x0200)!=0 && (hw2 & 0x8000)==0.
+// Dispatched when (hw1 & 0xF800)==0xF000 && (hw1 & 0x0200)!=0 && (hw2 &
+// 0x8000)==0.
 CPU::CPUExpected<void> CortexM3CPU::t32_addsub_plain_imm(uint16_t hw1,
-                                                    uint16_t hw2) {
+                                                         uint16_t hw2) {
     uint8_t op = (hw1 >> 5) & 0xF;
     bool s_bit = (hw1 >> 4) & 1;
     uint8_t rn = hw1 & 0xF;
@@ -45,16 +46,17 @@ CPU::CPUExpected<void> CortexM3CPU::t32_addsub_plain_imm(uint16_t hw1,
             return std::unexpected{CPUError::IllegalInstruction};
     }
     if (s_bit) {
-        update_flags(is_sub ? FlagPostOperation::Sub
-                            : FlagPostOperation::Add,
+        update_flags(is_sub ? FlagPostOperation::Sub : FlagPostOperation::Add,
                      a, imm12, result);
     }
     return wr(rd, result);
 }
 
 // ── Data processing (modified immediate): insn[25]=0 ──
-// Dispatched when (hw1 & 0xF800)==0xF000 && (hw1 & 0x0200)==0 && (hw2 & 0x8000)==0.
-CPU::CPUExpected<void> CortexM3CPU::t32_dataproc_imm(uint16_t hw1, uint16_t hw2) {
+// Dispatched when (hw1 & 0xF800)==0xF000 && (hw1 & 0x0200)==0 && (hw2 &
+// 0x8000)==0.
+CPU::CPUExpected<void> CortexM3CPU::t32_dataproc_imm(uint16_t hw1,
+                                                     uint16_t hw2) {
     uint8_t op2 = (hw1 >> 5) & 0xF;
     bool s_bit = (hw1 >> 4) & 1;
     uint8_t rn = thumb32::dp_rn(hw1);
@@ -126,7 +128,8 @@ CPU::CPUExpected<void> CortexM3CPU::t32_dataproc_imm(uint16_t hw1, uint16_t hw2)
 
 // ── Data processing (shifted register): AND, ORR, EOR, ADD, SUB, etc. ──
 // Dispatched when (hw1 & 0xFE00)==0xEA00 && (hw2 & 0x8000)==0.
-CPU::CPUExpected<void> CortexM3CPU::t32_dataproc_reg(uint16_t hw1, uint16_t hw2) {
+CPU::CPUExpected<void> CortexM3CPU::t32_dataproc_reg(uint16_t hw1,
+                                                     uint16_t hw2) {
     uint8_t op = (hw1 >> 5) & 0xF;
     bool s_bit = (hw1 >> 4) & 1;
     uint8_t rn = hw1 & 0xF;
@@ -268,7 +271,7 @@ CPU::CPUExpected<void> CortexM3CPU::t32_shift_reg(uint16_t hw1, uint16_t hw2) {
 // Dispatched when (hw1 & 0xFF00)==0xFA00 && (hw2 & 0xF000)==0xF000 &&
 // (hw2 & 0x00F0)!=0 (op2 present; shift_reg handles op2==0).
 CPU::CPUExpected<void> CortexM3CPU::t32_misc_reverse(uint16_t hw1,
-                                                    uint16_t hw2) {
+                                                     uint16_t hw2) {
     uint8_t rd = (hw2 >> 8) & 0xFu;
     uint8_t rn = hw1 & 0xFu;
     uint8_t op2 = (hw2 >> 4) & 0xFu;
@@ -306,8 +309,8 @@ CPU::CPUExpected<void> CortexM3CPU::t32_misc_reverse(uint16_t hw1,
         }
         case 0xBu: { // REVSH.W — sign-extend low halfword byte-swap
             uint32_t r = ((v & 0x00FFu) << 8) | ((v & 0xFF00u) >> 8);
-            result = static_cast<uint32_t>(static_cast<int32_t>(
-                static_cast<int16_t>(r & 0xFFFFu)));
+            result = static_cast<uint32_t>(
+                static_cast<int32_t>(static_cast<int16_t>(r & 0xFFFFu)));
             break;
         }
         default:

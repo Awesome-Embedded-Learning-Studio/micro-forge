@@ -6,7 +6,8 @@
 // would mask a P/U/W or rt/rt2 field bug (the class of bug T1c #9/#10 had).
 
 TEST_F(CortexM3Test, LdrdImmediateOffset) {
-    // e9d1 3402 = ldrd r3, r4, [r1, #8]: [base+8]→r3, [base+12]→r4, no writeback.
+    // e9d1 3402 = ldrd r3, r4, [r1, #8]: [base+8]→r3, [base+12]→r4, no
+    // writeback.
     ASSERT_TRUE(mem_.write(0x108, 0xAAAA1110u, Width::Word).has_value());
     ASSERT_TRUE(mem_.write(0x10C, 0xBBBB2220u, Width::Word).has_value());
     load_program({0xE9D1, 0x3402});
@@ -62,7 +63,8 @@ TEST_F(CortexM3Test, LdrdNegativePreIndex) {
 }
 
 TEST_F(CortexM3Test, StrdImmediateOffset) {
-    // e9c1 3402 = strd r3, r4, [r1, #8]: r3→[base+8], r4→[base+12], no writeback.
+    // e9c1 3402 = strd r3, r4, [r1, #8]: r3→[base+8], r4→[base+12], no
+    // writeback.
     load_program({0xE9C1, 0x3402});
     reset_cpu();
     set_reg(1, 0x100u);
@@ -97,8 +99,8 @@ TEST_F(CortexM3Test, StrdPostIndexWriteback) {
     EXPECT_EQ(reg(1), 0x108u);
 }
 
-// ── Load/Store single (.W) imm8 modes: post-/pre-index (matrix §5 / F32-8 gap) ──
-// hw2[11:8] op selects the mode (B=post+, 9=post-, F=pre+, D=pre-).
+// ── Load/Store single (.W) imm8 modes: post-/pre-index (matrix §5 / F32-8 gap)
+// ── hw2[11:8] op selects the mode (B=post+, 9=post-, F=pre+, D=pre-).
 
 TEST_F(CortexM3Test, LdrWidePostIndexPositive) {
     // f851 3b04 = ldr.w r3, [r1], #4 (op=B): load [base], writeback base+4.

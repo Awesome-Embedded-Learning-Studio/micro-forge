@@ -57,8 +57,9 @@ std::string boot_clean_or_diag(const char* path, size_t steps) {
         char buf[64];
         auto cm3 = (*soc)->cortex_m3_cpu();
         auto pc = cm3->pc();
-        std::snprintf(buf, sizeof(buf), "faulted at PC=0x%08lx",
-                      static_cast<unsigned long>(pc.has_value() ? *pc : 0xDEAD));
+        std::snprintf(
+            buf, sizeof(buf), "faulted at PC=0x%08lx",
+            static_cast<unsigned long>(pc.has_value() ? *pc : 0xDEAD));
         return buf;
     }
     return {};
@@ -70,8 +71,9 @@ std::string boot_clean_or_diag(const char* path, size_t steps) {
 // F103 firmware (see document/notes/007). The gate is "boots clean, no fault".
 
 TEST(FirmwareArmcc, TimTimeBaseBootsClean) {
-    EXPECT_EQ(boot_clean_or_diag(
-                  ARMCC_FW_DIR "/nucleo_f103rb_tim_timebase.ac6.axf", 2'000'000),
+    EXPECT_EQ(boot_clean_or_diag(ARMCC_FW_DIR
+                                 "/nucleo_f103rb_tim_timebase.ac6.axf",
+                                 2'000'000),
               "")
         << "TIM_TimeBase (armcc/AC6) failed to boot clean";
 }
@@ -84,8 +86,9 @@ TEST(FirmwareArmcc, UartPrintfBootsClean) {
 }
 
 TEST(FirmwareArmcc, GpioIoToggleBootsClean) {
-    EXPECT_EQ(boot_clean_or_diag(
-                  ARMCC_FW_DIR "/nucleo_f103rb_gpio_iotoggle.ac6.axf", 2'000'000),
+    EXPECT_EQ(boot_clean_or_diag(ARMCC_FW_DIR
+                                 "/nucleo_f103rb_gpio_iotoggle.ac6.axf",
+                                 2'000'000),
               "")
         << "GPIO_IOToggle (armcc/AC6) failed to boot clean";
 }
@@ -99,8 +102,8 @@ TEST(FirmwareArmcc, GpioIoToggleBootsClean) {
 
 namespace {
 void expect_opt_boots_clean(const char* stem, const char* opt) {
-    // ARMCC_FW_DIR has no trailing '/', so add it (the original tests get it via
-    // the "/nucleo_..." string-literal concatenation).
+    // ARMCC_FW_DIR has no trailing '/', so add it (the original tests get it
+    // via the "/nucleo_..." string-literal concatenation).
     std::string path = std::string(ARMCC_FW_DIR) + "/nucleo_f103rb_" + stem +
                        ".ac6-" + opt + ".axf";
     EXPECT_EQ(boot_clean_or_diag(path.c_str(), 2'000'000), "")
@@ -108,14 +111,32 @@ void expect_opt_boots_clean(const char* stem, const char* opt) {
 }
 } // namespace
 
-TEST(FirmwareArmcc, GpioIoToggleOptO0BootsClean) { expect_opt_boots_clean("gpio_iotoggle", "O0"); }
-TEST(FirmwareArmcc, GpioIoToggleOptO2BootsClean) { expect_opt_boots_clean("gpio_iotoggle", "O2"); }
-TEST(FirmwareArmcc, GpioIoToggleOptOzBootsClean) { expect_opt_boots_clean("gpio_iotoggle", "Oz"); }
+TEST(FirmwareArmcc, GpioIoToggleOptO0BootsClean) {
+    expect_opt_boots_clean("gpio_iotoggle", "O0");
+}
+TEST(FirmwareArmcc, GpioIoToggleOptO2BootsClean) {
+    expect_opt_boots_clean("gpio_iotoggle", "O2");
+}
+TEST(FirmwareArmcc, GpioIoToggleOptOzBootsClean) {
+    expect_opt_boots_clean("gpio_iotoggle", "Oz");
+}
 
-TEST(FirmwareArmcc, TimTimeBaseOptO0BootsClean) { expect_opt_boots_clean("tim_timebase", "O0"); }
-TEST(FirmwareArmcc, TimTimeBaseOptO2BootsClean) { expect_opt_boots_clean("tim_timebase", "O2"); }
-TEST(FirmwareArmcc, TimTimeBaseOptOzBootsClean) { expect_opt_boots_clean("tim_timebase", "Oz"); }
+TEST(FirmwareArmcc, TimTimeBaseOptO0BootsClean) {
+    expect_opt_boots_clean("tim_timebase", "O0");
+}
+TEST(FirmwareArmcc, TimTimeBaseOptO2BootsClean) {
+    expect_opt_boots_clean("tim_timebase", "O2");
+}
+TEST(FirmwareArmcc, TimTimeBaseOptOzBootsClean) {
+    expect_opt_boots_clean("tim_timebase", "Oz");
+}
 
-TEST(FirmwareArmcc, UartPrintfOptO0BootsClean) { expect_opt_boots_clean("uart_printf", "O0"); }
-TEST(FirmwareArmcc, UartPrintfOptO2BootsClean) { expect_opt_boots_clean("uart_printf", "O2"); }
-TEST(FirmwareArmcc, UartPrintfOptOzBootsClean) { expect_opt_boots_clean("uart_printf", "Oz"); }
+TEST(FirmwareArmcc, UartPrintfOptO0BootsClean) {
+    expect_opt_boots_clean("uart_printf", "O0");
+}
+TEST(FirmwareArmcc, UartPrintfOptO2BootsClean) {
+    expect_opt_boots_clean("uart_printf", "O2");
+}
+TEST(FirmwareArmcc, UartPrintfOptOzBootsClean) {
+    expect_opt_boots_clean("uart_printf", "Oz");
+}

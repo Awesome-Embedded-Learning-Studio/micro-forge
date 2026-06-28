@@ -1,10 +1,10 @@
 #include "chips/stm32f1/stm32f103_soc.hpp"
 #include "arch/arm/cortex_m3/cortex_m3.hpp"
 #include "arch/arm/cortex_m3/cortex_m3_reset.hpp"
-#include "hooks/events.hpp"
 #include "chips/stm32f1/interrupt_config.hpp"
 #include "chips/stm32f1/memory_bus.hpp"
 #include "chips/stm32f1/peripheral_config.hpp"
+#include "hooks/events.hpp"
 
 namespace micro_forge::chips::stm32f1 {
 
@@ -49,8 +49,8 @@ Stm32f103Soc::create() {
     }
 
     // CPU
-    auto cm3 = std::make_unique<cpu::arm::cortex_m3::CortexM3CPU>(
-        m.bus->GetWeak());
+    auto cm3 =
+        std::make_unique<cpu::arm::cortex_m3::CortexM3CPU>(m.bus->GetWeak());
     auto cm3_weak = cm3->GetWeak();
     auto* cm3_ptr = cm3.get();
     m.cpu = std::move(cm3);

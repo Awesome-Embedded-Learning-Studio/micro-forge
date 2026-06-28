@@ -21,10 +21,10 @@ class Stm32f1Afio : public periph::Device {
     WeakPtr<Stm32f1Afio> GetWeak() { return weak_factory_.GetWeakPtr(); }
 
   private:
-    uint32_t evcr_    = 0x00000000;
-    uint32_t mapr_    = 0x00000000;
+    uint32_t evcr_ = 0x00000000;
+    uint32_t mapr_ = 0x00000000;
     uint32_t exticr_[4] = {};
-    uint32_t mapr2_   = 0x00000000;
+    uint32_t mapr2_ = 0x00000000;
 
     WeakPtrFactory<Stm32f1Afio> weak_factory_{this};
 };

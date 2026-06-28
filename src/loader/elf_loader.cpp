@@ -44,8 +44,8 @@ uint32_t pack_little_endian(std::span<const uint8_t> data) {
     return word;
 }
 
-std::expected<void, std::string>
-write_bytes(memory::Bus& bus, uint32_t addr, std::span<const uint8_t> data) {
+std::expected<void, std::string> write_bytes(memory::Bus& bus, uint32_t addr,
+                                             std::span<const uint8_t> data) {
     size_t offset = 0;
     while (offset < data.size()) {
         const auto width = widest_width_for(data.size() - offset);

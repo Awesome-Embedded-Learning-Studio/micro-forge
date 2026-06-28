@@ -73,15 +73,15 @@ class InterruptTest : public ::testing::Test {
         cpu_->set_nvic(nvic_);
         cpu_->set_scb(scb_);
         // TIM2 at 0x40000000; UIF edge → NVIC TIM2 line (IRQ 28).
-        ASSERT_TRUE(
-            bus_.map(memory::region(0x40000000, 0x400, tim2_.GetWeak())).has_value());
+        ASSERT_TRUE(bus_.map(memory::region(0x40000000, 0x400, tim2_.GetWeak()))
+                        .has_value());
         tim2_.set_irq_callback([this]() { (void)cpu_->raise_irq(kTim2Irqn); });
         // EXTI: AFIO (0x40010000) + EXTI (0x40010400). GPIOA driven directly
         // via simulate_input (no bus map needed); its edges feed EXTI.
-        ASSERT_TRUE(
-            bus_.map(memory::region(0x40010000, 0x400, afio_.GetWeak())).has_value());
-        ASSERT_TRUE(
-            bus_.map(memory::region(0x40010400, 0x400, exti_.GetWeak())).has_value());
+        ASSERT_TRUE(bus_.map(memory::region(0x40010000, 0x400, afio_.GetWeak()))
+                        .has_value());
+        ASSERT_TRUE(bus_.map(memory::region(0x40010400, 0x400, exti_.GetWeak()))
+                        .has_value());
         exti_.set_afio(afio_);
         exti_.set_irq_callback(
             [this](intr::intr_n_t irq) { (void)cpu_->raise_irq(irq); });
@@ -89,8 +89,10 @@ class InterruptTest : public ::testing::Test {
             [this](const hooks::GpioEdge& e) { exti_.on_gpio_edge(e); });
         // USART1 at 0x40013800; RXNE (RXNEIE) → NVIC USART1 line (IRQ 37).
         ASSERT_TRUE(
-            bus_.map(memory::region(0x40013800, 0x400, usart1_.GetWeak())).has_value());
-        usart1_.set_irq_callback([this]() { (void)cpu_->raise_irq(kUsart1Irqn); });
+            bus_.map(memory::region(0x40013800, 0x400, usart1_.GetWeak()))
+                .has_value());
+        usart1_.set_irq_callback(
+            [this]() { (void)cpu_->raise_irq(kUsart1Irqn); });
         scb_.set_vtor_callback(
             [this](uint32_t vtor) { cpu_->set_vector_table_base(vtor); });
         scb_.set_prigroup_callback(
@@ -340,12 +342,15 @@ TEST_F(InterruptTest, HighPriorityPreemptsLow) {
 
     // IRQ0 = 0xE0 (low), IRQ1 = 0x00 (high). Both are < 0xF0 so each can enter
     // from thread mode (whose active preemption level is 0xF).
-    ASSERT_TRUE(bus_.write(0xE000E400, 0xE0u | (0x00u << 8), Width::Word).has_value());
-    ASSERT_TRUE(bus_.write(0xE000E100, (1u << 0) | (1u << 1), Width::Word).has_value());
+    ASSERT_TRUE(
+        bus_.write(0xE000E400, 0xE0u | (0x00u << 8), Width::Word).has_value());
+    ASSERT_TRUE(
+        bus_.write(0xE000E100, (1u << 0) | (1u << 1), Width::Word).has_value());
 
-    store_instructions(kMainCode, {0xE7FE});                   // B .
-    store_instructions(kLowHandler, {0xBF00, 0xBF00, 0x4770}); // NOP; NOP; BX LR
-    store_instructions(kHighHandler, {0xBF00, 0x4770});        // NOP; BX LR
+    store_instructions(kMainCode, {0xE7FE}); // B .
+    store_instructions(kLowHandler,
+                       {0xBF00, 0xBF00, 0x4770});       // NOP; NOP; BX LR
+    store_instructions(kHighHandler, {0xBF00, 0x4770}); // NOP; BX LR
 
     ASSERT_TRUE(cpu_->set_pc(kMainCode).has_value());
 
@@ -383,8 +388,10 @@ TEST_F(InterruptTest, SamePriorityDoesNotPreempt) {
     store_vector_table_entry(16, kHandlerA | 1u); // IRQ 0
     store_vector_table_entry(17, kHandlerB | 1u); // IRQ 1
 
-    ASSERT_TRUE(bus_.write(0xE000E400, 0xE0u | (0xE0u << 8), Width::Word).has_value());
-    ASSERT_TRUE(bus_.write(0xE000E100, (1u << 0) | (1u << 1), Width::Word).has_value());
+    ASSERT_TRUE(
+        bus_.write(0xE000E400, 0xE0u | (0xE0u << 8), Width::Word).has_value());
+    ASSERT_TRUE(
+        bus_.write(0xE000E100, (1u << 0) | (1u << 1), Width::Word).has_value());
 
     store_instructions(kMainCode, {0xE7FE});
     store_instructions(kHandlerA, {0xBF00, 0xBF00, 0x4770});
@@ -417,8 +424,10 @@ TEST_F(InterruptTest, BasepriMasksLowerPriority) {
     store_vector_table_entry(17, kHighHandler | 1u);
 
     // IRQ0 = 0xE0 (low), IRQ1 = 0x00 (high)
-    ASSERT_TRUE(bus_.write(0xE000E400, 0xE0u | (0x00u << 8), Width::Word).has_value());
-    ASSERT_TRUE(bus_.write(0xE000E100, (1u << 0) | (1u << 1), Width::Word).has_value());
+    ASSERT_TRUE(
+        bus_.write(0xE000E400, 0xE0u | (0x00u << 8), Width::Word).has_value());
+    ASSERT_TRUE(
+        bus_.write(0xE000E100, (1u << 0) | (1u << 1), Width::Word).has_value());
 
     // Main: MSR BASEPRI,R3 ; B .   (MSR BASEPRI = 0xF383 0x8811)
     store_instructions(kMainCode, {0xF383, 0x8811, 0xE7FE});
@@ -426,7 +435,8 @@ TEST_F(InterruptTest, BasepriMasksLowerPriority) {
     store_instructions(kHighHandler, {0xBF00, 0x4770});
 
     ASSERT_TRUE(cpu_->set_pc(kMainCode).has_value());
-    ASSERT_TRUE(cpu_->set_register_value(3, 0x80u).has_value()); // R3 = BASEPRI value
+    ASSERT_TRUE(
+        cpu_->set_register_value(3, 0x80u).has_value()); // R3 = BASEPRI value
 
     ASSERT_TRUE(cpu_->step().has_value()); // MSR BASEPRI,R3 → basepri_ = 0x80
     ASSERT_TRUE(cpu_->step().has_value()); // B .
@@ -449,7 +459,7 @@ TEST_F(InterruptTest, ThreadUsesPspOnException) {
     constexpr addr_t kHandler = kFlashBase + 0x110;
     constexpr uint32_t kPsp = 0x20004000u;
 
-    store_vector_table_entry(0, kInitSp);        // initial MSP
+    store_vector_table_entry(0, kInitSp); // initial MSP
     store_vector_table_entry(1, kMainCode);
     store_vector_table_entry(16, kHandler | 1u); // IRQ 0
 
@@ -461,7 +471,8 @@ TEST_F(InterruptTest, ThreadUsesPspOnException) {
 
     ASSERT_TRUE(cpu_->set_pc(kMainCode).has_value());
     ASSERT_TRUE(cpu_->set_register_value(1, kPsp).has_value()); // R1 = PSP
-    ASSERT_TRUE(cpu_->set_register_value(2, 0x2u).has_value()); // R2 = CONTROL(SPSEL=1)
+    ASSERT_TRUE(
+        cpu_->set_register_value(2, 0x2u).has_value()); // R2 = CONTROL(SPSEL=1)
 
     ASSERT_TRUE(cpu_->step().has_value()); // MSR PSP,R1
     ASSERT_TRUE(cpu_->step().has_value()); // MSR CONTROL,R2 → active SP = PSP
@@ -473,7 +484,8 @@ TEST_F(InterruptTest, ThreadUsesPspOnException) {
     ASSERT_TRUE(cpu_->step().has_value()); // enter handler
     EXPECT_TRUE(cpu_->in_handler_mode());
     EXPECT_EQ(cpu_->register_value(14).value(), 0xFFFFFFFDu);
-    EXPECT_EQ(cpu_->register_value(13).value(), kInitSp - 32u); // stacked on MSP
+    EXPECT_EQ(cpu_->register_value(13).value(),
+              kInitSp - 32u); // stacked on MSP
 
     ASSERT_TRUE(cpu_->step().has_value()); // BX LR → return to thread/PSP
     EXPECT_FALSE(cpu_->in_handler_mode());
@@ -493,8 +505,10 @@ TEST_F(InterruptTest, PriorityGroupingAffectsPreemption) {
     store_vector_table_entry(17, kHandlerB | 1u); // IRQ 1
 
     // IRQ0 = 0x10, IRQ1 = 0x01
-    ASSERT_TRUE(bus_.write(0xE000E400, 0x10u | (0x01u << 8), Width::Word).has_value());
-    ASSERT_TRUE(bus_.write(0xE000E100, (1u << 0) | (1u << 1), Width::Word).has_value());
+    ASSERT_TRUE(
+        bus_.write(0xE000E400, 0x10u | (0x01u << 8), Width::Word).has_value());
+    ASSERT_TRUE(
+        bus_.write(0xE000E100, (1u << 0) | (1u << 1), Width::Word).has_value());
 
     store_instructions(kMainCode, {0xE7FE});
     store_instructions(kHandlerA, {0xBF00, 0xBF00, 0x4770});
@@ -526,19 +540,22 @@ TEST_F(InterruptTest, TimerUifRoundtrip) {
     store_vector_table_entry(0, kInitSp);
     store_vector_table_entry(1, kMainCode);
     store_vector_table_entry(16 + kTim2Irqn, kHandler | 1u); // TIM2 → vector 44
-    store_instructions(kMainCode, {0xE7FE});   // B .
-    store_instructions(kHandler, {0x4770});     // BX LR
+    store_instructions(kMainCode, {0xE7FE});                 // B .
+    store_instructions(kHandler, {0x4770});                  // BX LR
     ASSERT_TRUE(cpu_->set_pc(kMainCode).has_value());
 
     // NVIC: enable TIM2 (bit 28), priority 0xE0 (below thread 0xF0).
-    ASSERT_TRUE(bus_.write(0xE000E100, 1u << kTim2Irqn, Width::Word).has_value());
-    ASSERT_TRUE(bus_.write(0xE000E400 + kTim2Irqn, 0xE0u, Width::Word).has_value());
+    ASSERT_TRUE(
+        bus_.write(0xE000E100, 1u << kTim2Irqn, Width::Word).has_value());
+    ASSERT_TRUE(
+        bus_.write(0xE000E400 + kTim2Irqn, 0xE0u, Width::Word).has_value());
 
     // TIM2: PSC=0, ARR=5, DIER.UIE, CR1.CEN
-    ASSERT_TRUE(bus_.write(0x40000028, 0u, Width::Word).has_value());  // PSC
-    ASSERT_TRUE(bus_.write(0x4000002C, 5u, Width::Word).has_value());  // ARR
-    ASSERT_TRUE(bus_.write(0x4000000C, 1u, Width::Word).has_value());  // DIER.UIE
-    ASSERT_TRUE(bus_.write(0x40000000, 1u, Width::Word).has_value());  // CR1.CEN
+    ASSERT_TRUE(bus_.write(0x40000028, 0u, Width::Word).has_value()); // PSC
+    ASSERT_TRUE(bus_.write(0x4000002C, 5u, Width::Word).has_value()); // ARR
+    ASSERT_TRUE(
+        bus_.write(0x4000000C, 1u, Width::Word).has_value()); // DIER.UIE
+    ASSERT_TRUE(bus_.write(0x40000000, 1u, Width::Word).has_value()); // CR1.CEN
 
     VirtualClock clk(stm32f103_default_clocks);
     SimulationCoordinator coord(std::move(clk));
@@ -556,7 +573,8 @@ TEST_F(InterruptTest, TimerUifRoundtrip) {
             break;
         }
     }
-    EXPECT_TRUE(entered) << "TIM2 UIF did not raise an IRQ that entered the handler";
+    EXPECT_TRUE(entered)
+        << "TIM2 UIF did not raise an IRQ that entered the handler";
     EXPECT_TRUE(returned) << "TIM2 handler did not return";
 }
 
@@ -568,8 +586,8 @@ TEST_F(InterruptTest, ExtiGpioEdgeRoundtrip) {
     store_vector_table_entry(0, kInitSp);
     store_vector_table_entry(1, kMainCode);
     store_vector_table_entry(16 + 8, kHandler | 1u); // EXTI2 → IRQ8 → vector 24
-    store_instructions(kMainCode, {0xE7FE});   // B .
-    store_instructions(kHandler, {0x4770});     // BX LR
+    store_instructions(kMainCode, {0xE7FE});         // B .
+    store_instructions(kHandler, {0x4770});          // BX LR
     ASSERT_TRUE(cpu_->set_pc(kMainCode).has_value());
 
     // NVIC: enable EXTI2 (IRQ8), priority 0xE0 (IPR2 byte0, word-aligned).
@@ -577,9 +595,11 @@ TEST_F(InterruptTest, ExtiGpioEdgeRoundtrip) {
     ASSERT_TRUE(bus_.write(0xE000E408, 0xE0u, Width::Word).has_value());
 
     // AFIO EXTICR1: line 2 → port A (0). EXTI: IMR line2 + RTSR line2.
-    ASSERT_TRUE(bus_.write(0x40010008, 0u, Width::Word).has_value());      // EXTICR1
-    ASSERT_TRUE(bus_.write(0x40010400, 1u << 2, Width::Word).has_value()); // IMR
-    ASSERT_TRUE(bus_.write(0x40010408, 1u << 2, Width::Word).has_value()); // RTSR
+    ASSERT_TRUE(bus_.write(0x40010008, 0u, Width::Word).has_value()); // EXTICR1
+    ASSERT_TRUE(
+        bus_.write(0x40010400, 1u << 2, Width::Word).has_value()); // IMR
+    ASSERT_TRUE(
+        bus_.write(0x40010408, 1u << 2, Width::Word).has_value()); // RTSR
 
     gpioa_.simulate_input(2, true); // rising edge PA2 → EXTI → raise IRQ8
 
@@ -596,13 +616,15 @@ TEST_F(InterruptTest, UsartRxRoundtrip) {
     constexpr addr_t kHandler = kFlashBase + 0x110;
     store_vector_table_entry(0, kInitSp);
     store_vector_table_entry(1, kMainCode);
-    store_vector_table_entry(16 + 37, kHandler | 1u); // USART1 → IRQ37 → vector 53
-    store_instructions(kMainCode, {0xE7FE});          // B .
+    store_vector_table_entry(16 + 37,
+                             kHandler | 1u); // USART1 → IRQ37 → vector 53
+    store_instructions(kMainCode, {0xE7FE}); // B .
     // handler: ldr r4, [r1] (r1=USART1 DR) ; bx lr. r4 is not auto-stacked, so
     // it survives exception return (r0-r3 are restored by the POP).
-    store_instructions(kHandler, {0x680C, 0x4770});   // ldr r4,[r1,#0] ; bx lr
+    store_instructions(kHandler, {0x680C, 0x4770}); // ldr r4,[r1,#0] ; bx lr
     ASSERT_TRUE(cpu_->set_pc(kMainCode).has_value());
-    ASSERT_TRUE(cpu_->set_register_value(1, 0x40013804u).has_value()); // r1 = DR
+    ASSERT_TRUE(
+        cpu_->set_register_value(1, 0x40013804u).has_value()); // r1 = DR
 
     // NVIC: enable USART1 (IRQ37 → ISER1 bit5), priority 0xE0 (IPR9 byte1).
     ASSERT_TRUE(bus_.write(0xE000E104, 1u << 5, Width::Word).has_value());

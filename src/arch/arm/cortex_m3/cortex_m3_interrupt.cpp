@@ -34,7 +34,8 @@ CPU::CPUExpected<void> CortexM3CPU::check_and_handle_interrupt() {
     uint8_t take_irq = 0xFF;
     uint8_t best_preempt = 0xFFu; // smaller value = higher priority
 
-    // SysTick (system exception 15) pends via pending_sys_tick_, bypassing NVIC.
+    // SysTick (system exception 15) pends via pending_sys_tick_, bypassing
+    // NVIC.
     if (pending_sys_tick_ && !globally_masked) {
         uint8_t sp = preempt_priority(system_exception_priority(15));
         if (sp < active_preempt && sp < best_preempt) {
@@ -78,9 +79,9 @@ CortexM3CPU::exception_entry_common(addr_t vector_addr, uint8_t new_priority) {
     // EXC_RETURN reflects the state being left.
     const bool nested = in_handler_mode_;
     const bool thread_use_psp = !nested && (control_ & 0x2u);
-    const data_t exc_return = nested         ? 0xFFFFFFF1u
-                            : thread_use_psp ? 0xFFFFFFFDu
-                                             : 0xFFFFFFF9u;
+    const data_t exc_return = nested           ? 0xFFFFFFF1u
+                              : thread_use_psp ? 0xFFFFFFFDu
+                                               : 0xFFFFFFF9u;
 
     // Save the priority we are suspending; restored on return. This stack is
     // what makes nested preemption return to the right active priority.

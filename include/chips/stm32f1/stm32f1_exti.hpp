@@ -59,13 +59,24 @@ class Stm32f1Exti : public periph::Device {
 // individual IRQs (6-10); 5-9 share EXTI9_5 (23); 10-15 share EXTI15_10 (40).
 inline intr::intr_n_t exti_irq_for_line(uint8_t line) {
     switch (line) {
-        case 0: return 6;
-        case 1: return 7;
-        case 2: return 8;
-        case 3: return 9;
-        case 4: return 10;
-        case 5: case 6: case 7: case 8: case 9: return 23;
-        default: return 40; // 10-15
+        case 0:
+            return 6;
+        case 1:
+            return 7;
+        case 2:
+            return 8;
+        case 3:
+            return 9;
+        case 4:
+            return 10;
+        case 5:
+        case 6:
+        case 7:
+        case 8:
+        case 9:
+            return 23;
+        default:
+            return 40; // 10-15
     }
 }
 

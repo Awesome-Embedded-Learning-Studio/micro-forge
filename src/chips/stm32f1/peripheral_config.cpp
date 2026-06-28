@@ -11,56 +11,49 @@ Expected<void> configure_peripherals(memory::Bus& bus, Stm32f103Parts& parts) {
         return bus.map(memory::region(base, size, weak));
     };
 
-    auto result = map_checked(0x4002'1000_addr, 0x400_addr,
-                              parts.rcc.GetWeak());
+    auto result =
+        map_checked(0x4002'1000_addr, 0x400_addr, parts.rcc.GetWeak());
     if (!result) {
         return result;
     }
 
-    result = map_checked(0x4001'0000_addr, 0x400_addr,
-                         parts.afio.GetWeak());
+    result = map_checked(0x4001'0000_addr, 0x400_addr, parts.afio.GetWeak());
     if (!result) {
         return result;
     }
 
-    result = map_checked(0x4002'2000_addr, 0x400_addr,
-                         parts.flash_if.GetWeak());
+    result =
+        map_checked(0x4002'2000_addr, 0x400_addr, parts.flash_if.GetWeak());
     if (!result) {
         return result;
     }
 
-    result = map_checked(0x4001'0800_addr, 0x400_addr,
-                         parts.gpioa.GetWeak());
+    result = map_checked(0x4001'0800_addr, 0x400_addr, parts.gpioa.GetWeak());
     if (!result) {
         return result;
     }
 
-    result = map_checked(0x4001'0C00_addr, 0x400_addr,
-                         parts.gpiob.GetWeak());
+    result = map_checked(0x4001'0C00_addr, 0x400_addr, parts.gpiob.GetWeak());
     if (!result) {
         return result;
     }
 
-    result = map_checked(0x4001'1000_addr, 0x400_addr,
-                         parts.gpioc.GetWeak());
+    result = map_checked(0x4001'1000_addr, 0x400_addr, parts.gpioc.GetWeak());
     if (!result) {
         return result;
     }
 
-    result = map_checked(0x4001'3800_addr, 0x400_addr,
-                         parts.usart1.GetWeak());
+    result = map_checked(0x4001'3800_addr, 0x400_addr, parts.usart1.GetWeak());
     if (!result) {
         return result;
     }
 
-    result = map_checked(0x4000'0000_addr, 0x400_addr,
-                         parts.tim2.GetWeak());
+    result = map_checked(0x4000'0000_addr, 0x400_addr, parts.tim2.GetWeak());
     if (!result) {
         return result;
     }
 
-    result = map_checked(0x4001'0400_addr, 0x400_addr,
-                         parts.exti.GetWeak());
+    result = map_checked(0x4001'0400_addr, 0x400_addr, parts.exti.GetWeak());
     if (!result) {
         return result;
     }

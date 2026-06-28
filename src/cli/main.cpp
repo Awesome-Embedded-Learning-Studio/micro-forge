@@ -27,7 +27,9 @@ namespace {
 // Ctrl+C flips this; the run loop checks it between chunks so a default
 // unbounded run (no --max-steps) stops gracefully with a status report.
 volatile std::sig_atomic_t g_interrupted = 0;
-void on_sigint(int) { g_interrupted = 1; }
+void on_sigint(int) {
+    g_interrupted = 1;
+}
 
 std::vector<uint8_t> read_file(const std::string& path) {
     std::ifstream f(path, std::ios::binary);
@@ -41,40 +43,57 @@ bool is_elf(const std::vector<uint8_t>& d) {
 
 const char* state_name(cpu::CPU::State s) {
     switch (s) {
-        case cpu::CPU::State::Running: return "Running";
-        case cpu::CPU::State::Halted:  return "Halted";
-        case cpu::CPU::State::Faulted: return "Faulted";
+        case cpu::CPU::State::Running:
+            return "Running";
+        case cpu::CPU::State::Halted:
+            return "Halted";
+        case cpu::CPU::State::Faulted:
+            return "Faulted";
     }
     return "Unknown";
 }
 
 const char* fault_kind_name(cpu::CPU::CPUError k) {
     switch (k) {
-        case cpu::CPU::CPUError::IllegalInstruction:    return "IllegalInstruction";
-        case cpu::CPU::CPUError::DataAccessFault:       return "DataAccessFault";
-        case cpu::CPU::CPUError::InstructionFetchFault: return "InstructionFetchFault";
-        case cpu::CPU::CPUError::InvalidPc:             return "InvalidPc";
-        case cpu::CPU::CPUError::ExceptionEntryFault:   return "ExceptionEntryFault";
-        case cpu::CPU::CPUError::ExceptionReturnFault:  return "ExceptionReturnFault";
-        case cpu::CPU::CPUError::NotRunning:            return "NotRunning";
-        case cpu::CPU::CPUError::RegisterIndexOverflow: return "RegisterIndexOverflow";
-        case cpu::CPU::CPUError::FailedPollIntr:        return "FailedPollIntr";
+        case cpu::CPU::CPUError::IllegalInstruction:
+            return "IllegalInstruction";
+        case cpu::CPU::CPUError::DataAccessFault:
+            return "DataAccessFault";
+        case cpu::CPU::CPUError::InstructionFetchFault:
+            return "InstructionFetchFault";
+        case cpu::CPU::CPUError::InvalidPc:
+            return "InvalidPc";
+        case cpu::CPU::CPUError::ExceptionEntryFault:
+            return "ExceptionEntryFault";
+        case cpu::CPU::CPUError::ExceptionReturnFault:
+            return "ExceptionReturnFault";
+        case cpu::CPU::CPUError::NotRunning:
+            return "NotRunning";
+        case cpu::CPU::CPUError::RegisterIndexOverflow:
+            return "RegisterIndexOverflow";
+        case cpu::CPU::CPUError::FailedPollIntr:
+            return "FailedPollIntr";
     }
     return "Unknown";
 }
 
 const char* run_result_name(sim::RunResult r) {
     switch (r) {
-        case sim::RunResult::Running:   return "MaxSteps";
-        case sim::RunResult::Halted:    return "Halted";
-        case sim::RunResult::Faulted:   return "Faulted";
-        case sim::RunResult::StepError: return "StepError";
+        case sim::RunResult::Running:
+            return "MaxSteps";
+        case sim::RunResult::Halted:
+            return "Halted";
+        case sim::RunResult::Faulted:
+            return "Faulted";
+        case sim::RunResult::StepError:
+            return "StepError";
     }
     return "Unknown";
 }
 
 void print_usage() {
-    std::fprintf(stderr,
+    std::fprintf(
+        stderr,
         "usage: micro-forge <subcommand> [options]\n"
         "  run <firmware.{elf,bin}> [--chip stm32f103] [--base 0x08000000]\n"
         "      [--max-steps N] [--trace-mmio] [--snapshot-json FILE]\n"
@@ -99,27 +118,40 @@ int cmd_run(int argc, char** argv) {
         };
         if (a == "--chip") {
             const char* v = next();
-            if (!v) { std::fprintf(stderr, "--chip needs a value\n"); return 2; }
+            if (!v) {
+                std::fprintf(stderr, "--chip needs a value\n");
+                return 2;
+            }
             opt.chip = v;
         } else if (a == "--base") {
             const char* v = next();
-            if (!v) { std::fprintf(stderr, "--base needs a value\n"); return 2; }
+            if (!v) {
+                std::fprintf(stderr, "--base needs a value\n");
+                return 2;
+            }
             opt.base = static_cast<uint32_t>(std::strtoul(v, nullptr, 0));
         } else if (a == "--max-steps") {
             const char* v = next();
-            if (!v) { std::fprintf(stderr, "--max-steps needs a value\n"); return 2; }
+            if (!v) {
+                std::fprintf(stderr, "--max-steps needs a value\n");
+                return 2;
+            }
             opt.max_steps = static_cast<size_t>(std::strtoull(v, nullptr, 0));
         } else if (a == "--trace-mmio") {
             opt.trace_mmio = true;
         } else if (a == "--snapshot-json") {
             const char* v = next();
-            if (!v) { std::fprintf(stderr, "--snapshot-json needs a value\n"); return 2; }
+            if (!v) {
+                std::fprintf(stderr, "--snapshot-json needs a value\n");
+                return 2;
+            }
             opt.snapshot_json = v;
         } else if (!a.empty() && a[0] != '-') {
             if (opt.firmware.empty()) {
                 opt.firmware = a;
             } else {
-                std::fprintf(stderr, "unexpected positional arg: %s\n", a.c_str());
+                std::fprintf(stderr, "unexpected positional arg: %s\n",
+                             a.c_str());
                 return 2;
             }
         } else {
@@ -130,7 +162,8 @@ int cmd_run(int argc, char** argv) {
     }
 
     if (opt.chip != "stm32f103") {
-        std::fprintf(stderr, "unsupported chip '%s' (only stm32f103)\n", opt.chip.c_str());
+        std::fprintf(stderr, "unsupported chip '%s' (only stm32f103)\n",
+                     opt.chip.c_str());
         return 2;
     }
     if (opt.firmware.empty()) {
@@ -140,7 +173,8 @@ int cmd_run(int argc, char** argv) {
     }
     auto data = read_file(opt.firmware);
     if (data.empty()) {
-        std::fprintf(stderr, "cannot read firmware: %s\n", opt.firmware.c_str());
+        std::fprintf(stderr, "cannot read firmware: %s\n",
+                     opt.firmware.c_str());
         return 1;
     }
 
@@ -155,7 +189,8 @@ int cmd_run(int argc, char** argv) {
         [&](uint8_t ch) { usart_out += static_cast<char>(ch); });
 
     std::expected<void, std::string> lr =
-        is_elf(data) ? (*soc)->load_elf(data) : (*soc)->load_bin(opt.base, data);
+        is_elf(data) ? (*soc)->load_elf(data)
+                     : (*soc)->load_bin(opt.base, data);
     if (!lr) {
         std::fprintf(stderr, "firmware load failed: %s\n", lr.error().c_str());
         return 1;
@@ -166,13 +201,13 @@ int cmd_run(int argc, char** argv) {
     constexpr size_t kEventCap = 256;
     const bool want_events = opt.trace_mmio || !opt.snapshot_json.empty();
     if (want_events) {
-        tools::enable_mmio_trace(
-            *(*soc)->machine().bus, [&](const tools::MmioAccess& a) {
-                if (events.size() >= kEventCap) {
-                    events.erase(events.begin());
-                }
-                events.push_back(a);
-            });
+        tools::enable_mmio_trace(*(*soc)->machine().bus,
+                                 [&](const tools::MmioAccess& a) {
+                                     if (events.size() >= kEventCap) {
+                                         events.erase(events.begin());
+                                     }
+                                     events.push_back(a);
+                                 });
     }
 
     // Run in chunks so SIGINT (Ctrl+C) can interrupt a default unbounded run.
@@ -206,8 +241,8 @@ int cmd_run(int argc, char** argv) {
     if (cm3.IsValid()) {
         const auto& fr = cm3->last_fault();
         if (fr.has_value()) {
-            std::fprintf(stderr,
-                "[fault] kind=%s pc=0x%08X lr=0x%08X sp=0x%08X%s\n",
+            std::fprintf(
+                stderr, "[fault] kind=%s pc=0x%08X lr=0x%08X sp=0x%08X%s\n",
                 fault_kind_name(fr->kind), static_cast<unsigned>(fr->pc),
                 static_cast<unsigned>(fr->lr), static_cast<unsigned>(fr->sp),
                 fr->is_32bit ? " (32-bit insn)" : "");

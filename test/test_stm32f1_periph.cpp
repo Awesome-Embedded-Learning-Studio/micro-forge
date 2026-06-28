@@ -67,13 +67,14 @@ TEST(RccTest, HsiDefaultReady) {
     Stm32f1Rcc rcc;
     auto cr = rcc.read(0x00, Width::Word);
     ASSERT_TRUE(cr.has_value());
-    EXPECT_TRUE(*cr & (1u << 0));  // HSION
-    EXPECT_TRUE(*cr & (1u << 1));  // HSIRDY
+    EXPECT_TRUE(*cr & (1u << 0)); // HSION
+    EXPECT_TRUE(*cr & (1u << 1)); // HSIRDY
 }
 
 TEST(RccTest, HseOnSetsReady) {
     Stm32f1Rcc rcc;
-    ASSERT_TRUE(rcc.write(0x00, 0x00010000, Width::Word).has_value()); // set HSEON
+    ASSERT_TRUE(
+        rcc.write(0x00, 0x00010000, Width::Word).has_value()); // set HSEON
     auto cr = rcc.read(0x00, Width::Word);
     ASSERT_TRUE(cr.has_value());
     EXPECT_TRUE(*cr & (1u << 16)); // HSEON
@@ -82,7 +83,8 @@ TEST(RccTest, HseOnSetsReady) {
 
 TEST(RccTest, PllOnSetsReady) {
     Stm32f1Rcc rcc;
-    ASSERT_TRUE(rcc.write(0x00, 0x01000000, Width::Word).has_value()); // set PLLON
+    ASSERT_TRUE(
+        rcc.write(0x00, 0x01000000, Width::Word).has_value()); // set PLLON
     auto cr = rcc.read(0x00, Width::Word);
     ASSERT_TRUE(cr.has_value());
     EXPECT_TRUE(*cr & (1u << 24)); // PLLON
@@ -300,7 +302,8 @@ TEST(UsartTest, DrReadReturnsByteAndClearsRxne) {
 
 TEST(UsartTest, RxneIrqRaisedWhenEnabled) {
     Stm32f1Usart usart;
-    ASSERT_TRUE(usart.write(0x0C, 1u << 5, Width::Word).has_value()); // CR1 RXNEIE
+    ASSERT_TRUE(
+        usart.write(0x0C, 1u << 5, Width::Word).has_value()); // CR1 RXNEIE
     bool fired = false;
     usart.set_irq_callback([&] { fired = true; });
     usart.inject_rx('A');
@@ -401,19 +404,19 @@ TEST(TimerTest, UifEdgeWithUieTriggersIrqCallback) {
     Stm32f1Timer tim;
     int count = 0;
     tim.set_irq_callback([&] { ++count; });
-    tim.set_prescaler(0);     // divisor 1
+    tim.set_prescaler(0); // divisor 1
     tim.set_auto_reload(5);
     ASSERT_TRUE(tim.write(0x0C, 1u, Width::Word).has_value()); // DIER.UIE
-    tim.enable(true);         // CR1.CEN
+    tim.enable(true);                                          // CR1.CEN
 
-    tim.tick(5);              // cnt 0→5 → overflow, UIF edge
+    tim.tick(5); // cnt 0→5 → overflow, UIF edge
     EXPECT_TRUE(tim.update_flag());
     EXPECT_EQ(count, 1);
 
-    tim.tick(10);             // UIF still set → no re-fire (edge)
+    tim.tick(10); // UIF still set → no re-fire (edge)
     EXPECT_EQ(count, 1);
 
-    tim.clear_update_flag();  // re-arm
+    tim.clear_update_flag(); // re-arm
     tim.tick(5);
     EXPECT_EQ(count, 2);
 }
@@ -427,8 +430,8 @@ TEST(TimerTest, UifWithoutUieDoesNotFireCallback) {
     tim.enable(true);
     // DIER.UIE not set
     tim.tick(5);
-    EXPECT_TRUE(tim.update_flag());  // UIF still set
-    EXPECT_FALSE(fired);             // but no IRQ raised
+    EXPECT_TRUE(tim.update_flag()); // UIF still set
+    EXPECT_FALSE(fired);            // but no IRQ raised
 }
 
 // ── EXTI Tests ──
@@ -459,9 +462,11 @@ TEST(ExtiTest, RisingEdgeOnRoutedPortTriggers) {
     exti.set_afio(afio);
     intr::intr_n_t raised = 0xFF;
     exti.set_irq_callback([&](intr::intr_n_t irq) { raised = irq; });
-    ASSERT_TRUE(afio.write(0x08, 0u, Width::Word).has_value());      // EXTICR1 → PA
-    ASSERT_TRUE(exti.write(0x00, 1u << 3, Width::Word).has_value()); // IMR line3
-    ASSERT_TRUE(exti.write(0x08, 1u << 3, Width::Word).has_value()); // RTSR line3
+    ASSERT_TRUE(afio.write(0x08, 0u, Width::Word).has_value()); // EXTICR1 → PA
+    ASSERT_TRUE(
+        exti.write(0x00, 1u << 3, Width::Word).has_value()); // IMR line3
+    ASSERT_TRUE(
+        exti.write(0x08, 1u << 3, Width::Word).has_value()); // RTSR line3
     exti.on_gpio_edge({{}, 'A', 3, true});
     EXPECT_TRUE(exti.pending(3));
     EXPECT_EQ(raised, 9u); // EXTI3 → IRQ9
@@ -473,7 +478,7 @@ TEST(ExtiTest, EdgeOnWrongPortDoesNotTrigger) {
     exti.set_afio(afio);
     bool fired = false;
     exti.set_irq_callback([&](intr::intr_n_t) { fired = true; });
-    ASSERT_TRUE(afio.write(0x08, 0u, Width::Word).has_value());      // line3 → PA
+    ASSERT_TRUE(afio.write(0x08, 0u, Width::Word).has_value()); // line3 → PA
     ASSERT_TRUE(exti.write(0x00, 1u << 3, Width::Word).has_value()); // IMR
     ASSERT_TRUE(exti.write(0x08, 1u << 3, Width::Word).has_value()); // RTSR
     exti.on_gpio_edge({{}, 'B', 3, true}); // PB3 but routed to PA → no trigger
@@ -488,7 +493,8 @@ TEST(ExtiTest, ImrMasksLine) {
     bool fired = false;
     exti.set_irq_callback([&](intr::intr_n_t) { fired = true; });
     ASSERT_TRUE(afio.write(0x08, 0u, Width::Word).has_value());
-    ASSERT_TRUE(exti.write(0x08, 1u << 3, Width::Word).has_value()); // RTSR line3
+    ASSERT_TRUE(
+        exti.write(0x08, 1u << 3, Width::Word).has_value()); // RTSR line3
     // IMR line3 NOT set
     exti.on_gpio_edge({{}, 'A', 3, true});
     EXPECT_FALSE(fired);
@@ -503,8 +509,9 @@ TEST(ExtiTest, FallingOnlyDoesNotTriggerOnRising) {
     exti.set_irq_callback([&](intr::intr_n_t) { ++count; });
     ASSERT_TRUE(afio.write(0x08, 0u, Width::Word).has_value());
     ASSERT_TRUE(exti.write(0x00, 1u << 3, Width::Word).has_value()); // IMR
-    ASSERT_TRUE(exti.write(0x0C, 1u << 3, Width::Word).has_value()); // FTSR only
-    exti.on_gpio_edge({{}, 'A', 3, true});  // rising, only falling armed
+    ASSERT_TRUE(
+        exti.write(0x0C, 1u << 3, Width::Word).has_value()); // FTSR only
+    exti.on_gpio_edge({{}, 'A', 3, true}); // rising, only falling armed
     EXPECT_EQ(count, 0);
     exti.on_gpio_edge({{}, 'A', 3, false}); // falling → triggers
     EXPECT_EQ(count, 1);
@@ -521,7 +528,8 @@ TEST(FlashTest, AcrDefault) {
 
 TEST(FlashTest, AcrWriteRead) {
     Stm32f1Flash flash;
-    ASSERT_TRUE(flash.write(0x00, 0x00000002, Width::Word).has_value()); // LATENCY=2
+    ASSERT_TRUE(
+        flash.write(0x00, 0x00000002, Width::Word).has_value()); // LATENCY=2
     auto acr = flash.read(0x00, Width::Word);
     ASSERT_TRUE(acr.has_value());
     EXPECT_EQ(*acr, 0x00000002u);
@@ -572,7 +580,8 @@ TEST(AfioTest, MaprDefault) {
 
 TEST(AfioTest, MaprWriteRead) {
     Stm32f1Afio afio;
-    ASSERT_TRUE(afio.write(0x04, 0x02000000, Width::Word).has_value()); // SWJ config
+    ASSERT_TRUE(
+        afio.write(0x04, 0x02000000, Width::Word).has_value()); // SWJ config
     auto mapr = afio.read(0x04, Width::Word);
     ASSERT_TRUE(mapr.has_value());
     EXPECT_EQ(*mapr, 0x02000000u);

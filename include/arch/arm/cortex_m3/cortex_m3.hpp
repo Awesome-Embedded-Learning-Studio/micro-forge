@@ -92,8 +92,8 @@ class CortexM3CPU : public CPU {
 
     // ADC/SBC flag updates with an explicit carry-in. Unlike update_flags(Add/
     // Sub), C and V are derived from a 64-bit sum so the carry-in folds in
-    // correctly even when the second operand is 0xFFFFFFFF (folding Cin into the
-    // operand before a plain add/sub would wrap there and mis-report C).
+    // correctly even when the second operand is 0xFFFFFFFF (folding Cin into
+    // the operand before a plain add/sub would wrap there and mis-report C).
     void set_adc_flags(data_t a, data_t b, data_t cin, data_t result);
     void set_sbc_flags(data_t a, data_t b, data_t cin, data_t result);
 

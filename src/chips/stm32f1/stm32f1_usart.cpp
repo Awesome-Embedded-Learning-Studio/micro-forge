@@ -88,7 +88,7 @@ void Stm32f1Usart::set_output(OutputCallback cb) {
 
 void Stm32f1Usart::inject_rx(uint8_t byte) {
     rx_dr_ = byte;
-    sr_ |= (1u << 5); // RXNE
+    sr_ |= (1u << 5);                    // RXNE
     if ((cr1_ & (1u << 5)) && irq_cb_) { // RXNEIE enabled
         irq_cb_();
     }

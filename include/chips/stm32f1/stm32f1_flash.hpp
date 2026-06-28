@@ -17,11 +17,11 @@ class Stm32f1Flash : public periph::Device {
     WeakPtr<Stm32f1Flash> GetWeak() { return weak_factory_.GetWeakPtr(); }
 
   private:
-    uint32_t acr_   = 0x00000030; // PRFTBE=1, LATENCY=1
-    uint32_t keyr_  = 0x00000000;
+    uint32_t acr_ = 0x00000030; // PRFTBE=1, LATENCY=1
+    uint32_t keyr_ = 0x00000000;
     uint32_t optkeyr_ = 0x00000000;
-    uint32_t sr_    = 0x00000000; // Never busy
-    uint32_t cr_    = 0x00000080; // LOCK=1 after reset
+    uint32_t sr_ = 0x00000000; // Never busy
+    uint32_t cr_ = 0x00000080; // LOCK=1 after reset
 
     WeakPtrFactory<Stm32f1Flash> weak_factory_{this};
 };
