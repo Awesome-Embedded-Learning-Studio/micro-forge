@@ -64,66 +64,7 @@ CPU::CPUExpected<void> CortexM3CPU::t32_dataproc_imm(uint16_t hw1,
     uint32_t imm32 =
         thumb32::expand_imm12((hw1 >> 10) & 1, (hw2 >> 12) & 7, hw2 & 0xFF);
     uint32_t rn_val = rr(rn);
-    uint32_t result;
-
-    switch (op2) {
-        case 0:
-            result = rn_val & imm32;
-            break; // AND
-        case 1:
-            result = rn_val & ~imm32;
-            break; // BIC
-        case 2:
-            result = (rn == 15) ? imm32 : (rn_val | imm32);
-            break; // ORR/MOV
-        case 3:
-            result = (rn == 15) ? ~imm32 : (rn_val | ~imm32);
-            break; // ORN/MVN
-        case 4:
-            result = rn_val ^ imm32;
-            break; // EOR
-        case 8:
-            result = rn_val + imm32;
-            break; // ADD
-        case 10:
-            result = rn_val + imm32 + ((xpsr_ & PSR_C) ? 1u : 0u);
-            break; // ADC
-        case 11: {
-            uint32_t borrow = (xpsr_ & PSR_C) ? 0u : 1u;
-            result = rn_val - imm32 - borrow;
-            break; // SBC
-        }
-        case 13:
-            result = rn_val - imm32;
-            break; // SUB
-        case 14:
-            result = imm32 - rn_val;
-            break; // RSB
-        default:
-            return std::unexpected{CPUError::IllegalInstruction};
-    }
-
-    if (s_bit) {
-        data_t cin = (xpsr_ & PSR_C) ? 1u : 0u;
-        if (op2 == 8) { // ADD
-            update_flags(FlagPostOperation::Add, rn_val, imm32, result);
-        } else if (op2 == 10) { // ADC = rn + imm + C
-            set_adc_flags(rn_val, imm32, cin, result);
-        } else if (op2 == 11) { // SBC = rn - imm - !C
-            set_sbc_flags(rn_val, imm32, cin, result);
-        } else if (op2 == 13) { // SUB = rn - imm
-            update_flags(FlagPostOperation::Sub, rn_val, imm32, result);
-        } else if (op2 == 14) { // RSB = imm - rn; minuend is the immediate.
-            update_flags(FlagPostOperation::Sub, imm32, rn_val, result);
-        } else {
-            update_nz(result);
-        }
-    }
-    // CMP/CMN/TST/TEQ: S=1, Rd=15 → flags only, no register write
-    if (s_bit && rd == 15) {
-        return {};
-    }
-    return wr(rd, result);
+    return t32_dataproc_apply(op2, s_bit, rn, rd, rn_val, imm32);
 }
 
 // ── Data processing (shifted register): AND, ORR, EOR, ADD, SUB, etc. ──
@@ -177,65 +118,7 @@ CPU::CPUExpected<void> CortexM3CPU::t32_dataproc_reg(uint16_t hw1,
     }
 
     uint32_t rn_val = rr(rn);
-    uint32_t result;
-    switch (op) {
-        case 0:
-            result = rn_val & shifted;
-            break;
-        case 1:
-            result = rn_val & ~shifted;
-            break;
-        case 2:
-            result = (rn == 15) ? shifted : (rn_val | shifted);
-            break;
-        case 3: // ORN = Rn | ~shifted; Rn=15 collapses to MVN (~shifted).
-            result = (rn == 15) ? ~shifted : (rn_val | ~shifted);
-            break;
-        case 4:
-            result = rn_val ^ shifted;
-            break;
-        case 8:
-            result = rn_val + shifted;
-            break;
-        case 10: { // ADC = Rn + shifted + C
-            result = rn_val + shifted + ((xpsr_ & PSR_C) ? 1u : 0u);
-            break;
-        }
-        case 11: { // SBC = Rn - shifted - !C
-            result = rn_val - shifted - ((xpsr_ & PSR_C) ? 0u : 1u);
-            break;
-        }
-        case 13:
-            result = rn_val - shifted;
-            break;
-        case 14:
-            result = shifted - rn_val;
-            break;
-        default:
-            return std::unexpected{CPUError::IllegalInstruction};
-    }
-
-    if (s_bit) {
-        data_t cin = (xpsr_ & PSR_C) ? 1u : 0u;
-        if (op == 8) { // ADD
-            update_flags(FlagPostOperation::Add, rn_val, shifted, result);
-        } else if (op == 10) { // ADC
-            set_adc_flags(rn_val, shifted, cin, result);
-        } else if (op == 11) { // SBC
-            set_sbc_flags(rn_val, shifted, cin, result);
-        } else if (op == 13) { // SUB = rn - shifted
-            update_flags(FlagPostOperation::Sub, rn_val, shifted, result);
-        } else if (op == 14) { // RSB = shifted - rn; minuend is the operand.
-            update_flags(FlagPostOperation::Sub, shifted, rn_val, result);
-        } else {
-            update_nz(result);
-        }
-    }
-    // CMP/CMN/TST/TEQ: S=1, Rd=15 → flags only, no register write.
-    if (s_bit && rd == 15) {
-        return {};
-    }
-    return wr(rd, result);
+    return t32_dataproc_apply(op, s_bit, rn, rd, rn_val, shifted);
 }
 
 // ── Shift register (LSL/LSR/ASR/ROR register) ──

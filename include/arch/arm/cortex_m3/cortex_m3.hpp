@@ -93,6 +93,49 @@ class CortexM3CPU : public CPU {
     CPUExpected<void> t32_addsub_plain_imm(uint16_t hw1, uint16_t hw2);
     CPUExpected<void> t32_dataproc_imm(uint16_t hw1, uint16_t hw2);
     CPUExpected<void> t32_dataproc_reg(uint16_t hw1, uint16_t hw2);
+    // Shared apply for the modified-immediate and shifted-register data-proc
+    // forms — identical op table / flags / Rd=15 handling; they differ only in
+    // the second operand (operand_b). op = hw1[8:5]. Defined inline so the two
+    // call sites fold it away (an out-of-line copy regressed gpio/uart ~10%).
+    CPUExpected<void> t32_dataproc_apply(uint8_t op, bool s_bit, uint8_t rn,
+                                         uint8_t rd, uint32_t rn_val,
+                                         uint32_t operand_b) {
+        uint32_t result;
+        switch (op) {
+            case 0: result = rn_val & operand_b; break;            // AND/TST
+            case 1: result = rn_val & ~operand_b; break;           // BIC
+            case 2: result = (rn == 15) ? operand_b : (rn_val | operand_b); break;   // ORR/MOV
+            case 3: result = (rn == 15) ? ~operand_b : (rn_val | ~operand_b); break; // ORN/MVN
+            case 4: result = rn_val ^ operand_b; break;            // EOR/TEQ
+            case 8: result = rn_val + operand_b; break;            // ADD/CMN
+            case 10: result = rn_val + operand_b + ((xpsr_ & PSR_C) ? 1u : 0u); break; // ADC
+            case 11: result = rn_val - operand_b - ((xpsr_ & PSR_C) ? 0u : 1u); break; // SBC
+            case 13: result = rn_val - operand_b; break;           // SUB/CMP
+            case 14: result = operand_b - rn_val; break;           // RSB
+            default: return std::unexpected{CPUError::IllegalInstruction};
+        }
+        if (s_bit) {
+            data_t cin = (xpsr_ & PSR_C) ? 1u : 0u;
+            if (op == 8) {
+                update_flags(FlagPostOperation::Add, rn_val, operand_b, result);
+            } else if (op == 10) {
+                set_adc_flags(rn_val, operand_b, cin, result);
+            } else if (op == 11) {
+                set_sbc_flags(rn_val, operand_b, cin, result);
+            } else if (op == 13) {
+                update_flags(FlagPostOperation::Sub, rn_val, operand_b, result);
+            } else if (op == 14) {
+                update_flags(FlagPostOperation::Sub, operand_b, rn_val, result);
+            } else {
+                update_nz(result);
+            }
+        }
+        // CMP/CMN/TST/TEQ: S=1, Rd=15 → flags only, no register write.
+        if (s_bit && rd == 15) {
+            return {};
+        }
+        return wr(rd, result);
+    }
     CPUExpected<void> t32_misc_reverse(uint16_t hw1, uint16_t hw2);
     CPUExpected<void> t32_ssat_usat(uint16_t hw1, uint16_t hw2);
     CPUExpected<void> t32_shift_reg(uint16_t hw1, uint16_t hw2);
