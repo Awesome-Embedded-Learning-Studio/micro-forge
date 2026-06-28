@@ -3,6 +3,7 @@
 #include "arch/arm/cortex_m3/thumb32_fields.hpp"
 #include "core/types.hpp"
 #include "util/logger.hpp"
+#include "util/perf_stats.hpp"
 #include <bit>
 #include <expected>
 
@@ -300,7 +301,8 @@ CPU::CPUExpected<void> CortexM3CPU::push_stack(data_t val) {
         return std::unexpected{CPUError::DataAccessFault};
     }
     // Route through write_reg(13) so the MSP/PSP shadow stays in sync with R13
-    // (the active-SP invariant). A bare regs_.write(13) would desync the shadow.
+    // (the active-SP invariant). A bare regs_.write(13) would desync the
+    // shadow.
     return write_reg(13, sp);
 }
 
@@ -329,6 +331,7 @@ CPU::CPUExpected<data_t> CortexM3CPU::pop_stack() {
 // ── Fetch ──
 
 Expected<uint16_t> CortexM3CPU::fetch16(addr_t addr) {
+    MF_PERF_INC(fetches);
     if (!bus_) {
         return std::unexpected{BusError::InvalidDevice};
     }
@@ -405,6 +408,7 @@ CPU::CPUExpected<void> CortexM3CPU::step() {
     }
 
     if (is_32bit_prefix_instruction(hw1)) {
+        MF_PERF_INC(instr_32bit);
         hw2_res = fetch16(pc + 2);
         if (!hw2_res) {
             LOG_ERROR(
@@ -427,6 +431,7 @@ CPU::CPUExpected<void> CortexM3CPU::step() {
             }
         }
     } else {
+        MF_PERF_INC(instr_16bit);
         exec_res =
             execute_instruction ? execute_16bit(hw1) : CPUExpected<void>{};
         if (exec_res.has_value() && !pc_written_) {

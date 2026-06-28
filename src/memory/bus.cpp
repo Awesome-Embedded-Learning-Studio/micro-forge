@@ -1,5 +1,7 @@
 #include "memory/bus.hpp"
 
+#include "util/perf_stats.hpp"
+
 namespace micro_forge::memory {
 
 Expected<void> Bus::map(Region region) {
@@ -18,11 +20,15 @@ Expected<void> Bus::map(Region region) {
 }
 
 Region* Bus::find_region(addr_t addr) {
+    std::uint64_t iters = 0;
     for (auto& r : regions_) {
+        ++iters;
         if (addr >= r.start && addr < r.end) {
+            MF_PERF_FIND_REGION(iters);
             return &r;
         }
     }
+    MF_PERF_FIND_REGION(iters);
     return nullptr;
 }
 
@@ -44,6 +50,7 @@ void Bus::trace_access(bool is_write, addr_t addr, data_t value, Width width,
 }
 
 Expected<data_t> Bus::read(addr_t addr, Width w) {
+    MF_PERF_INC(bus_reads);
     // Bit-band alias translation (Cortex-M3 hardware feature).
     if (addr >= 0x2200'0000u && addr < 0x2400'0000u) {
         return bitband_read(addr, 0x2200'0000u, 0x2000'0000u);
@@ -72,6 +79,7 @@ Expected<data_t> Bus::read(addr_t addr, Width w) {
 }
 
 Expected<void> Bus::write(addr_t addr, data_t data, Width w) {
+    MF_PERF_INC(bus_writes);
     // Bit-band alias translation (Cortex-M3 hardware feature).
     if (addr >= 0x2200'0000u && addr < 0x2400'0000u) {
         return bitband_write(addr, 0x2200'0000u, 0x2000'0000u, data);
