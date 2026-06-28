@@ -200,3 +200,13 @@ if(TARGET micro-forge AND TARGET hello_firmware)
     add_dependencies(test_cli micro-forge hello_firmware)
     gtest_discover_tests(test_cli)
 endif()
+
+# ── Meta-guard: test-discovery regression floor (COVERAGE-METHODOLOGY §3) ──
+# Cheap `ctest -N` count check — fails if a refactor silently drops test
+# discovery (build stays green, coverage evaporates). Bash on the Linux test
+# host (WSL2); there is no Windows test path here. The script self-skips
+# (exit 77) when the build dir is absent.
+add_test(
+    NAME test_count_floor
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check_test_count.sh ${CMAKE_BINARY_DIR}
+)
