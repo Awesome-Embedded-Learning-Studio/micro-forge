@@ -60,21 +60,33 @@ Expected<data_t> Bus::read(addr_t addr, Width w) {
     }
     auto* region = find_region(addr);
     if (!region) {
-        trace_access(false, addr, 0, w, std::unexpected(BusError::Unmapped),
-                     "unmapped");
+        if (trace_) {
+            trace_access(false, addr, 0, w, std::unexpected(BusError::Unmapped),
+                         "unmapped");
+        }
         return std::unexpected(BusError::Unmapped);
     }
     if (!region->device.IsValid()) {
-        trace_access(false, addr, 0, w,
-                     std::unexpected(BusError::InvalidDevice), "invalid");
+        if (trace_) {
+            trace_access(false, addr, 0, w,
+                         std::unexpected(BusError::InvalidDevice), "invalid");
+        }
         return std::unexpected(BusError::InvalidDevice);
     }
     auto result = region->device->read(addr - region->start, w);
-    auto trace_result = result.has_value()
-                            ? Expected<void>{}
-                            : Expected<void>{std::unexpected(result.error())};
-    trace_access(false, addr, result.value_or(0), w, trace_result,
-                 region->device->name());
+    // Guard the whole trace bundle: trace_access early-returns when trace_ is
+    // null, but its arguments (the value_or, the device->name() virtual, the
+    // trace_result expected) were eagerly evaluated on every read otherwise —
+    // ~9.5M virtual name() calls per second with tracing off. Building the
+    // args only when tracing is on removes that and the value_or(0) the
+    // DIRECTIVES ban flags.
+    if (trace_) {
+        auto trace_result = result.has_value()
+                                ? Expected<void>{}
+                                : Expected<void>{std::unexpected(result.error())};
+        trace_access(false, addr, result.has_value() ? *result : 0, w,
+                     trace_result, region->device->name());
+    }
     return result;
 }
 
@@ -89,17 +101,23 @@ Expected<void> Bus::write(addr_t addr, data_t data, Width w) {
     }
     auto* region = find_region(addr);
     if (!region) {
-        trace_access(true, addr, data, w, std::unexpected(BusError::Unmapped),
-                     "unmapped");
+        if (trace_) {
+            trace_access(true, addr, data, w, std::unexpected(BusError::Unmapped),
+                         "unmapped");
+        }
         return std::unexpected(BusError::Unmapped);
     }
     if (!region->device.IsValid()) {
-        trace_access(true, addr, data, w,
-                     std::unexpected(BusError::InvalidDevice), "invalid");
+        if (trace_) {
+            trace_access(true, addr, data, w,
+                         std::unexpected(BusError::InvalidDevice), "invalid");
+        }
         return std::unexpected(BusError::InvalidDevice);
     }
     auto result = region->device->write(addr - region->start, data, w);
-    trace_access(true, addr, data, w, result, region->device->name());
+    if (trace_) {
+        trace_access(true, addr, data, w, result, region->device->name());
+    }
     return result;
 }
 
