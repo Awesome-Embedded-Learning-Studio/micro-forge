@@ -72,7 +72,8 @@ class CortexM3CPU : public CPU {
     CPUExpected<void> t16_shift_imm(uint16_t insn);
     CPUExpected<void> t16_addsub_reg3(uint16_t insn);
     CPUExpected<void> t16_imm8_dataops(uint16_t insn);
-    CPUExpected<void> t16_dataproc(uint16_t insn);
+    CPUExpected<void> t16_special_bx(uint16_t insn);
+    CPUExpected<void> t16_dataproc_reg(uint16_t insn);
     CPUExpected<void> t16_ldr_literal(uint16_t insn);
     CPUExpected<void> t16_loadstore_reg_offset(uint16_t insn);
     CPUExpected<void> t16_loadstore_imm_offset(uint16_t insn);

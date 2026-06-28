@@ -85,9 +85,10 @@ CPU::CPUExpected<void> CortexM3CPU::execute_16bit(uint16_t insn) {
         case 0b00111:
             return t16_imm8_dataops(insn);
 
-        // ── Data processing register OR Special data / BX ──
+        // ── Special data / BX (bit10=1) OR Data processing register (bit10=0) ──
         case 0b01000:
-            return t16_dataproc(insn);
+            return ((insn >> 10) & 1) ? t16_special_bx(insn)
+                                      : t16_dataproc_reg(insn);
 
         // ── LDR literal (PC-relative) ──
         case 0b01001:

@@ -150,43 +150,45 @@ CPU::CPUExpected<void> CortexM3CPU::t16_imm8_dataops(uint16_t insn) {
     return std::unexpected{CPUError::IllegalInstruction};
 }
 
-// Data processing register OR Special data / BX (0b01000).
-CPU::CPUExpected<void> CortexM3CPU::t16_dataproc(uint16_t insn) {
-    if ((insn >> 10) & 1) {
-        // Special data instructions / BX
-        uint8_t op = (insn >> 8) & 0x3;
-        uint8_t rm = rm4(insn);
-        uint8_t rd = rd4(insn);
+// Special data instructions / BX (0b01000, bit10=1): ADD/CMP/MOV high, BX/BLX.
+CPU::CPUExpected<void> CortexM3CPU::t16_special_bx(uint16_t insn) {
+    uint8_t op = (insn >> 8) & 0x3;
+    uint8_t rm = rm4(insn);
+    uint8_t rd = rd4(insn);
 
-        switch (op) {
-            case 0b00:
-                return wr(rd, rr(rd) + rr(rm)); // ADD high
-            case 0b01: {                        // CMP high
-                data_t a = rr(rd), b = rr(rm);
-                update_flags(FlagPostOperation::Sub, a, b, a - b);
-                return {};
-            }
-            case 0b10:
-                return wr(rd, rr(rm)); // MOV high
-            case 0b11: { // BX / BLX register — bit[7]: 0=BX, 1=BLX
-                bool is_blx = (insn >> 7) & 1;
-                data_t target = rr(rm);
-                if (is_blx) {
-                    // LR = address of next instruction | Thumb bit.
-                    auto pc_res = read_pc_raw();
-                    if (!pc_res) {
-                        return std::unexpected{pc_res.error()};
-                    }
-                    auto lr_wr = wr(14, (*pc_res + 2u) | 1u);
-                    if (!lr_wr) {
-                        return lr_wr;
-                    }
+    switch (op) {
+        case 0b00:
+            return wr(rd, rr(rd) + rr(rm)); // ADD high
+        case 0b01: {                        // CMP high
+            data_t a = rr(rd), b = rr(rm);
+            update_flags(FlagPostOperation::Sub, a, b, a - b);
+            return {};
+        }
+        case 0b10:
+            return wr(rd, rr(rm)); // MOV high
+        case 0b11: { // BX / BLX register — bit[7]: 0=BX, 1=BLX
+            bool is_blx = (insn >> 7) & 1;
+            data_t target = rr(rm);
+            if (is_blx) {
+                // LR = address of next instruction | Thumb bit.
+                auto pc_res = read_pc_raw();
+                if (!pc_res) {
+                    return std::unexpected{pc_res.error()};
                 }
-                return write_pc(target);
+                auto lr_wr = wr(14, (*pc_res + 2u) | 1u);
+                if (!lr_wr) {
+                    return lr_wr;
+                }
             }
+            return write_pc(target);
         }
     }
-    // Data processing register
+    return std::unexpected{CPUError::IllegalInstruction}; // 2-bit op covers 0-3
+}
+
+// Data processing register (0b01000, bit10=0): AND/EOR/shift-reg/ADC/SBC/
+// ROR/TST/RSB/CMN/ORR/MUL/BIC/MVN.
+CPU::CPUExpected<void> CortexM3CPU::t16_dataproc_reg(uint16_t insn) {
     // op=bits[9:6], Rm/Rs=bits[5:3], Rdn/Rd=bits[2:0].
     // (rm3() reads bits[8:6], which is the store-reg-offset Rm field,
     //  NOT the data-proc Rm — that was the bug.)
