@@ -4,22 +4,20 @@
 # A refactor that breaks `gtest_discover_tests` can silently drop dozens of
 # tests with no compile error — the build is green but coverage evaporates.
 # This guard runs `ctest -N` (cheap: discovery listing only, no execution) and
-# fails if the discovered count falls below BASELINE.
+# fails if the discovered PRODUCT-test count falls below BASELINE.
 #
-# It excludes ITSELF from the count (it is a meta-guard, not a product test).
-# Real tests — including later coverage guards (oracle differential, gcov) —
-# count toward the floor. Bump BASELINE when you add tests; never lower it.
-#
-# Assumption: BASELINE reflects a host with the full corpus present (incl. the
-# optional e2e / armcc-firmware tests). CI registration is deferred
-# (COVERAGE-METHODOLOGY decision #1), so this is a local-dev guard for now.
+# It excludes meta-guards (harness, not product tests, and some are host-gated
+# like the qemu oracle): this guard itself, oracle_cortex_m3, and future
+# coverage gates. Add a new meta-guard? Append its name to the awk exclusion
+# below. The floor stays the stable product-test count across hosts. Bump
+# BASELINE only when you add a PRODUCT test; never lower it.
 #
 # Usage: check_test_count.sh [build_dir]   (default: build)
 # Exit:  0 = ok   1 = below floor / parse error   77 = skipped (no build dir)
 set -euo pipefail
 
 BUILD="${1:-build}"
-BASELINE=321   # floor — only ever raised, never lowered
+BASELINE=321   # floor = PRODUCT test count — only ever raised, never lowered
 
 if [[ ! -d "$BUILD" ]]; then
   echo "skip: build dir '$BUILD' not found (run cmake configure first)"
@@ -32,10 +30,9 @@ if [[ -z "$LIST" ]]; then
   exit 1
 fi
 
-# Discovered tests minus this meta-guard itself (ctest lists it as
-# "Test #N: test_count_floor").
+# Discovered tests minus meta-guards (harness, host-gated or self-referential).
 REAL="$(printf '%s\n' "$LIST" \
-        | awk '/Test +#[0-9]+:/ && !/test_count_floor/ {c++} END {print c+0}')"
+        | awk '/Test +#[0-9]+:/ && !/test_count_floor|oracle_cortex_m3/ {c++} END {print c+0}')"
 
 if [[ $REAL -lt $BASELINE ]]; then
   echo "fail: discovered $REAL tests < baseline $BASELINE (tests silently dropped?)"

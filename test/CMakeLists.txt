@@ -210,3 +210,19 @@ add_test(
     NAME test_count_floor
     COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check_test_count.sh ${CMAKE_BINARY_DIR}
 )
+
+# ── Meta-guard: QEMU Cortex-M3 differential oracle (COVERAGE-METHODOLOGY §4) ──
+# Hardened oracle: real exit code (actual vs verified-expected), self-skips
+# (exit 77) when the arm/qemu toolchain is absent, RUN_SERIAL so the gdbstub
+# port never collides under `ctest -j`. A local Tier-1 reference anchor for
+# taste/perf refactors — micro-forge unit tests are checked against these values.
+find_program(QEMU_SYSTEM_ARM qemu-system-arm)
+if(QEMU_SYSTEM_ARM)
+    add_test(
+        NAME oracle_cortex_m3
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/qemu_cortex_m3_oracle.sh
+    )
+    set_tests_properties(oracle_cortex_m3 PROPERTIES RUN_SERIAL TRUE)
+else()
+    message(STATUS "qemu-system-arm not found — skipping oracle_cortex_m3")
+endif()
