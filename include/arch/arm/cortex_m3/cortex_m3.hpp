@@ -62,6 +62,24 @@ class CortexM3CPU : public CPU {
     Expected<uint16_t> fetch16(addr_t addr);
     CPUExpected<void> execute_16bit(uint16_t insn);
     CPUExpected<void> execute_32bit(uint16_t hw1, uint16_t hw2);
+    // 16-bit Thumb family handlers — split out of execute_16bit so no single
+    // translation unit exceeds the DIRECTIVES 700-line cap. Each returns the
+    // result of its (prefix-/decode_key-matched) block; execute_16bit
+    // dispatches. The extend/reverse prefix probes run *before* the decode_key
+    // switch — that order is load-bearing (see OPEN GOTCHAS).
+    CPUExpected<void> t16_extend(uint16_t insn);
+    CPUExpected<void> t16_reverse(uint16_t insn);
+    CPUExpected<void> t16_shift_imm(uint16_t insn);
+    CPUExpected<void> t16_addsub_reg3(uint16_t insn);
+    CPUExpected<void> t16_imm8_dataops(uint16_t insn);
+    CPUExpected<void> t16_dataproc(uint16_t insn);
+    CPUExpected<void> t16_ldr_literal(uint16_t insn);
+    CPUExpected<void> t16_loadstore_reg_offset(uint16_t insn);
+    CPUExpected<void> t16_loadstore_imm_offset(uint16_t insn);
+    CPUExpected<void> t16_loadstore_sp_rel(uint16_t insn);
+    CPUExpected<void> t16_push(uint16_t insn);
+    CPUExpected<void> t16_pop(uint16_t insn);
+    CPUExpected<void> t16_stm_ldm(uint16_t insn);
     // 32-bit Thumb-2 family handlers — split out of execute_32bit so no single
     // translation unit exceeds the DIRECTIVES 700-line cap. Each returns the
     // result of its (already mask-matched) block; execute_32bit dispatches.
