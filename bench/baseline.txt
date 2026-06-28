@@ -1,0 +1,20 @@
+# micro-forge perf baseline — regression guard (PERF-METHODOLOGY.md §4)
+#
+# Usage (advisory soft gate):
+#   cmake --build build-rel --target micro-forge-bench -j$(nproc)
+#   taskset -c 2-5 ./build-rel/bench/micro-forge-bench --baseline bench/baseline.txt \
+#       800000 8000000 11
+# Prints PASS/REGRESS per scenario but exits 0 — perf is noise-sensitive, so
+# this never hard-fails CI. Re-run to distinguish a noise dip from a real
+# regression; after an *intentional* perf win, bump these medians upward.
+#
+# Conditions: RelWithDebInfo (-O2 -g), pinned cores (taskset -c 2-5),
+#   warmup=800000 measure=8000000 reps=11, reported value = median of reps.
+# Established 2026-06-28 after the perf campaign (document/notes/019-021):
+#   +54/+57/+51% over the original Debug/-O0 baseline.
+#
+# tolerance: regression flagged when now/baseline < 1 - tolerance
+tolerance: 0.15
+gpio_iotoggle-O2 21500000
+uart_printf-O2   25500000
+tim_timebase-O2  25500000

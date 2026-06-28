@@ -23,7 +23,9 @@
 #include <cstring>
 #include <fstream>
 #include <iterator>
+#include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace micro_forge;
@@ -61,13 +63,15 @@ double median(std::vector<double> v) {
     return v[v.size() / 2];
 }
 
-void run_scenario(const Scenario& s, size_t warmup, size_t measure, size_t reps) {
+// Returns the median insn/sec, or <0 if the scenario was skipped/failed.
+double run_scenario(const Scenario& s, size_t warmup, size_t measure,
+                    size_t reps) {
     std::string path = std::string(MF_BENCH_FW_DIR) + "/" + s.stem + ".axf";
     auto data = read_file(path.c_str());
     if (data.empty()) {
         std::fprintf(stderr, "[bench] SKIP %s: missing corpus %s\n", s.tag,
                      path.c_str());
-        return;
+        return -1.0;
     }
 
     std::vector<double> ips; // insn/sec per rep
@@ -77,11 +81,11 @@ void run_scenario(const Scenario& s, size_t warmup, size_t measure, size_t reps)
         auto soc = Stm32f103Soc::create();
         if (!soc) {
             std::fprintf(stderr, "[bench] SoC create failed for %s\n", s.tag);
-            return;
+            return -1.0;
         }
         if (!(*soc)->load_elf(data)) {
             std::fprintf(stderr, "[bench] ELF load failed for %s\n", s.tag);
-            return;
+            return -1.0;
         }
 
         // Warm up to steady state (boot + reach main loop). Discard the time.
@@ -91,7 +95,7 @@ void run_scenario(const Scenario& s, size_t warmup, size_t measure, size_t reps)
                          "[bench] %s did not reach steady state (warmup "
                          "stop=%d); skipping\n",
                          s.tag, static_cast<int>(warm_res));
-            return;
+            return -1.0;
         }
 
         perf_stats::reset();
@@ -119,7 +123,7 @@ void run_scenario(const Scenario& s, size_t warmup, size_t measure, size_t reps)
     }
 
     if (ips.empty()) {
-        return;
+        return -1.0;
     }
     double med = median(ips);
     double mn = *std::min_element(ips.begin(), ips.end());
@@ -130,6 +134,91 @@ void run_scenario(const Scenario& s, size_t warmup, size_t measure, size_t reps)
                 "reps=%zu\n",
                 s.tag, med, mn, mx, ips.size());
     std::fflush(stdout);
+    return med;
+}
+
+// ── Regression guard (PERF-METHODOLOGY.md §4, soft/advisory gate) ──
+//
+// Baseline file format (one directive per line; '#' comments):
+//   tolerance: 0.10        # regression if now/baseline < 1 - tolerance
+//   <tag> <ips_median>     # e.g. gpio_iotoggle-O2 21800000
+// The comparison is advisory: it prints PASS/REGRESS and exits 0 so noise
+// never flakes a hard CI gate (a real gate requires a pinned toolchain,
+// see PERF-METHODOLOGY §4).
+
+struct Baseline {
+    double tolerance = 0.10;
+    std::vector<std::pair<std::string, double>> entries;
+};
+
+Baseline parse_baseline(const char* path) {
+    Baseline b;
+    std::ifstream f(path);
+    if (!f) {
+        std::fprintf(stderr, "[guard] cannot open baseline %s\n", path);
+        return b;
+    }
+    std::string line;
+    while (std::getline(f, line)) {
+        auto hash = line.find('#');
+        if (hash != std::string::npos) {
+            line.erase(hash);
+        }
+        std::istringstream ss(line);
+        std::string key;
+        if (!(ss >> key)) {
+            continue;
+        }
+        if (key == "tolerance:") {
+            ss >> b.tolerance;
+            continue;
+        }
+        double v;
+        if (ss >> v) {
+            b.entries.emplace_back(key, v);
+        }
+    }
+    return b;
+}
+
+// Prints the advisory report; returns the count of regressions (caller decides
+// exit code — soft gate stays 0).
+int compare_baseline(const Baseline& b,
+                     const std::vector<std::pair<std::string, double>>& now) {
+    if (b.entries.empty()) {
+        std::fprintf(stderr, "[guard] baseline empty — nothing to compare\n");
+        return 0;
+    }
+    int regressions = 0;
+    std::printf("[guard] tolerance=%.0f%% (regression if now/baseline below)\n",
+                b.tolerance * 100.0);
+    for (const auto& [tag, now_ips] : now) {
+        double base = -1.0;
+        for (const auto& [bt, bv] : b.entries) {
+            if (bt == tag) {
+                base = bv;
+                break;
+            }
+        }
+        if (base < 0.0) {
+            std::printf("[guard] %-18s baseline=--- (no entry)\n", tag.c_str());
+            continue;
+        }
+        double ratio = now_ips / base;
+        bool pass = ratio >= (1.0 - b.tolerance);
+        if (!pass) {
+            ++regressions;
+        }
+        std::printf("[guard] %-18s baseline=%.0f now=%.0f ratio=%.1f%% %s\n",
+                    tag.c_str(), base, now_ips, ratio * 100.0,
+                    pass ? "PASS" : "*** REGRESSION ***");
+    }
+    std::printf("[guard] %s (%d regression(s))\n",
+                regressions == 0 ? "advisory: within tolerance"
+                                 : "advisory: REGRESSION(S) DETECTED",
+                regressions);
+    std::fflush(stdout);
+    return regressions;
 }
 
 } // namespace
@@ -137,19 +226,39 @@ void run_scenario(const Scenario& s, size_t warmup, size_t measure, size_t reps)
 int main(int argc, char** argv) {
     std::signal(SIGINT, on_sigint);
 
-    size_t warmup = argc > 1 ? std::strtoull(argv[1], nullptr, 0) : 1'000'000;
-    size_t measure =
-        argc > 2 ? std::strtoull(argv[2], nullptr, 0) : 10'000'000;
-    size_t reps = argc > 3 ? std::strtoull(argv[3], nullptr, 0) : 5;
+    // Positional: [warmup] [measure] [reps]. Flag: --baseline <file>.
+    size_t warmup = 1'000'000;
+    size_t measure = 10'000'000;
+    size_t reps = 5;
+    const char* baseline_path = nullptr;
+    int positional = 0;
+    for (int i = 1; i < argc; ++i) {
+        std::string a = argv[i];
+        if (a == "--baseline" && i + 1 < argc) {
+            baseline_path = argv[++i];
+        } else if (!a.empty() && a[0] != '-') {
+            size_t v = std::strtoull(a.c_str(), nullptr, 0);
+            if (positional == 0) {
+                warmup = v;
+            } else if (positional == 1) {
+                measure = v;
+            } else if (positional == 2) {
+                reps = v;
+            }
+            ++positional;
+        }
+    }
 
     // Optional scenario subset via env var (semicolon-separated stems).
     const char* subset_env = std::getenv("BENCH_SCENARIOS");
     std::string subset = subset_env ? subset_env : "";
 
     std::fprintf(stderr,
-                 "[bench] warmup=%zu measure=%zu reps=%zu MF_BENCH_FW_DIR=%s\n",
-                 warmup, measure, reps, MF_BENCH_FW_DIR);
+                 "[bench] warmup=%zu measure=%zu reps=%zu MF_BENCH_FW_DIR=%s%s\n",
+                 warmup, measure, reps, MF_BENCH_FW_DIR,
+                 baseline_path ? " [guard]" : "");
 
+    std::vector<std::pair<std::string, double>> results;
     for (const auto& s : kScenarios) {
         if (g_interrupted) {
             break;
@@ -162,7 +271,17 @@ int main(int argc, char** argv) {
                 continue;
             }
         }
-        run_scenario(s, warmup, measure, reps);
+        double med = run_scenario(s, warmup, measure, reps);
+        if (med >= 0.0) {
+            results.emplace_back(s.tag, med);
+        }
+    }
+
+    if (baseline_path) {
+        Baseline b = parse_baseline(baseline_path);
+        // Advisory soft gate: report regressions but never hard-fail (perf is
+        // noise-sensitive; a real CI gate needs a pinned toolchain — §4).
+        (void)compare_baseline(b, results);
     }
     return 0;
 }
