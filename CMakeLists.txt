@@ -61,6 +61,7 @@ set(MICRO_FORGE_SOURCES
     src/tools/memory_dump.cpp
     src/tools/mmio_trace.cpp
     src/util/logger.cpp
+    src/cli/introspection.cpp
 )
 
 add_library(micro_forge STATIC ${MICRO_FORGE_SOURCES})

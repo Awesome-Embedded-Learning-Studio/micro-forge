@@ -47,6 +47,19 @@ class CortexM3CPU : public CPU {
     void set_vector_table_base(addr_t base) { vector_table_base_ = base; }
     void set_prigroup(uint8_t group) { prigroup_ = group & 0x7u; }
     bool in_handler_mode() const { return in_handler_mode_; }
+    // Read-only accessors for the status / mask / stack registers. They back
+    // the structured introspection snapshot (cli::read_introspection) consumed
+    // by both the CLI JSON serializer and the GUI dashboard (milestone 04).
+    // Inline by design — an out-of-line copy would still be off the fetch/
+    // decode hot path, but keeping it header-inline avoids a TU/lookup cost
+    // and matches the in_handler_mode() precedent.
+    data_t xpsr() const noexcept { return xpsr_; }
+    data_t primask() const noexcept { return primask_; }
+    data_t basepri() const noexcept { return basepri_; }
+    data_t faultmask() const noexcept { return faultmask_; }
+    data_t control() const noexcept { return control_; }
+    data_t msp() const noexcept { return msp_; }
+    data_t psp() const noexcept { return psp_; }
     void sys_tick_irq() { pending_sys_tick_ = true; }
 
     // Probe mode: skip illegal instructions and log opcodes instead of halting

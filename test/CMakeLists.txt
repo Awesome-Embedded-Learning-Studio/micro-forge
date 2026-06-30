@@ -201,6 +201,26 @@ if(TARGET micro-forge AND TARGET hello_firmware)
     gtest_discover_tests(test_cli)
 endif()
 
+# ── Introspection API 测试(结构化 snapshot,GUI/CLI 单一事实来源,milestone 04 前置)──
+add_executable(test_introspection
+    test_introspection.cpp
+)
+target_link_libraries(test_introspection
+    PRIVATE micro_forge GTest::gtest_main
+)
+gtest_discover_tests(test_introspection)
+if(TARGET hello_firmware)
+    target_compile_definitions(test_introspection PRIVATE
+        INTROSPECTION_HELLO_ELF="${CMAKE_CURRENT_BINARY_DIR}/hello.elf"
+    )
+    add_dependencies(test_introspection hello_firmware)
+    add_custom_command(TARGET test_introspection POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_CURRENT_BINARY_DIR}/../examples/hello_world/hello.elf
+            ${CMAKE_CURRENT_BINARY_DIR}/hello.elf
+    )
+endif()
+
 # ── Meta-guard: test-discovery regression floor (COVERAGE-METHODOLOGY §3) ──
 # Cheap `ctest -N` count check — fails if a refactor silently drops test
 # discovery (build stays green, coverage evaporates). Bash on the Linux test

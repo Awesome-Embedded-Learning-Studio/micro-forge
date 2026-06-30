@@ -1,17 +1,21 @@
 // JSON snapshot serialization. Hand-written, zero external deps.
 // Addresses/values use lowercase hex strings; numbers stay decimal.
+//
+// Field VALUES come from cli::read_introspection() — the single source of
+// truth shared with the GUI dashboard (milestone 04). This file owns only the
+// JSON text shape; it does no simulator state reading of its own, so CLI and
+// GUI can never disagree on what a register/fault field holds.
 #include "cli/snapshot.hpp"
+#include "cli/introspection.hpp"
 
-#include "arch/arm/cortex_m3/cortex_m3.hpp"
-#include "chips/stm32f1/stm32f103_soc.hpp"
 #include "cpu/cpu.hpp"
 
+#include <cstddef>
 #include <cstdio>
 #include <iomanip>
 #include <ostream>
 
 using namespace micro_forge;
-using micro_forge::chips::stm32f1::Stm32f103Soc;
 using micro_forge::cpu::CPU;
 using micro_forge::tools::MmioAccess;
 
@@ -95,61 +99,91 @@ void json_string(std::ostream& o, std::string_view s) {
 
 } // namespace
 
-void write_snapshot_json(Stm32f103Soc& soc, std::ostream& out,
+void write_snapshot_json(chips::stm32f1::Stm32f103Soc& soc, std::ostream& out,
                          const SnapshotExtras& extras) {
+    const IntrospectionSnapshot snap = read_introspection(soc, extras.usart_output);
     out << "{";
-    auto cm3 = soc.cortex_m3_cpu();
-    if (cm3.IsValid()) {
-        CPU::State st = cm3->state().value_or(CPU::State::Halted);
 
-        out << "\"cpu\": {";
-        out << "\"state\": \"" << state_json(st) << "\", ";
-        out << "\"mode\": \"" << (cm3->in_handler_mode() ? "handler" : "thread")
-            << "\", ";
-        hex_kv(out, "pc", static_cast<unsigned>(cm3->pc().value_or(0)));
-        out << ", ";
-        hex_kv(out, "lr",
-               static_cast<unsigned>(cm3->register_value(14).value_or(0)));
-        out << ", ";
-        hex_kv(out, "sp",
-               static_cast<unsigned>(cm3->register_value(13).value_or(0)));
-        out << ", \"regs\": {";
-        for (int r = 0; r <= 12; ++r) {
-            if (r) {
-                out << ", ";
-            }
-            out << "\"r" << std::dec << r << "\": \"0x" << std::hex
-                << std::setfill('0') << std::setw(8)
-                << static_cast<unsigned>(cm3->register_value(r).value_or(0))
-                << '\"';
+    // ── cpu ──
+    out << "\"cpu\": {";
+    out << "\"state\": \"" << state_json(snap.cpu.state) << "\", ";
+    out << "\"mode\": \"" << (snap.cpu.handler_mode ? "handler" : "thread")
+        << "\", ";
+    hex_kv(out, "pc", static_cast<unsigned>(snap.cpu.pc));
+    out << ", ";
+    hex_kv(out, "lr", static_cast<unsigned>(snap.cpu.lr));
+    out << ", ";
+    hex_kv(out, "sp", static_cast<unsigned>(snap.cpu.sp));
+    out << ", ";
+    hex_kv(out, "xpsr", static_cast<unsigned>(snap.cpu.xpsr));
+    out << ", ";
+    hex_kv(out, "primask", static_cast<unsigned>(snap.cpu.primask));
+    out << ", ";
+    hex_kv(out, "basepri", static_cast<unsigned>(snap.cpu.basepri));
+    out << ", ";
+    hex_kv(out, "faultmask", static_cast<unsigned>(snap.cpu.faultmask));
+    out << ", ";
+    hex_kv(out, "control", static_cast<unsigned>(snap.cpu.control));
+    out << ", ";
+    hex_kv(out, "msp", static_cast<unsigned>(snap.cpu.msp));
+    out << ", ";
+    hex_kv(out, "psp", static_cast<unsigned>(snap.cpu.psp));
+    out << ", \"regs\": {";
+    for (std::size_t r = 0; r < snap.cpu.regs.size(); ++r) {
+        if (r) {
+            out << ", ";
         }
-        out << "}}, ";
+        // std::dec before the register index: iostream hex is sticky and would
+        // otherwise print r10 as "ra" (regression guard, see notes 006).
+        out << "\"r" << std::dec << r << "\": \"0x" << std::hex
+            << std::setfill('0') << std::setw(8)
+            << static_cast<unsigned>(snap.cpu.regs[r]) << '\"';
+    }
+    out << "}}, ";
 
-        const auto& fr = cm3->last_fault();
-        if (fr.has_value()) {
-            out << "\"fault\": {";
-            out << "\"kind\": \"" << fault_kind_json(fr->kind) << "\", ";
-            hex_kv(out, "pc", static_cast<unsigned>(fr->pc));
+    // ── fault ──
+    if (snap.fault.present) {
+        out << "\"fault\": {";
+        out << "\"kind\": \"" << fault_kind_json(snap.fault.kind) << "\", ";
+        hex_kv(out, "pc", static_cast<unsigned>(snap.fault.pc));
+        out << ", ";
+        hex_kv(out, "lr", static_cast<unsigned>(snap.fault.lr));
+        out << ", ";
+        hex_kv(out, "sp", static_cast<unsigned>(snap.fault.sp));
+        out << ", ";
+        hex_kv(out, "xpsr", static_cast<unsigned>(snap.fault.xpsr));
+        out << ", ";
+        out << "\"is_32bit\": " << (snap.fault.is_32bit ? "true" : "false");
+        out << ", ";
+        hex_kv(out, "opcode16", static_cast<unsigned>(snap.fault.opcode16));
+        out << ", ";
+        hex_kv(out, "opcode16_2", static_cast<unsigned>(snap.fault.opcode16_2));
+        if (snap.fault.has_access_addr) {
             out << ", ";
-            hex_kv(out, "lr", static_cast<unsigned>(fr->lr));
-            out << ", ";
-            hex_kv(out, "sp", static_cast<unsigned>(fr->sp));
-            out << ", \"is_32bit\": " << (fr->is_32bit ? "true" : "false")
-                << "}, ";
-        } else {
-            out << "\"fault\": null, ";
+            hex_kv(out, "access_addr",
+                   static_cast<unsigned>(snap.fault.access_addr));
         }
+        if (snap.fault.has_bus_error) {
+            out << ", ";
+            hex_kv(out, "bus_error",
+                   static_cast<unsigned>(snap.fault.bus_error_raw));
+        }
+        out << "}, ";
+    } else {
+        out << "\"fault\": null, ";
     }
 
-    out << "\"run\": {\"cycles\": " << std::dec
-        << soc.machine().cpu->cycles().value_or(0) << "}, ";
+    // ── run ──
+    out << "\"run\": {\"cycles\": " << std::dec << snap.cycles << "}, ";
 
+    // ── peripherals ──
     out << "\"peripherals\": {\"usart_output\": ";
-    json_string(out, extras.usart_output);
+    json_string(out, snap.peripherals.usart_output);
     out << "}, ";
 
+    // ── events (MMIO access ring, caller-collected) ──
     out << "\"events\": [";
-    for (size_t i = 0; i < extras.events.size(); ++i) {
+    for (std::size_t i = 0; i < extras.events.size(); ++i) {
         if (i) {
             out << ", ";
         }
