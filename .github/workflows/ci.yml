@@ -17,6 +17,11 @@ jobs:
       CXX: g++-14
     steps:
       - uses: actions/checkout@v4
+        with:
+          # STM32CubeF1 submodule is needed by hal_uart/hal_blink firmware, which
+          # the E2E.HalUartTransmit test loads. Without it that test doesn't
+          # configure and the test-count floor gate falls short by one.
+          submodules: recursive
 
       - name: Install GCC-14 + ARM toolchain
         run: |
