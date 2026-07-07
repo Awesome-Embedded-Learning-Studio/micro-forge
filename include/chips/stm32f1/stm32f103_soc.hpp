@@ -9,6 +9,7 @@
 #include "chips/stm32f1/stm32f1_rcc.hpp"
 #include "chips/stm32f1/stm32f1_timer.hpp"
 #include "chips/stm32f1/stm32f1_usart.hpp"
+#include "hooks/event_bus.hpp"
 #include "memory/flat_memory.hpp"
 #include "periph/clock_controller.hpp"
 #include "periph/gpio.hpp"
@@ -37,6 +38,7 @@ struct Stm32f103Parts {
     periph::NvicPeripheral nvic;
     periph::SysTickPeripheral systick;
     periph::ScbPeripheral scb;
+    hooks::EventBus event_bus;
 
     Stm32f1Rcc rcc;
     Stm32f1Afio afio;

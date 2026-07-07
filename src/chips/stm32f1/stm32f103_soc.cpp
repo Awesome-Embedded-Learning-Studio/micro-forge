@@ -88,11 +88,33 @@ Stm32f103Soc::create() {
     p.gpiob.edge_signal().connect(exti_edge);
     p.gpioc.edge_signal().connect(exti_edge);
 
+    // Fan GPIO edges into the EventBus as a second subscriber (EXTI keeps
+    // working — Signal::emit dispatches to every connected slot). Observers
+    // (GUI RingSink, trace) subscribe to event_bus.gpio without the peripheral
+    // having to know about the bus.
+    auto bus_gpio = [&bus = p.event_bus](const hooks::GpioEdge& e) {
+        bus.gpio.emit(e);
+    };
+    p.gpioa.edge_signal().connect(bus_gpio);
+    p.gpiob.edge_signal().connect(bus_gpio);
+    p.gpioc.edge_signal().connect(bus_gpio);
+
     // Wire USART RXNE (RXNEIE) → NVIC USART1 line (IRQ 37).
     p.usart1.set_irq_callback([cm3_weak]() {
         if (cm3_weak.IsValid()) {
             (void)cm3_weak->raise_irq(kUsart1Irqn);
         }
+    });
+
+    // Default USART output → emit a UartByte on the EventBus. Callers that
+    // want the stream subscribe to event_bus.uart (e.g. a RingSink) instead of
+    // calling set_output themselves, which would overwrite this default.
+    p.usart1.set_output([&bus = p.event_bus](uint8_t ch) {
+        hooks::UartByte e;
+        e.cycle = bus.now();
+        e.unit = 1;
+        e.byte = ch;
+        bus.uart.emit(e);
     });
 
     // Wire SCB VTOR write → CPU vector_table_base_ update
@@ -119,6 +141,8 @@ Stm32f103Soc::create() {
     p.gpioa.set_cycle_source(cycle_src);
     p.gpiob.set_cycle_source(cycle_src);
     p.gpioc.set_cycle_source(cycle_src);
+    // EventBus stamps its events (and any future kind) with the same counter.
+    p.event_bus.set_cycle_source(cycle_src);
 
     // SimulationCoordinator
     auto clock = sim::VirtualClock(std::span<const sim::DomainConfig>(

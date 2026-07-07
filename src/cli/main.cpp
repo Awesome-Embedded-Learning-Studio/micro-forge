@@ -185,8 +185,10 @@ int cmd_run(int argc, char** argv) {
     }
 
     std::string usart_out;
-    (*soc)->parts().serial().set_output(
-        [&](uint8_t ch) { usart_out += static_cast<char>(ch); });
+    (*soc)->parts().event_bus.uart.connect(
+        [&](const hooks::UartByte& e) {
+            usart_out += static_cast<char>(e.byte);
+        });
 
     std::expected<void, std::string> lr =
         is_elf(data) ? (*soc)->load_elf(data)

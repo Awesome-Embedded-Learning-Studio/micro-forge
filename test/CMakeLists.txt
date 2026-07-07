@@ -89,6 +89,15 @@ target_link_libraries(test_scb
 )
 gtest_discover_tests(test_scb)
 
+# ── EventBus 接线测试(GPIO/Uart → bus → RingSink;G3 EventBus 接线)──
+add_executable(test_event_bus
+    test_event_bus.cpp
+)
+target_link_libraries(test_event_bus
+    PRIVATE micro_forge GTest::gtest_main
+)
+gtest_discover_tests(test_event_bus)
+
 # ── 中断集成测试 ──
 add_executable(test_interrupt
     test_interrupt_roundtrip.cpp

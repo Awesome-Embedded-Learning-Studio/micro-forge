@@ -107,8 +107,10 @@ void MainWindow::rebuildSoc() {
         return;
     }
     soc_ = std::move(*created);
-    soc_->parts().serial().set_output(
-        [this](uint8_t ch) { usart_output_ += static_cast<char>(ch); });
+    soc_->parts().event_bus.uart.connect(
+        [this](const micro_forge::hooks::UartByte& e) {
+            usart_output_ += static_cast<char>(e.byte);
+        });
 
     if (!firmware_path_.isEmpty()) {
         firmware_data_ = read_file(firmware_path_);
