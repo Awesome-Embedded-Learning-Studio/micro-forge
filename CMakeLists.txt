@@ -62,7 +62,7 @@ set(MICRO_FORGE_SOURCES
     src/tools/memory_dump.cpp
     src/tools/mmio_trace.cpp
     src/util/logger.cpp
-    src/cli/introspection.cpp
+    src/introspection/introspection.cpp
 )
 
 add_library(micro_forge STATIC ${MICRO_FORGE_SOURCES})
@@ -82,7 +82,10 @@ if(MICRO_FORGE_COVERAGE)
 endif()
 
 # Unified CLI runner.
-add_executable(micro-forge src/cli/main.cpp src/cli/snapshot.cpp)
+add_executable(micro-forge cli/main.cpp cli/snapshot.cpp)
+# CLI is a top-level consumer (lives in cli/); snapshot.hpp sits next to its
+# .cpp there, so the include root is the repo top, not include/ alone.
+target_include_directories(micro-forge PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(micro-forge PRIVATE micro_forge)
 
 enable_testing()

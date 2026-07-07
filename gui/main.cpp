@@ -1,6 +1,6 @@
 // micro-forge GUI dashboard — Qt6 Widgets entry point.
 //
-// Milestone 04: pure consumer of cli::read_introspection(); the simulator
+// Milestone 04: pure consumer of introspection::read_introspection(); the simulator
 // core stays single-threaded and runs in this same Qt main thread (never on
 // a QThread). See DIRECTIVES §E and notes 031–034.
 //

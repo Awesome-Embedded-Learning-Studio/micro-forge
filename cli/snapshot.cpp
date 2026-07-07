@@ -1,12 +1,12 @@
 // JSON snapshot serialization. Hand-written, zero external deps.
 // Addresses/values use lowercase hex strings; numbers stay decimal.
 //
-// Field VALUES come from cli::read_introspection() — the single source of
+// Field VALUES come from introspection::read_introspection() — the single source of
 // truth shared with the GUI dashboard (milestone 04). This file owns only the
 // JSON text shape; it does no simulator state reading of its own, so CLI and
 // GUI can never disagree on what a register/fault field holds.
 #include "cli/snapshot.hpp"
-#include "cli/introspection.hpp"
+#include "introspection/introspection.hpp"
 
 #include "cpu/cpu.hpp"
 
@@ -101,7 +101,7 @@ void json_string(std::ostream& o, std::string_view s) {
 
 void write_snapshot_json(chips::stm32f1::Stm32f103Soc& soc, std::ostream& out,
                          const SnapshotExtras& extras) {
-    const IntrospectionSnapshot snap = read_introspection(soc, extras.usart_output);
+    const auto snap = introspection::read_introspection(soc, extras.usart_output);
     out << "{";
 
     // ── cpu ──

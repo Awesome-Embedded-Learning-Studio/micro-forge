@@ -48,7 +48,7 @@ class CortexM3CPU : public CPU {
     void set_prigroup(uint8_t group) { prigroup_ = group & 0x7u; }
     bool in_handler_mode() const { return in_handler_mode_; }
     // Read-only accessors for the status / mask / stack registers. They back
-    // the structured introspection snapshot (cli::read_introspection) consumed
+    // the structured introspection snapshot (introspection::read_introspection) consumed
     // by both the CLI JSON serializer and the GUI dashboard (milestone 04).
     // Inline by design — an out-of-line copy would still be off the fetch/
     // decode hot path, but keeping it header-inline avoids a TU/lookup cost

@@ -1,7 +1,7 @@
 // micro-forge GUI main window implementation (G5b/G5c).
 #include "gui/main_window.hpp"
 
-#include "cli/introspection.hpp"
+#include "introspection/introspection.hpp"
 #include "cpu/cpu.hpp"
 
 #include <QChar>
@@ -166,7 +166,7 @@ void MainWindow::refreshFromSnapshot() {
     if (!soc_) {
         return;
     }
-    const auto snap = cli::read_introspection(*soc_, usart_output_);
+    const auto snap = introspection::read_introspection(*soc_, usart_output_);
 
     const char* st = "?";
     switch (snap.cpu.state) {

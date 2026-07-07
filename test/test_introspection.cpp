@@ -1,10 +1,10 @@
-// Tests for the structured introspection snapshot (cli::read_introspection).
+// Tests for the structured introspection snapshot (introspection::read_introspection).
 // It is the single source of truth shared by the CLI JSON serializer and the
 // GUI dashboard (milestone 04). These tests pin: (1) the 7 newly-exposed
 // status/mask/stack registers are readable; (2) read_introspection is a pure
 // read — it must not mutate simulator state; (3) on real firmware it observes
 // the expected advance (state/cycles/pc).
-#include "cli/introspection.hpp"
+#include "introspection/introspection.hpp"
 #include "chips/stm32f1/stm32f103_soc.hpp"
 #include "cpu/cpu.hpp"
 
@@ -17,7 +17,7 @@
 #include <vector>
 
 using namespace micro_forge;
-using micro_forge::cli::read_introspection;
+using micro_forge::introspection::read_introspection;
 using micro_forge::chips::stm32f1::Stm32f103Soc;
 using micro_forge::cpu::CPU;
 

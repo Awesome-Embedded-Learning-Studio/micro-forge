@@ -2,7 +2,7 @@
 //
 // Owns the simulator (a Stm32f103Soc) and drives it from the Qt main thread:
 // a QTimer fires onTick(), which runs a small chunk of steps and refreshes
-// the CPU panel from cli::read_introspection(). The sim never runs on a
+// the CPU panel from introspection::read_introspection(). The sim never runs on a
 // QThread — that would break deterministic replay (DIRECTIVES §E).
 #pragma once
 

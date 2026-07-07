@@ -2,7 +2,7 @@
 // Pure read: pulls CPU registers, fault record, run cycles and peripheral
 // state into plain structs that both the CLI JSON serializer and the GUI
 // dashboard consume. Owns no serialization format of its own.
-#include "cli/introspection.hpp"
+#include "introspection/introspection.hpp"
 
 #include "arch/arm/cortex_m3/cortex_m3.hpp"
 #include "chips/stm32f1/stm32f103_soc.hpp"
@@ -15,7 +15,7 @@ using namespace micro_forge;
 using micro_forge::cpu::CPU;
 using micro_forge::chips::stm32f1::Stm32f103Soc;
 
-namespace micro_forge::cli {
+namespace micro_forge::introspection {
 
 IntrospectionSnapshot read_introspection(Stm32f103Soc& soc,
                                          std::string_view usart_output) noexcept {
@@ -85,4 +85,4 @@ IntrospectionSnapshot read_introspection(Stm32f103Soc& soc,
     return snap;
 }
 
-} // namespace micro_forge::cli
+} // namespace micro_forge::introspection

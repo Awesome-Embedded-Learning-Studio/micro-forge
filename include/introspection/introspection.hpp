@@ -10,7 +10,7 @@ namespace micro_forge::chips::stm32f1 {
 class Stm32f103Soc;
 }
 
-namespace micro_forge::cli {
+namespace micro_forge::introspection {
 
 // Structured introspection snapshot — the single source of truth for the
 // observable simulator state. Consumed by both the CLI JSON serializer
@@ -86,4 +86,4 @@ struct IntrospectionSnapshot {
 IntrospectionSnapshot read_introspection(chips::stm32f1::Stm32f103Soc& soc,
                                          std::string_view usart_output) noexcept;
 
-} // namespace micro_forge::cli
+} // namespace micro_forge::introspection
