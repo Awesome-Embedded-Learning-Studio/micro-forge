@@ -21,6 +21,12 @@ class SysTickPeripheral : public Device {
 
     void set_irq_callback(std::function<void()> cb) { irq_cb_ = std::move(cb); }
 
+    // Read-only accessors backing the SysTick panel of the introspection
+    // snapshot (milestone 04 GUI). COUNTFLAG lives in ctrl bit 16.
+    uint32_t ctrl() const noexcept { return ctrl_; }
+    uint32_t load() const noexcept { return load_; }
+    uint32_t val() const noexcept { return val_; }
+
   private:
     uint32_t ctrl_ = 0;
     uint32_t load_ = 0;

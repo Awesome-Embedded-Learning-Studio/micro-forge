@@ -32,6 +32,9 @@ class Stm32f1Gpio : public periph::Device, public periph::Gpio {
     // ── Hook bus ──
     // Subscribers observe real output edges (ODR / BSRR / BRR / set_pin).
     hooks::Signal<hooks::GpioEdge>& edge_signal() { return edge_signal_; }
+    // Output data register — backs the GPIO panel of the introspection
+    // snapshot (low 16 bits = pin output levels).
+    uint32_t odr() const noexcept { return odr_; }
     // Stamp emitted events with the simulator cycle; wire after the CPU is up.
     void set_cycle_source(std::function<uint64_t()> src) {
         cycle_source_ = std::move(src);

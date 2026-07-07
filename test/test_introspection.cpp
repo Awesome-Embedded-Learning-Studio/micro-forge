@@ -70,6 +70,24 @@ TEST(Introspection, UsartOutputIsForwardedIntoPeripherals) {
     EXPECT_EQ(snap.peripherals.usart_output, msg);
 }
 
+TEST(Introspection, FreshSocPeripheralsAreQuiescent) {
+    auto soc = Stm32f103Soc::create();
+    ASSERT_TRUE(soc.has_value());
+    const auto snap = read_introspection(**soc, "");
+
+    EXPECT_EQ(snap.peripherals.gpio[0].port, 'A');
+    EXPECT_EQ(snap.peripherals.gpio[1].port, 'B');
+    EXPECT_EQ(snap.peripherals.gpio[2].port, 'C');
+    for (const auto& g : snap.peripherals.gpio) {
+        EXPECT_EQ(g.odr, 0u);
+    }
+    EXPECT_EQ(snap.peripherals.systick.ctrl, 0u);
+    EXPECT_EQ(snap.peripherals.systick.load, 0u);
+    EXPECT_FALSE(snap.peripherals.nvic.has_pending);
+    EXPECT_EQ(snap.peripherals.nvic.highest_pending_irq, 0xFF);
+    EXPECT_EQ(snap.peripherals.nvic.enabled_count, 0u);
+}
+
 #ifdef INTROSPECTION_HELLO_ELF
 TEST(Introspection, RunningFirmwareAdvancesCyclesAndKeepsPcInFlash) {
     const auto data = read_file(INTROSPECTION_HELLO_ELF);

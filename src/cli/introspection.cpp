@@ -1,6 +1,6 @@
 // Structured introspection — the single source of truth for observable state.
 // Pure read: pulls CPU registers, fault record, run cycles and peripheral
-// output into plain structs that both the CLI JSON serializer and the GUI
+// state into plain structs that both the CLI JSON serializer and the GUI
 // dashboard consume. Owns no serialization format of its own.
 #include "cli/introspection.hpp"
 
@@ -20,7 +20,20 @@ namespace micro_forge::cli {
 IntrospectionSnapshot read_introspection(Stm32f103Soc& soc,
                                          std::string_view usart_output) noexcept {
     IntrospectionSnapshot snap{};
-    snap.peripherals.usart_output = usart_output;
+
+    // Peripherals are readable whether or not the CPU is wired (parts() always
+    // exists), so fill them first.
+    auto& p = snap.peripherals;
+    p.usart_output = usart_output;
+    auto& parts = soc.parts();
+    p.gpio[0] = {'A', static_cast<uint16_t>(parts.gpioa.odr() & 0xFFFFu)};
+    p.gpio[1] = {'B', static_cast<uint16_t>(parts.gpiob.odr() & 0xFFFFu)};
+    p.gpio[2] = {'C', static_cast<uint16_t>(parts.gpioc.odr() & 0xFFFFu)};
+    p.systick = {parts.systick.ctrl(), parts.systick.load(),
+                 parts.systick.val()};
+    p.nvic.has_pending = parts.nvic.has_pending_irq();
+    p.nvic.highest_pending_irq = parts.nvic.highest_pending_irq();
+    p.nvic.enabled_count = parts.nvic.enabled_count();
 
     auto cm3 = soc.cortex_m3_cpu();
     if (!cm3.IsValid()) {

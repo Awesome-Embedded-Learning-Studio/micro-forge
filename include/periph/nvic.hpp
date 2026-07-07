@@ -79,6 +79,16 @@ class NvicPeripheral : public Device {
         return irq_n < kMaxIrq && get_bit(iser_, irq_n);
     }
 
+    // Number of currently-enabled IRQs (popcount of ISER). Backs the NVIC
+    // panel of the introspection snapshot; cheap enough for a per-tick read.
+    uint16_t enabled_count() const noexcept {
+        uint16_t n = 0;
+        for (uint32_t word : iser_) {
+            n += static_cast<uint16_t>(__builtin_popcount(word));
+        }
+        return n;
+    }
+
     // External trigger API
     void set_pending(uint8_t irq_n) {
         if (irq_n < kMaxIrq) {

@@ -45,10 +45,26 @@ struct FaultSnapshot {
     uint32_t access_addr = 0;
 };
 
+struct GpioPortSnapshot {
+    char port = 0;    // 'A'..'C'
+    uint16_t odr = 0; // output levels; bit i = pin i high
+};
+
+struct SysTickSnapshot {
+    uint32_t ctrl = 0, load = 0, val = 0; // COUNTFLAG is ctrl bit 16
+};
+
+struct NvicSnapshot {
+    bool has_pending = false;
+    uint8_t highest_pending_irq = 0xFF; // 0xFF = none
+    uint16_t enabled_count = 0;
+};
+
 struct PeripheralsSnapshot {
     std::string_view usart_output;
-    // TODO(04 GUI): GPIO pin states, SysTick CTRL/LOAD/VAL/COUNTFLAG, NVIC
-    // pending/enabled summary — populated from SoC::parts() in a later slice.
+    std::array<GpioPortSnapshot, 3> gpio{}; // ports A, B, C (in that order)
+    SysTickSnapshot systick;
+    NvicSnapshot nvic;
 };
 
 struct IntrospectionSnapshot {

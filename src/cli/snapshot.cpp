@@ -179,7 +179,31 @@ void write_snapshot_json(chips::stm32f1::Stm32f103Soc& soc, std::ostream& out,
     // ── peripherals ──
     out << "\"peripherals\": {\"usart_output\": ";
     json_string(out, snap.peripherals.usart_output);
-    out << "}, ";
+    out << ", \"gpio\": [";
+    for (std::size_t i = 0; i < snap.peripherals.gpio.size(); ++i) {
+        if (i) {
+            out << ", ";
+        }
+        const auto& g = snap.peripherals.gpio[i];
+        out << "{\"port\": \"" << g.port << "\", ";
+        hex_kv(out, "odr", static_cast<unsigned>(g.odr));
+        out << '}';
+    }
+    out << "], \"systick\": {";
+    hex_kv(out, "ctrl", static_cast<unsigned>(snap.peripherals.systick.ctrl));
+    out << ", ";
+    hex_kv(out, "load", static_cast<unsigned>(snap.peripherals.systick.load));
+    out << ", ";
+    hex_kv(out, "val", static_cast<unsigned>(snap.peripherals.systick.val));
+    out << "}, \"nvic\": {";
+    out << "\"has_pending\": "
+        << (snap.peripherals.nvic.has_pending ? "true" : "false") << ", ";
+    // Decimal for the integer counters (hex_kv above leaves hex sticky).
+    out << "\"highest_pending_irq\": " << std::dec
+        << static_cast<unsigned>(snap.peripherals.nvic.highest_pending_irq)
+        << ", ";
+    out << "\"enabled_count\": " << snap.peripherals.nvic.enabled_count;
+    out << "}}, ";
 
     // ── events (MMIO access ring, caller-collected) ──
     out << "\"events\": [";
