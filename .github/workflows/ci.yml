@@ -18,10 +18,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install GCC-14
+      - name: Install GCC-14 + ARM toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y g++-14
+          # gcc-arm-none-eabi: builds the Cortex-M3 test firmware (hello/blink/
+          # systick) so test_e2e/test_cli/INTROSPECTION_HELLO_ELF configure and
+          # the test-count floor gate reaches its baseline on this workflow.
+          sudo apt-get install -y g++-14 gcc-arm-none-eabi binutils-arm-none-eabi
 
       - name: Cache GoogleTest
         uses: actions/cache@v4
