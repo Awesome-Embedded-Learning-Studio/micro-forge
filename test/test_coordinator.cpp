@@ -7,7 +7,7 @@
 #include "arch/arm/cortex_m3/cortex_m3.hpp"
 #include "cpu/cpu.hpp"
 #include "memory/bus.hpp"
-#include "util/weak_ptr/weak_ptr_factory.h"
+#include "util/weak_ptr/weak_ptr_factory.hpp"
 
 using namespace micro_forge;
 using namespace sim;

@@ -19,7 +19,7 @@
 #include <cassert>
 #include <type_traits>
 
-#include "private/weak_ptr_internals.h"
+#include "private/weak_ptr_internals.hpp"
 
 namespace micro_forge {
 

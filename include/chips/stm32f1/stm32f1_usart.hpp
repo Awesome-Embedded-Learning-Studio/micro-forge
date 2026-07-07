@@ -2,7 +2,7 @@
 
 #include "periph/device.hpp"
 #include "periph/serial_port.hpp"
-#include "util/weak_ptr/weak_ptr_factory.h"
+#include "util/weak_ptr/weak_ptr_factory.hpp"
 
 #include <cstdint>
 #include <functional>

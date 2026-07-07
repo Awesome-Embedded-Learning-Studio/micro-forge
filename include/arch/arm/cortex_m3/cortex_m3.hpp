@@ -4,12 +4,12 @@
 #include "cpu/cpu.hpp"
 #include "cpu/fault_record.hpp"
 #include "cpu/regfile.hpp"
-#include "def.h"
+#include "cortex_m3_defs.hpp"
 #include "memory/bus.hpp"
 #include "periph/nvic.hpp"
 #include "periph/scb.hpp"
-#include "util/weak_ptr/weak_ptr.h"
-#include "util/weak_ptr/weak_ptr_factory.h"
+#include "util/weak_ptr/weak_ptr.hpp"
+#include "util/weak_ptr/weak_ptr_factory.hpp"
 #include <cstdint>
 #include <tuple>
 #include <vector>

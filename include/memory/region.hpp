@@ -2,7 +2,7 @@
 
 #include "autogen/arch_details.hpp"
 #include "periph/device.hpp"
-#include "util/weak_ptr/weak_ptr.h"
+#include "util/weak_ptr/weak_ptr.hpp"
 
 namespace micro_forge::memory {
 

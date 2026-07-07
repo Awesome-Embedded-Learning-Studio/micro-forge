@@ -1,7 +1,7 @@
 #include "loader/elf_loader.hpp"
 #include "autogen/arch_details.hpp"
 #include "loader/binary_loader.hpp"
-#include "loader/utils/def.h"
+#include "loader/utils/elf_defs.hpp"
 #include "loader/utils/elf_parser.hpp"
 
 #include <cstring>

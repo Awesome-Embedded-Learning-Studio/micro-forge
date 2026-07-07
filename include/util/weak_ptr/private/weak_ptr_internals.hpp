@@ -1,5 +1,5 @@
 /**
- * @file    base/include/base/weak_ptr/private/weak_ptr_internals.h
+ * @file    base/include/base/weak_ptr/private/weak_ptr_internals.hpp
  * @brief   Internal implementation details for WeakPtr system.
  *
  * This header contains the internal implementation details for the WeakPtr

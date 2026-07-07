@@ -2,7 +2,7 @@
 
 #include "periph/clock_controller.hpp"
 #include "periph/device.hpp"
-#include "util/weak_ptr/weak_ptr_factory.h"
+#include "util/weak_ptr/weak_ptr_factory.hpp"
 
 #include <cstdint>
 

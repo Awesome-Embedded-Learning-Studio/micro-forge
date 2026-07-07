@@ -1,5 +1,5 @@
 #include "loader/utils/elf_parser.hpp"
-#include "loader/utils/def.h"
+#include "loader/utils/elf_defs.hpp"
 #include <algorithm>
 
 namespace micro_forge::loader::utils {

@@ -18,8 +18,8 @@
 #include <cassert>
 #include <memory>
 
-#include "private/weak_ptr_internals.h"
-#include "weak_ptr.h"
+#include "private/weak_ptr_internals.hpp"
+#include "weak_ptr.hpp"
 
 namespace micro_forge {
 

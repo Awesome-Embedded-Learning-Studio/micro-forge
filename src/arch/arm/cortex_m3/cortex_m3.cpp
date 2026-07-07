@@ -1,5 +1,5 @@
 #include "arch/arm/cortex_m3/cortex_m3.hpp"
-#include "arch/arm/cortex_m3/def.h"
+#include "arch/arm/cortex_m3/cortex_m3_defs.hpp"
 #include "arch/arm/cortex_m3/thumb32_fields.hpp"
 #include "core/types.hpp"
 #include "util/logger.hpp"

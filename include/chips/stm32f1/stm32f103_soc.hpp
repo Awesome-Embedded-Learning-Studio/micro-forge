@@ -18,7 +18,7 @@
 #include "periph/serial_port.hpp"
 #include "periph/systick.hpp"
 #include "periph/timer.hpp"
-#include "util/weak_ptr/weak_ptr.h"
+#include "util/weak_ptr/weak_ptr.hpp"
 
 #include <expected>
 #include <memory>

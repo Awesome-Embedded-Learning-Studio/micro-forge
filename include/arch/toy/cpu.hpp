@@ -1,11 +1,11 @@
-#include "arch/toy/isa.h"
+#include "arch/toy/isa.hpp"
 #include "autogen/arch_details.hpp"
 #include "core/types.hpp"
 #include "cpu/cpu.hpp"
 #include "cpu/intr.hpp"
 #include "cpu/regfile.hpp"
 #include "memory/bus.hpp"
-#include "util/weak_ptr/weak_ptr.h"
+#include "util/weak_ptr/weak_ptr.hpp"
 #include <array>
 #include <cstdint>
 
