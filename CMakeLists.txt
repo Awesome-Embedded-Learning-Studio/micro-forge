@@ -111,6 +111,11 @@ install(TARGETS micro-forge
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     FILES_MATCHING PATTERN "*.hpp")
+# Generated header (configure_file output in the binary dir, not under
+# include/) — needed so an installed micro_forge can actually be linked
+# against, since autogen/arch_details.hpp is a PUBLIC include of the library.
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/autogen/arch_details.hpp
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/autogen)
 if(MICRO_FORGE_GUI)
     install(TARGETS micro-forge-gui
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
