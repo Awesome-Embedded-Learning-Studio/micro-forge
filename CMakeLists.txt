@@ -88,3 +88,16 @@ enable_testing()
 add_subdirectory(examples)
 add_subdirectory(test)
 add_subdirectory(bench)
+
+# ── GUI dashboard (milestone 04; see DIRECTIVES §E) ──
+# Opt-in: Qt6 is a heavy runtime dep, so the GUI is a separate target that
+# defaults OFF and never enters the core `micro_forge` library. The core and
+# CLI stay zero-dep; only micro-forge-gui links Qt6::Widgets. Build in a
+# dedicated dir, e.g. -B build-gui -DMICRO_FORGE_GUI=ON.
+option(MICRO_FORGE_GUI "Build the Qt6 dashboard (milestone 04)" OFF)
+if(MICRO_FORGE_GUI)
+    find_package(Qt6 REQUIRED COMPONENTS Widgets)
+    set(CMAKE_AUTOMOC ON)
+    add_executable(micro-forge-gui src/gui/main.cpp)
+    target_link_libraries(micro-forge-gui PRIVATE micro_forge Qt6::Widgets)
+endif()
