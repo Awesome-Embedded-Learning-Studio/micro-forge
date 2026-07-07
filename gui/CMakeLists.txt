@@ -10,6 +10,7 @@ set(CMAKE_AUTOMOC ON)
 add_executable(micro-forge-gui
     main.cpp
     main_window.cpp
+    model/session.cpp
 )
 # main.cpp / main_window.cpp include "gui/main_window.hpp" (header sits next to
 # the .cpp here), so the include root is the repo top, not src/.

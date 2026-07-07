@@ -1,0 +1,76 @@
+// GUI model layer — see session.hpp.
+#include "gui/model/session.hpp"
+
+#include "hooks/events.hpp" // hooks::UartByte
+
+#include <cstdint>
+#include <fstream>
+#include <iterator>
+
+namespace micro_forge::gui::model {
+
+namespace {
+
+std::vector<std::uint8_t> read_file(const std::string& path) {
+    std::ifstream f(path, std::ios::binary);
+    return {std::istreambuf_iterator<char>(f), {}};
+}
+
+bool is_elf(const std::vector<std::uint8_t>& d) {
+    return d.size() >= 4 && d[0] == 0x7f && d[1] == 'E' && d[2] == 'L' &&
+           d[3] == 'F';
+}
+
+} // namespace
+
+Session::Session() = default;
+
+void Session::set_firmware(std::string path) {
+    firmware_path_ = std::move(path);
+}
+
+std::expected<void, std::string> Session::rebuild() {
+    usart_output_.clear();
+    auto created = chips::stm32f1::Stm32f103Soc::create();
+    if (!created) {
+        return std::unexpected(created.error());
+    }
+    soc_ = std::move(*created);
+    soc_->parts().event_bus.uart.connect(
+        [this](const hooks::UartByte& e) {
+            usart_output_ += static_cast<char>(e.byte);
+        });
+
+    if (!firmware_path_.empty()) {
+        firmware_data_ = read_file(firmware_path_);
+        if (firmware_data_.empty()) {
+            return std::unexpected("cannot read: " + firmware_path_);
+        }
+        auto lr = is_elf(firmware_data_)
+                      ? soc_->load_elf(firmware_data_)
+                      : soc_->load_bin(0x08000000u, firmware_data_);
+        if (!lr) {
+            return std::unexpected("load failed: " + lr.error());
+        }
+    }
+    return {};
+}
+
+void Session::run(std::size_t steps) {
+    if (soc_) {
+        soc_->run(steps);
+    }
+}
+
+void Session::step() {
+    run(1);
+}
+
+introspection::IntrospectionSnapshot Session::snapshot() const {
+    if (!soc_) {
+        return {};
+    }
+    return introspection::read_introspection(*soc_, usart_output_);
+}
+
+} // namespace micro_forge::gui::model

@@ -1,18 +1,16 @@
-// micro-forge GUI main window (G5b).
+// micro-forge GUI main window.
 //
-// Owns the simulator (a Stm32f103Soc) and drives it from the Qt main thread:
-// a QTimer fires onTick(), which runs a small chunk of steps and refreshes
-// the CPU panel from introspection::read_introspection(). The sim never runs on a
+// Thin Qt view over a model::Session: a QTimer fires onTick(), which asks the
+// session to run a small chunk of steps and then refreshes the panels from the
+// session's IntrospectionSnapshot. Owns no simulator state directly — that
+// lives in model::Session (Qt-free, unit-testable). The sim never runs on a
 // QThread — that would break deterministic replay (DIRECTIVES §E).
 #pragma once
 
-#include "chips/stm32f1/soc/stm32f103_soc.hpp"
+#include "gui/model/session.hpp"
 
 #include <QMainWindow>
 #include <QString>
-#include <memory>
-#include <string>
-#include <vector>
 
 class QLabel;
 class QPushButton;
@@ -35,13 +33,10 @@ class MainWindow : public QMainWindow {
     void onResetClicked();
 
   private:
-    void rebuildSoc();
+    void rebuildSession();
     void refreshFromSnapshot();
 
-    std::unique_ptr<chips::stm32f1::Stm32f103Soc> soc_;
-    std::string usart_output_;
-    QString firmware_path_;
-    std::vector<uint8_t> firmware_data_;
+    model::Session session_;
     bool running_ = false;
 
     QTimer* timer_ = nullptr;

@@ -1,7 +1,10 @@
-// micro-forge GUI main window implementation (G5b/G5c).
+// micro-forge GUI main window implementation.
+//
+// Thin Qt view over a model::Session. Owns only UI widgets; simulator state
+// (SoC, firmware, USART buffer) lives in session_. A QTimer drives run() +
+// refreshFromSnapshot() each tick — single-threaded on the Qt main thread.
 #include "gui/main_window.hpp"
 
-#include "introspection/introspection.hpp"
 #include "cpu/cpu.hpp"
 
 #include <QChar>
@@ -17,28 +20,15 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
-#include <fstream>
-#include <iterator>
+#include <cstdint>
 
 namespace micro_forge::gui {
 
-namespace {
-
-std::vector<uint8_t> read_file(const QString& path) {
-    std::ifstream f(path.toUtf8().constData(), std::ios::binary);
-    return {std::istreambuf_iterator<char>(f), {}};
-}
-
-bool is_elf(const std::vector<uint8_t>& d) {
-    return d.size() >= 4 && d[0] == 0x7f && d[1] == 'E' && d[2] == 'L' &&
-           d[3] == 'F';
-}
-
-} // namespace
-
 MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
-    : QMainWindow(parent), firmware_path_(firmware_path) {
+    : QMainWindow(parent) {
     setWindowTitle("micro-forge");
+
+    session_.set_firmware(firmware_path.toStdString());
 
     auto* central = new QWidget;
     auto* root = new QVBoxLayout(central);
@@ -85,7 +75,7 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     timer_->setInterval(50); // ~20 UI ticks/sec
     connect(timer_, &QTimer::timeout, this, &MainWindow::onTick);
 
-    rebuildSoc();
+    rebuildSession();
     refreshFromSnapshot();
 
     // Test/CI hook: auto-run under offscreen so a headless launch exercises
@@ -98,33 +88,10 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     }
 }
 
-void MainWindow::rebuildSoc() {
-    usart_output_.clear();
-    auto created = chips::stm32f1::Stm32f103Soc::create();
-    if (!created) {
-        soc_.reset();
-        state_label_->setText("SoC create failed");
-        return;
-    }
-    soc_ = std::move(*created);
-    soc_->parts().event_bus.uart.connect(
-        [this](const micro_forge::hooks::UartByte& e) {
-            usart_output_ += static_cast<char>(e.byte);
-        });
-
-    if (!firmware_path_.isEmpty()) {
-        firmware_data_ = read_file(firmware_path_);
-        if (firmware_data_.empty()) {
-            state_label_->setText(QString("cannot read: ") + firmware_path_);
-            return;
-        }
-        auto lr = is_elf(firmware_data_)
-                      ? soc_->load_elf(firmware_data_)
-                      : soc_->load_bin(0x08000000u, firmware_data_);
-        if (!lr) {
-            state_label_->setText(
-                QString("load failed: ") + QString::fromStdString(lr.error()));
-        }
+void MainWindow::rebuildSession() {
+    auto r = session_.rebuild();
+    if (!r) {
+        state_label_->setText(QString::fromStdString(r.error()));
     }
 }
 
@@ -141,32 +108,30 @@ void MainWindow::onRunClicked() {
 }
 
 void MainWindow::onStepClicked() {
-    if (soc_) {
-        soc_->run(1);
-        refreshFromSnapshot();
-    }
+    session_.step();
+    refreshFromSnapshot();
 }
 
 void MainWindow::onResetClicked() {
     running_ = false;
     run_btn_->setText("Run");
     timer_->stop();
-    rebuildSoc();
+    rebuildSession();
     refreshFromSnapshot();
 }
 
 void MainWindow::onTick() {
-    if (soc_ && running_) {
-        soc_->run(20000);
+    if (running_ && session_.valid()) {
+        session_.run(20000);
         refreshFromSnapshot();
     }
 }
 
 void MainWindow::refreshFromSnapshot() {
-    if (!soc_) {
+    if (!session_.valid()) {
         return;
     }
-    const auto snap = introspection::read_introspection(*soc_, usart_output_);
+    const auto snap = session_.snapshot();
 
     const char* st = "?";
     switch (snap.cpu.state) {
@@ -192,7 +157,7 @@ void MainWindow::refreshFromSnapshot() {
     static constexpr const char* kNames[16] = {
         "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
         "r8", "r9", "r10", "r11", "r12", "sp", "lr", "pc"};
-    auto hex = [](uint32_t v) {
+    auto hex = [](std::uint32_t v) {
         return QString("0x%1").arg(v, 8, 16, QLatin1Char('0'));
     };
     for (int i = 0; i < 13; ++i) {
@@ -207,7 +172,7 @@ void MainWindow::refreshFromSnapshot() {
     regs_table_->setItem(15, 1, new QTableWidgetItem(hex(snap.cpu.pc)));
 
     // GPIO: 3 ports (A/B/C), each ODR hex + 16 LED glyphs (pin0..pin15).
-    auto led = [](uint16_t odr) {
+    auto led = [](std::uint16_t odr) {
         QString s;
         for (int i = 0; i < 16; ++i) {
             s += (odr >> i) & 1 ? QChar(0x25CF) : QChar(0x00B7); // ● or ·
