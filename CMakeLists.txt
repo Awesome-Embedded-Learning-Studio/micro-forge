@@ -13,6 +13,7 @@ set(MICRO_FORGE_ARCH_BIT 32 CACHE STRING "Target architecture bit width (32 or 6
 set(ARCH_BIT ${MICRO_FORGE_ARCH_BIT})
 
 option(MICRO_FORGE_COVERAGE "Instrument micro_forge with gcov for coverage (COVERAGE-METHODOLOGY §2; build in a dedicated dir, e.g. -B build-cov -DMICRO_FORGE_COVERAGE=ON)" OFF)
+option(MICRO_FORGE_GUI "Build the Qt6 dashboard (milestone 04); lives in gui/ and never enters the core library" OFF)
 
 add_compile_options(-Wall -Wextra -Werror)
 
@@ -89,16 +90,9 @@ add_subdirectory(examples)
 add_subdirectory(test)
 add_subdirectory(bench)
 
-# ── GUI dashboard (milestone 04; see DIRECTIVES §E) ──
-# Opt-in: Qt6 is a heavy runtime dep, so the GUI is a separate target that
-# defaults OFF and never enters the core `micro_forge` library. The core and
-# CLI stay zero-dep; only micro-forge-gui links Qt6::Widgets. Build in a
-# dedicated dir, e.g. -B build-gui -DMICRO_FORGE_GUI=ON.
-option(MICRO_FORGE_GUI "Build the Qt6 dashboard (milestone 04)" OFF)
+# GUI dashboard lives in gui/ as a top-level consumer (milestone 04; DIRECTIVES
+# §E). Built only when MICRO_FORGE_GUI=ON — the option is declared above next to
+# MICRO_FORGE_COVERAGE. The gui/ subdirectory does all the Qt wiring.
 if(MICRO_FORGE_GUI)
-    find_package(Qt6 REQUIRED COMPONENTS Widgets)
-    set(CMAKE_AUTOMOC ON)
-    add_executable(micro-forge-gui src/gui/main.cpp src/gui/main_window.cpp)
-    target_include_directories(micro-forge-gui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    target_link_libraries(micro-forge-gui PRIVATE micro_forge Qt6::Widgets)
+    add_subdirectory(gui)
 endif()
