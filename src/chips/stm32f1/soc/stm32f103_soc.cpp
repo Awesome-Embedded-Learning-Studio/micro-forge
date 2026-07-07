@@ -1,9 +1,9 @@
-#include "chips/stm32f1/stm32f103_soc.hpp"
+#include "chips/stm32f1/soc/stm32f103_soc.hpp"
 #include "arch/arm/cortex_m3/cortex_m3.hpp"
 #include "arch/arm/cortex_m3/cortex_m3_reset.hpp"
-#include "chips/stm32f1/interrupt_config.hpp"
-#include "chips/stm32f1/memory_bus.hpp"
-#include "chips/stm32f1/peripheral_config.hpp"
+#include "chips/stm32f1/soc/interrupt_config.hpp"
+#include "chips/stm32f1/soc/memory_bus.hpp"
+#include "chips/stm32f1/soc/peripheral_config.hpp"
 #include "hooks/events.hpp"
 
 namespace micro_forge::chips::stm32f1 {

@@ -1,7 +1,7 @@
 // EventBus wiring tests — confirm GPIO edges AND USART bytes fan into the
 // SoC's EventBus (and thus any connected RingSink), closing the G3 "声明了
 // 从未实例化" gap. EXTI/output behaviour stays intact alongside the bus.
-#include "chips/stm32f1/stm32f103_soc.hpp"
+#include "chips/stm32f1/soc/stm32f103_soc.hpp"
 #include "hooks/events.hpp"
 #include "hooks/ring_sink.hpp"
 

@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "arch/arm/cortex_m3/cortex_m3.hpp"
-#include "chips/stm32f1/stm32f103_soc.hpp"
+#include "chips/stm32f1/soc/stm32f103_soc.hpp"
 
 #include <fstream>
 #include <string>

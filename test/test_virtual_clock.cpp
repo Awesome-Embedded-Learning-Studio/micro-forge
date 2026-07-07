@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "chips/stm32f1/clock_domains.hpp"
+#include "chips/stm32f1/soc/clock_domains.hpp"
 #include "sim/virtual_clock.hpp"
 
 using namespace micro_forge;

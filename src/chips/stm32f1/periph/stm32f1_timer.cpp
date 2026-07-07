@@ -1,4 +1,4 @@
-#include "chips/stm32f1/stm32f1_timer.hpp"
+#include "chips/stm32f1/periph/stm32f1_timer.hpp"
 
 namespace micro_forge::chips::stm32f1 {
 

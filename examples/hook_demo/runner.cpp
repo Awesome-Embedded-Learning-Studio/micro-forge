@@ -6,7 +6,7 @@
 // Plus an RCC diagnostic so you can see where the firmware actually got to.
 //
 //   ./hook_demo <path/to/F103.axf>
-#include "chips/stm32f1/stm32f103_soc.hpp"
+#include "chips/stm32f1/soc/stm32f103_soc.hpp"
 #include "hooks/ring_sink.hpp"
 
 #include <cstdio>

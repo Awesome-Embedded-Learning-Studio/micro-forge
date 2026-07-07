@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "chips/stm32f1/stm32f1_gpio.hpp"
+#include "chips/stm32f1/periph/stm32f1_gpio.hpp"
 #include "core/types.hpp"
 #include "memory/bus.hpp"
 #include "memory/flat_memory.hpp"

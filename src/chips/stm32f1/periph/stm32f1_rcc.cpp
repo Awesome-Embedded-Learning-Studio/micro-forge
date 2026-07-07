@@ -1,4 +1,4 @@
-#include "chips/stm32f1/stm32f1_rcc.hpp"
+#include "chips/stm32f1/periph/stm32f1_rcc.hpp"
 
 namespace micro_forge::chips::stm32f1 {
 

@@ -1,5 +1,5 @@
-#include "chips/stm32f1/stm32f1_exti.hpp"
-#include "chips/stm32f1/stm32f1_afio.hpp"
+#include "chips/stm32f1/periph/stm32f1_exti.hpp"
+#include "chips/stm32f1/periph/stm32f1_afio.hpp"
 
 namespace micro_forge::chips::stm32f1 {
 

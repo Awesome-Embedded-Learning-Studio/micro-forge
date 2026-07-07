@@ -37,17 +37,17 @@ set(MICRO_FORGE_SOURCES
     src/arch/arm/cortex_m3/cortex_m3_reset.cpp
     src/arch/toy/cpu.cpp
     src/chips/machine.cpp
-    src/chips/stm32f1/interrupt_config.cpp
-    src/chips/stm32f1/memory_bus.cpp
-    src/chips/stm32f1/peripheral_config.cpp
-    src/chips/stm32f1/stm32f103_soc.cpp
-    src/chips/stm32f1/stm32f1_afio.cpp
-    src/chips/stm32f1/stm32f1_exti.cpp
-    src/chips/stm32f1/stm32f1_flash.cpp
-    src/chips/stm32f1/stm32f1_gpio.cpp
-    src/chips/stm32f1/stm32f1_rcc.cpp
-    src/chips/stm32f1/stm32f1_timer.cpp
-    src/chips/stm32f1/stm32f1_usart.cpp
+    src/chips/stm32f1/soc/interrupt_config.cpp
+    src/chips/stm32f1/soc/memory_bus.cpp
+    src/chips/stm32f1/soc/peripheral_config.cpp
+    src/chips/stm32f1/soc/stm32f103_soc.cpp
+    src/chips/stm32f1/periph/stm32f1_afio.cpp
+    src/chips/stm32f1/periph/stm32f1_exti.cpp
+    src/chips/stm32f1/periph/stm32f1_flash.cpp
+    src/chips/stm32f1/periph/stm32f1_gpio.cpp
+    src/chips/stm32f1/periph/stm32f1_rcc.cpp
+    src/chips/stm32f1/periph/stm32f1_timer.cpp
+    src/chips/stm32f1/periph/stm32f1_usart.cpp
     src/cpu/cpu.cpp
     src/loader/binary_loader.cpp
     src/loader/elf_loader.cpp

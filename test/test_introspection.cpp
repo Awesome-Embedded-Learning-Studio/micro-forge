@@ -5,7 +5,7 @@
 // read — it must not mutate simulator state; (3) on real firmware it observes
 // the expected advance (state/cycles/pc).
 #include "introspection/introspection.hpp"
-#include "chips/stm32f1/stm32f103_soc.hpp"
+#include "chips/stm32f1/soc/stm32f103_soc.hpp"
 #include "cpu/cpu.hpp"
 
 #include <gtest/gtest.h>

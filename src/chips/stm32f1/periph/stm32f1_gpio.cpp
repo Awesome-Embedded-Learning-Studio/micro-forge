@@ -1,4 +1,4 @@
-#include "chips/stm32f1/stm32f1_gpio.hpp"
+#include "chips/stm32f1/periph/stm32f1_gpio.hpp"
 #include "util/logger.hpp"
 
 namespace micro_forge::chips::stm32f1 {

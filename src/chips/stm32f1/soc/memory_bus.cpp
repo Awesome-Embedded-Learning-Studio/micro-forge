@@ -1,4 +1,4 @@
-#include "chips/stm32f1/memory_bus.hpp"
+#include "chips/stm32f1/soc/memory_bus.hpp"
 #include "core/mem_literal.hpp"
 
 namespace micro_forge::chips::stm32f1 {

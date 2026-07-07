@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "chips/stm32f1/memory_bus.hpp"
+#include "chips/stm32f1/soc/memory_bus.hpp"
 #include "core/types.hpp"
 #include "memory/bus.hpp"
 #include "memory/flat_memory.hpp"

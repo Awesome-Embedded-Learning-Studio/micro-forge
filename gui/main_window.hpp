@@ -6,7 +6,7 @@
 // QThread — that would break deterministic replay (DIRECTIVES §E).
 #pragma once
 
-#include "chips/stm32f1/stm32f103_soc.hpp"
+#include "chips/stm32f1/soc/stm32f103_soc.hpp"
 
 #include <QMainWindow>
 #include <QString>

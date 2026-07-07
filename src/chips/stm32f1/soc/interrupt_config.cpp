@@ -1,4 +1,4 @@
-#include "chips/stm32f1/interrupt_config.hpp"
+#include "chips/stm32f1/soc/interrupt_config.hpp"
 #include "core/mem_literal.hpp"
 
 namespace micro_forge::chips::stm32f1 {

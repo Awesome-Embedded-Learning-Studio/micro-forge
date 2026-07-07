@@ -1,22 +1,26 @@
-#include "chips/stm32f1/stm32f1_flash.hpp"
+#include "chips/stm32f1/periph/stm32f1_afio.hpp"
 
 namespace micro_forge::chips::stm32f1 {
 
-Expected<data_t> Stm32f1Flash::read(addr_t offset, Width w) {
+Expected<data_t> Stm32f1Afio::read(addr_t offset, Width w) {
     if (w != Width::Word) {
         return std::unexpected(BusError::Unaligned);
     }
     switch (offset) {
         case 0x00:
-            return acr_;
+            return evcr_;
         case 0x04:
-            return keyr_;
+            return mapr_;
         case 0x08:
-            return optkeyr_;
+            return exticr_[0];
         case 0x0C:
-            return sr_;
+            return exticr_[1];
         case 0x10:
-            return cr_;
+            return exticr_[2];
+        case 0x14:
+            return exticr_[3];
+        case 0x18:
+            return mapr2_;
         default:
             // STM32 reserved MMIO locations are modeled as read-as-zero so HAL
             // feature probes do not fault on harmless compatibility reads.
@@ -24,31 +28,44 @@ Expected<data_t> Stm32f1Flash::read(addr_t offset, Width w) {
     }
 }
 
-Expected<void> Stm32f1Flash::write(addr_t offset, data_t data, Width w) {
+Expected<void> Stm32f1Afio::write(addr_t offset, data_t data, Width w) {
     if (w != Width::Word) {
         return std::unexpected(BusError::Unaligned);
     }
     switch (offset) {
         case 0x00:
-            acr_ = data;
+            evcr_ = data;
             return {};
         case 0x04:
-            keyr_ = data;
-            return {}; // Accept write, no unlock logic
+            mapr_ = data;
+            return {};
         case 0x08:
-            optkeyr_ = data;
+            exticr_[0] = data;
             return {};
         case 0x0C:
-            sr_ = data;
-            return {}; // W1C bits accepted
+            exticr_[1] = data;
+            return {};
         case 0x10:
-            cr_ = data;
+            exticr_[2] = data;
+            return {};
+        case 0x14:
+            exticr_[3] = data;
+            return {};
+        case 0x18:
+            mapr2_ = data;
             return {};
         default:
             // Reserved writes are ignored to match peripheral compatibility
             // behavior expected by vendor HAL initialization paths.
             return {};
     }
+}
+
+uint8_t Stm32f1Afio::exti_line_port(uint8_t line) const {
+    if (line > 15) {
+        return 0;
+    }
+    return (exticr_[line / 4] >> ((line % 4) * 4)) & 0xFu;
 }
 
 } // namespace micro_forge::chips::stm32f1
