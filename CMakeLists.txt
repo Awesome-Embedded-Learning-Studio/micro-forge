@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(micro-forge
-    VERSION 0.1.0
+    VERSION 0.2.0
     LANGUAGES CXX
 )
 
@@ -98,4 +98,20 @@ add_subdirectory(bench)
 # MICRO_FORGE_COVERAGE. The gui/ subdirectory does all the Qt wiring.
 if(MICRO_FORGE_GUI)
     add_subdirectory(gui)
+endif()
+
+# ── Install rules (release engineering) ──
+# The core static library, CLI runner, and public headers install cleanly via
+# `cmake --install`. GUI is installed only when built. No CPack packaging —
+# this project targets teaching/portfolio use, not distribution packages.
+include(GNUInstallDirs)
+install(TARGETS micro_forge
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(TARGETS micro-forge
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    FILES_MATCHING PATTERN "*.hpp")
+if(MICRO_FORGE_GUI)
+    install(TARGETS micro-forge-gui
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()

@@ -129,7 +129,7 @@ bench/            Performance benchmarks (with baseline regression gate)
 
 ## Roadmap
 
-See [document/milestones/](document/milestones/) for the full version roadmap.
+See [document/milestones/](document/milestones/) for the full version roadmap; the v0.2.0 [support matrix](document/SUPPORT.md) and [CHANGELOG](CHANGELOG.md) cover what's supported and what changed.
 
 Already landed:
 

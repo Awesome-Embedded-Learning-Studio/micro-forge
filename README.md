@@ -124,7 +124,7 @@ bench/            性能基准（含 baseline 回归软门）
 
 ## 路线图
 
-完整版本路线图见 [document/milestones/](document/milestones/)。
+完整版本路线图见 [document/milestones/](document/milestones/)；v0.2.0 支持范围见 [支持矩阵](document/SUPPORT.md)，变更历史见 [CHANGELOG](CHANGELOG.md)。
 
 已落地：
 
