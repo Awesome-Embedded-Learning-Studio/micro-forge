@@ -47,6 +47,7 @@ class MainWindow : public QMainWindow {
     QTimer* timer_ = nullptr;
     QLabel* state_label_ = nullptr;
     QTableWidget* regs_table_ = nullptr;
+    QLabel* gpio_label_ = nullptr;
     QPushButton* run_btn_ = nullptr;
 };
 

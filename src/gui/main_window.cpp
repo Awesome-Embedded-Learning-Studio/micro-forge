@@ -1,9 +1,10 @@
-// micro-forge GUI main window implementation (G5b).
+// micro-forge GUI main window implementation (G5b/G5c).
 #include "gui/main_window.hpp"
 
 #include "cli/introspection.hpp"
 #include "cpu/cpu.hpp"
 
+#include <QChar>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -64,8 +65,16 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     regs_table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     root->addWidget(regs_table_);
 
+    // ── GPIO panel: A/B/C port ODR with per-pin LED glyphs ──
+    auto* gpio_title = new QLabel("GPIO output (A/B/C, pin0..pin15)");
+    gpio_title->setStyleSheet("font-weight: bold;");
+    root->addWidget(gpio_title);
+    gpio_label_ = new QLabel;
+    gpio_label_->setStyleSheet("font-family: monospace;");
+    root->addWidget(gpio_label_);
+
     setCentralWidget(central);
-    resize(440, 620);
+    resize(480, 720);
 
     connect(run_btn_, &QPushButton::clicked, this, &MainWindow::onRunClicked);
     connect(step_btn, &QPushButton::clicked, this, &MainWindow::onStepClicked);
@@ -194,6 +203,24 @@ void MainWindow::refreshFromSnapshot() {
     regs_table_->setItem(14, 1, new QTableWidgetItem(hex(snap.cpu.lr)));
     regs_table_->setItem(15, 0, new QTableWidgetItem(kNames[15]));
     regs_table_->setItem(15, 1, new QTableWidgetItem(hex(snap.cpu.pc)));
+
+    // GPIO: 3 ports (A/B/C), each ODR hex + 16 LED glyphs (pin0..pin15).
+    auto led = [](uint16_t odr) {
+        QString s;
+        for (int i = 0; i < 16; ++i) {
+            s += (odr >> i) & 1 ? QChar(0x25CF) : QChar(0x00B7); // ● or ·
+        }
+        return s;
+    };
+    QString g;
+    for (int i = 0; i < 3; ++i) {
+        const auto& port = snap.peripherals.gpio[i];
+        g += QString("%1 0x%2  %3\n")
+                 .arg(QChar(port.port))
+                 .arg(port.odr, 4, 16, QLatin1Char('0'))
+                 .arg(led(port.odr));
+    }
+    gpio_label_->setText(g);
 }
 
 } // namespace micro_forge::gui
