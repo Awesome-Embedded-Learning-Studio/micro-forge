@@ -4,6 +4,8 @@
 > 阶段: v0.1.0 → v1.0.0(对 [00-v1-roadmap](00-v1-roadmap.md) 的实测校准)
 > 状态: 待评审
 > 依赖: 当前 main 分支代码实测(217/217 测试通过)、01–05 各阶段目标文档
+>
+> ⚠️ **2026-07-07 校准**:本文档为 6-19 快照(217 测试、CLI 0%、整体估 35-40%)。今日实测 **355/355 ctest 绿**(353 产品 + 2 meta)、CLI/snapshot/introspection 全齐、Qt6 GUI(milestone 04)done、Thumb-2 全覆盖 + QEMU 差分 oracle 落地、整体向 v1 约 **65-70%**。下方各里程碑完成度为 6-19 状态,已显著过期;决策请以代码 + `git log` + 内部 `document/ai/PLAN.md`(实时批表)为准。
 
 ---
 
