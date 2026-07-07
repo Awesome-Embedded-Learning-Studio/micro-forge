@@ -17,9 +17,10 @@ An ARM Cortex-M3 (STM32F103) simulator written in modern C++23 — run and test 
 - **Peripheral Suite** — NVIC, SCB, SysTick, RCC, GPIO (A/B/C), USART1, TIM2, AFIO, FLASH
 - **Firmware Loading** — ELF loader and raw binary loader
 - **CLI & Diagnostics** — `micro-forge run` drives firmware with MMIO trace, memory dump, fault recording with context, and `--snapshot-json` JSON state export (CPU / fault / peripherals / recent MMIO)
+- **GUI Dashboard** — Optional Qt6 debug dashboard (`-DMICRO_FORGE_GUI=ON`): step / run / reset with visual CPU registers and GPIO output; the simulator runs synchronously on the Qt main thread, preserving single-threaded determinism
 - **Event Bus & Hooks** — Typed observer subsystem (`Signal<E>`, non-blocking `RingSink<E>`, `EventBus`) emitting `GpioEdge` / `UartByte` events with CPU-cycle timestamps — single-threaded and deterministic, drained offline rather than via a thread pool
 - **Real-Firmware Proven** — Boots **real Keil/MDK-ARM STM32F103 HAL firmware** end-to-end: reset → `__main` scatter-load → `main` → `HAL_Init` → `SystemClock_Config` (PLL switch) → `MX_GPIO_Init` → `HAL_GPIO_WritePin(PA1)` → `while(1)` with SysTick IRQ
-- **Well Tested** — 244 test cases across 19 test files with GoogleTest
+- **Well Tested** — 353 test cases across 19 test files with GoogleTest
 
 ## Quick Start
 
@@ -69,24 +70,42 @@ ctest --output-on-failure -j$(nproc)
 > Want to observe pin toggles live? `examples/hook_demo` subscribes to the
 > event bus and captures PA1 toggles emitted by the GPIO peripheral.
 
+### GUI Dashboard (optional)
+
+The default build omits the GUI (core library and CLI stay Qt-free). For the
+visual debug dashboard:
+
+```bash
+cmake -B build-gui -DMICRO_FORGE_GUI=ON
+cmake --build build-gui -j$(nproc)
+./build-gui/gui/micro-forge-gui firmware.axf   # step / run / reset, inspect registers & GPIO
+```
+
+The GUI is a pure consumer of the core library, reusing the same
+`read_introspection` data; the simulator runs synchronously on the Qt main
+thread for deterministic replay.
+
 ## Project Structure
 
 ```
 include/
-  core/       Base types and interfaces (IPeripheral, types)
-  cpu/        CPU framework (ICore, RegisterFile, ToyCore)
-  memory/     Memory system (FlatMemory, Bus, Region, bit-band aliases)
-  periph/     Peripheral abstractions (Device, Gpio, SerialPort, Timer)
-  hooks/      Event bus (Signal, RingSink, EventBus, GpioEdge/UartByte)
-  cli/        Command-line interface (snapshot, main)
-  util/       WeakPtr lifecycle management
-src/          Implementation files
-test/         GoogleTest suite (244 tests)
-examples/     Firmware examples (bare-metal + HAL + Keil/MDK + hook demos)
+  core/           Base types and interfaces (IPeripheral, types)
+  cpu/            CPU framework (ICore, RegisterFile, FaultRecord)
+  memory/         Memory system (FlatMemory, Bus, Region, bit-band aliases)
+  periph/         Peripheral abstractions (Device, Gpio, SerialPort, Timer)
+  hooks/          Event bus (Signal, RingSink, EventBus, GpioEdge/UartByte)
+  introspection/  Structured state export (read_introspection — single source of truth shared by CLI/GUI)
+  util/           WeakPtr lifecycle management
+src/              Core library implementation (arch / chips / cpu / memory / periph / sim / loader / tools / util)
+cli/              CLI executable (main, snapshot) — top-level consumer
+gui/              Qt6 dashboard executable (main, main_window) — top-level consumer, opt-in
+test/             GoogleTest suite (353 tests)
+examples/         Firmware examples (bare-metal + HAL + Keil/MDK + hook demos)
 document/
-  milestones/ Version roadmap (v0.1.0 → v1.0.0)
-  notes/      Design notes by topic
-scripts/      Utility scripts
+  milestones/     Version roadmap (v0.1.0 → v1.0.0)
+  notes/          Design notes by topic
+scripts/          Utility scripts (test-count floor / QEMU oracle / venv gateway)
+bench/            Performance benchmarks (with baseline regression gate)
 ```
 
 ## Examples
@@ -101,13 +120,27 @@ scripts/      Utility scripts
 | `F103` | Real Keil/MDK-ARM STM32F103 HAL GPIO firmware — the end-to-end regression carrier (`examples/F103/MDK-ARM/F103/F103.axf`) |
 | `hook_demo` | Subscribes to the event bus to capture PA1 toggles live |
 
+## Development Tooling
+
+- **Coverage** — Build gcov-instrumented binaries with `-DMICRO_FORGE_COVERAGE=ON` and generate reports via `gcovr` (currently lines 81.6% / branches 61.4%).
+- **Benchmarks** — `bench/` with a baseline regression gate; the perf campaign lifted GPIO / USART / TIM instruction throughput by 51-57%.
+- **QEMU differential oracle** — `scripts/qemu_cortex_m3_oracle.sh` checks instruction semantics (SDIV / UDIV / ADC / SBC + xPSR) against real QEMU, byte-for-byte.
+- **Test-count floor** — `scripts/check_test_count.sh` pins the baseline so refactors can't silently drop tests.
+
 ## Roadmap
 
 See [document/milestones/](document/milestones/) for the full version roadmap.
 
-Already landed: the **`micro-forge run` CLI** with `--snapshot-json` state export and MMIO tracing, the **Cortex-M3 correctness foundation** (interrupt preemption, MSP/PSP dual-stack, PRIGROUP, NVIC priority cache, bit-band aliases), the **Thumb-2 instruction-coverage fix** that lets real Keil/MDK-ARM HAL firmware boot end-to-end, and the **event-bus hooks subsystem**.
+Already landed:
 
-Key milestones ahead: full exception semantics tail-chaining, EXTI / Timer-IRQ / USART-RX-IRQ end-to-end paths, DMA / SPI / FLASH depth, extended HAL peripheral coverage, and a GUI debug dashboard.
+- **CLI & observability** — `micro-forge run` + `--snapshot-json` + `--trace-mmio`; structured introspection is the single source of truth shared by CLI and GUI
+- **Cortex-M3 correctness foundation** — interrupt preemption and nesting, MSP/PSP dual-stack, PRIGROUP priority grouping, NVIC priority cache, bit-band alias regions
+- **Full Thumb-2 coverage** — real Keil/MDK-ARM HAL firmware boots end-to-end
+- **Three interrupt paths end-to-end** — Timer UIF / EXTI GPIO edge / USART RXNE, all via the common `raise_irq` channel
+- **Event-bus hooks** — typed observers with CPU-cycle timestamps
+- **Qt6 GUI dashboard** — step / run / reset, visual CPU registers and GPIO (opt-in)
+
+Key milestones ahead: DMA / SPI / FLASH peripheral depth, extended HAL peripheral coverage, and more GUI debug panels (full fault detail, serial terminal, interrupt-system visualization).
 
 ## License
 
