@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
-#include "arch/toy/cpu.h"
-#include "arch/toy/isa.h"
+#include "arch/toy/cpu.hpp"
+#include "arch/toy/isa.hpp"
 #include "memory/flat_memory.hpp"
 
 using namespace micro_forge;

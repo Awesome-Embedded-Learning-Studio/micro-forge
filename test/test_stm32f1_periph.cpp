@@ -1,12 +1,12 @@
 #include <gtest/gtest.h>
 
-#include "chips/stm32f1/stm32f1_afio.hpp"
-#include "chips/stm32f1/stm32f1_exti.hpp"
-#include "chips/stm32f1/stm32f1_flash.hpp"
-#include "chips/stm32f1/stm32f1_gpio.hpp"
-#include "chips/stm32f1/stm32f1_rcc.hpp"
-#include "chips/stm32f1/stm32f1_timer.hpp"
-#include "chips/stm32f1/stm32f1_usart.hpp"
+#include "chips/stm32f1/periph/stm32f1_afio.hpp"
+#include "chips/stm32f1/periph/stm32f1_exti.hpp"
+#include "chips/stm32f1/periph/stm32f1_flash.hpp"
+#include "chips/stm32f1/periph/stm32f1_gpio.hpp"
+#include "chips/stm32f1/periph/stm32f1_rcc.hpp"
+#include "chips/stm32f1/periph/stm32f1_timer.hpp"
+#include "chips/stm32f1/periph/stm32f1_usart.hpp"
 #include "memory/bus.hpp"
 #include "memory/flat_memory.hpp"
 

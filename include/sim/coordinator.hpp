@@ -3,7 +3,7 @@
 #include "cpu/cpu.hpp"
 #include "periph/device.hpp"
 #include "sim/virtual_clock.hpp"
-#include "util/weak_ptr/weak_ptr.h"
+#include "util/weak_ptr/weak_ptr.hpp"
 
 #include <cstddef>
 #include <cstdint>

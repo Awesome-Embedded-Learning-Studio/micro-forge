@@ -2,7 +2,7 @@
 
 #include "arch/arm/cortex_m3/cortex_m3.hpp"
 #include "arch/arm/cortex_m3/cortex_m3_reset.hpp"
-#include "chips/stm32f1/stm32f103_soc.hpp"
+#include "chips/stm32f1/soc/stm32f103_soc.hpp"
 
 using namespace micro_forge;
 using namespace micro_forge::chips::stm32f1;

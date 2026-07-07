@@ -10,7 +10,7 @@
 //   bench_sim [warmup_steps=1_000_000] [measure_steps=10_000_000] [reps=5]
 //   BENCH_SCENARIOS="gpio_iotoggle;uart_printf"  (subset; default = all 3)
 
-#include "chips/stm32f1/stm32f103_soc.hpp"
+#include "chips/stm32f1/soc/stm32f103_soc.hpp"
 #include "cpu/cpu.hpp"
 #include "util/perf_stats.hpp"
 

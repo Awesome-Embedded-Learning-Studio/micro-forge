@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(micro-forge
-    VERSION 0.1.0
+    VERSION 0.2.0
     LANGUAGES CXX
 )
 
@@ -13,6 +13,7 @@ set(MICRO_FORGE_ARCH_BIT 32 CACHE STRING "Target architecture bit width (32 or 6
 set(ARCH_BIT ${MICRO_FORGE_ARCH_BIT})
 
 option(MICRO_FORGE_COVERAGE "Instrument micro_forge with gcov for coverage (COVERAGE-METHODOLOGY §2; build in a dedicated dir, e.g. -B build-cov -DMICRO_FORGE_COVERAGE=ON)" OFF)
+option(MICRO_FORGE_GUI "Build the Qt6 dashboard (milestone 04); lives in gui/ and never enters the core library" OFF)
 
 add_compile_options(-Wall -Wextra -Werror)
 
@@ -36,17 +37,17 @@ set(MICRO_FORGE_SOURCES
     src/arch/arm/cortex_m3/cortex_m3_reset.cpp
     src/arch/toy/cpu.cpp
     src/chips/machine.cpp
-    src/chips/stm32f1/interrupt_config.cpp
-    src/chips/stm32f1/memory_bus.cpp
-    src/chips/stm32f1/peripheral_config.cpp
-    src/chips/stm32f1/stm32f103_soc.cpp
-    src/chips/stm32f1/stm32f1_afio.cpp
-    src/chips/stm32f1/stm32f1_exti.cpp
-    src/chips/stm32f1/stm32f1_flash.cpp
-    src/chips/stm32f1/stm32f1_gpio.cpp
-    src/chips/stm32f1/stm32f1_rcc.cpp
-    src/chips/stm32f1/stm32f1_timer.cpp
-    src/chips/stm32f1/stm32f1_usart.cpp
+    src/chips/stm32f1/soc/interrupt_config.cpp
+    src/chips/stm32f1/soc/memory_bus.cpp
+    src/chips/stm32f1/soc/peripheral_config.cpp
+    src/chips/stm32f1/soc/stm32f103_soc.cpp
+    src/chips/stm32f1/periph/stm32f1_afio.cpp
+    src/chips/stm32f1/periph/stm32f1_exti.cpp
+    src/chips/stm32f1/periph/stm32f1_flash.cpp
+    src/chips/stm32f1/periph/stm32f1_gpio.cpp
+    src/chips/stm32f1/periph/stm32f1_rcc.cpp
+    src/chips/stm32f1/periph/stm32f1_timer.cpp
+    src/chips/stm32f1/periph/stm32f1_usart.cpp
     src/cpu/cpu.cpp
     src/loader/binary_loader.cpp
     src/loader/elf_loader.cpp
@@ -61,7 +62,7 @@ set(MICRO_FORGE_SOURCES
     src/tools/memory_dump.cpp
     src/tools/mmio_trace.cpp
     src/util/logger.cpp
-    src/cli/introspection.cpp
+    src/introspection/introspection.cpp
 )
 
 add_library(micro_forge STATIC ${MICRO_FORGE_SOURCES})
@@ -81,7 +82,10 @@ if(MICRO_FORGE_COVERAGE)
 endif()
 
 # Unified CLI runner.
-add_executable(micro-forge src/cli/main.cpp src/cli/snapshot.cpp)
+add_executable(micro-forge cli/main.cpp cli/snapshot.cpp)
+# CLI is a top-level consumer (lives in cli/); snapshot.hpp sits next to its
+# .cpp there, so the include root is the repo top, not include/ alone.
+target_include_directories(micro-forge PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(micro-forge PRIVATE micro_forge)
 
 enable_testing()
@@ -89,16 +93,30 @@ add_subdirectory(examples)
 add_subdirectory(test)
 add_subdirectory(bench)
 
-# ── GUI dashboard (milestone 04; see DIRECTIVES §E) ──
-# Opt-in: Qt6 is a heavy runtime dep, so the GUI is a separate target that
-# defaults OFF and never enters the core `micro_forge` library. The core and
-# CLI stay zero-dep; only micro-forge-gui links Qt6::Widgets. Build in a
-# dedicated dir, e.g. -B build-gui -DMICRO_FORGE_GUI=ON.
-option(MICRO_FORGE_GUI "Build the Qt6 dashboard (milestone 04)" OFF)
+# GUI dashboard lives in gui/ as a top-level consumer (milestone 04; DIRECTIVES
+# §E). Built only when MICRO_FORGE_GUI=ON — the option is declared above next to
+# MICRO_FORGE_COVERAGE. The gui/ subdirectory does all the Qt wiring.
 if(MICRO_FORGE_GUI)
-    find_package(Qt6 REQUIRED COMPONENTS Widgets)
-    set(CMAKE_AUTOMOC ON)
-    add_executable(micro-forge-gui src/gui/main.cpp src/gui/main_window.cpp)
-    target_include_directories(micro-forge-gui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    target_link_libraries(micro-forge-gui PRIVATE micro_forge Qt6::Widgets)
+    add_subdirectory(gui)
+endif()
+
+# ── Install rules (release engineering) ──
+# The core static library, CLI runner, and public headers install cleanly via
+# `cmake --install`. GUI is installed only when built. No CPack packaging —
+# this project targets teaching/portfolio use, not distribution packages.
+include(GNUInstallDirs)
+install(TARGETS micro_forge
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(TARGETS micro-forge
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    FILES_MATCHING PATTERN "*.hpp")
+# Generated header (configure_file output in the binary dir, not under
+# include/) — needed so an installed micro_forge can actually be linked
+# against, since autogen/arch_details.hpp is a PUBLIC include of the library.
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/autogen/arch_details.hpp
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/autogen)
+if(MICRO_FORGE_GUI)
+    install(TARGETS micro-forge-gui
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
