@@ -203,6 +203,16 @@ void write_snapshot_json(chips::stm32f1::Stm32f103Soc& soc, std::ostream& out,
         << static_cast<unsigned>(snap.peripherals.nvic.highest_pending_irq)
         << ", ";
     out << "\"enabled_count\": " << snap.peripherals.nvic.enabled_count;
+    out << "}, \"scb\": {";
+    hex_kv(out, "icsr", static_cast<unsigned>(snap.peripherals.scb.icsr));
+    out << ", ";
+    hex_kv(out, "vtor", static_cast<unsigned>(snap.peripherals.scb.vtor));
+    out << ", ";
+    hex_kv(out, "aircr", static_cast<unsigned>(snap.peripherals.scb.aircr));
+    out << ", ";
+    // Decimal: hex_kv above leaves hex sticky; prigroup is 0..7.
+    out << "\"prigroup\": " << std::dec
+        << static_cast<unsigned>(snap.peripherals.scb.prigroup);
     out << "}}, ";
 
     // ── events (MMIO access ring, caller-collected) ──

@@ -80,6 +80,15 @@ target_link_libraries(test_systick
 )
 gtest_discover_tests(test_systick)
 
+# ── SCB 测试(系统控制块寄存器;scb coverage 收口 G3)──
+add_executable(test_scb
+    test_scb.cpp
+)
+target_link_libraries(test_scb
+    PRIVATE micro_forge GTest::gtest_main
+)
+gtest_discover_tests(test_scb)
+
 # ── 中断集成测试 ──
 add_executable(test_interrupt
     test_interrupt_roundtrip.cpp

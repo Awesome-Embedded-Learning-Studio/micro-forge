@@ -34,6 +34,15 @@ class ScbPeripheral : public Device {
         return 0xFF;
     }
 
+    // Read-only accessors backing the SCB panel of the introspection snapshot
+    // (milestone 04 GUI). PRIGROUP is AIRCR bits [10:8].
+    uint32_t icsr() const noexcept { return icsr_; }
+    uint32_t vtor() const noexcept { return vtor_; }
+    uint32_t aircr() const noexcept { return aircr_; }
+    uint8_t prigroup() const noexcept {
+        return static_cast<uint8_t>((aircr_ >> 8) & 0x7u);
+    }
+
   private:
     uint32_t cpuid_ = 0x412FC230; // Cortex-M3 r2p0
     uint32_t icsr_ = 0;

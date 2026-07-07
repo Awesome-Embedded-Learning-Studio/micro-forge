@@ -60,11 +60,17 @@ struct NvicSnapshot {
     uint16_t enabled_count = 0;
 };
 
+struct ScbSnapshot {
+    uint32_t icsr = 0, vtor = 0, aircr = 0;
+    uint8_t prigroup = 0; // AIRCR bits [10:8]
+};
+
 struct PeripheralsSnapshot {
     std::string_view usart_output;
     std::array<GpioPortSnapshot, 3> gpio{}; // ports A, B, C (in that order)
     SysTickSnapshot systick;
     NvicSnapshot nvic;
+    ScbSnapshot scb;
 };
 
 struct IntrospectionSnapshot {

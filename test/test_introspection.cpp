@@ -86,6 +86,11 @@ TEST(Introspection, FreshSocPeripheralsAreQuiescent) {
     EXPECT_FALSE(snap.peripherals.nvic.has_pending);
     EXPECT_EQ(snap.peripherals.nvic.highest_pending_irq, 0xFF);
     EXPECT_EQ(snap.peripherals.nvic.enabled_count, 0u);
+    // SCB: AIRCR defaults to 0xFA050000 (VECTKEY + fixed bits); prigroup 0.
+    EXPECT_EQ(snap.peripherals.scb.icsr, 0u);
+    EXPECT_EQ(snap.peripherals.scb.vtor, 0u);
+    EXPECT_EQ(snap.peripherals.scb.aircr, 0xFA050000u);
+    EXPECT_EQ(snap.peripherals.scb.prigroup, 0u);
 }
 
 #ifdef INTROSPECTION_HELLO_ELF

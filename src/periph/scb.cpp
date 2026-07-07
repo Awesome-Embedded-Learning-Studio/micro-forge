@@ -73,6 +73,9 @@ Expected<void> ScbPeripheral::write(addr_t offset, data_t data, Width w) {
         case 0x10:
             scr_ = data;
             return {};
+        case 0x14:
+            ccr_ = data;
+            return {};
         case 0x18:
             shp_[0] = data & 0xFF;
             shp_[1] = (data >> 8) & 0xFF;

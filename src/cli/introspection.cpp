@@ -34,6 +34,8 @@ IntrospectionSnapshot read_introspection(Stm32f103Soc& soc,
     p.nvic.has_pending = parts.nvic.has_pending_irq();
     p.nvic.highest_pending_irq = parts.nvic.highest_pending_irq();
     p.nvic.enabled_count = parts.nvic.enabled_count();
+    p.scb = {parts.scb.icsr(), parts.scb.vtor(), parts.scb.aircr(),
+             parts.scb.prigroup()};
 
     auto cm3 = soc.cortex_m3_cpu();
     if (!cm3.IsValid()) {
