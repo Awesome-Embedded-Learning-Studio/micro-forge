@@ -21,13 +21,6 @@ using micro_forge::introspection::read_introspection;
 using micro_forge::chips::stm32f1::Stm32f103Soc;
 using micro_forge::cpu::CPU;
 
-namespace {
-std::vector<uint8_t> read_file(const std::string& path) {
-    std::ifstream f(path, std::ios::binary);
-    return {std::istreambuf_iterator<char>(f), {}};
-}
-} // namespace
-
 TEST(Introspection, FreshSocHasHaltedCpuAndNoFault) {
     auto soc = Stm32f103Soc::create();
     ASSERT_TRUE(soc.has_value());
@@ -94,6 +87,13 @@ TEST(Introspection, FreshSocPeripheralsAreQuiescent) {
 }
 
 #ifdef INTROSPECTION_HELLO_ELF
+namespace {
+std::vector<uint8_t> read_file(const std::string& path) {
+    std::ifstream f(path, std::ios::binary);
+    return {std::istreambuf_iterator<char>(f), {}};
+}
+} // namespace
+
 TEST(Introspection, RunningFirmwareAdvancesCyclesAndKeepsPcInFlash) {
     const auto data = read_file(INTROSPECTION_HELLO_ELF);
     ASSERT_FALSE(data.empty());
