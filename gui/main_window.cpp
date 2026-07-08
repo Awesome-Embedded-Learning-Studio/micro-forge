@@ -17,10 +17,12 @@
 
 #include "cpu/cpu.hpp"
 
+#include <QCloseEvent>
 #include <QComboBox>
 #include <QDockWidget>
 #include <QLabel>
 #include <QPushButton>
+#include <QSettings>
 #include <QString>
 #include <QToolBar>
 #include <QTimer>
@@ -129,6 +131,14 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     }
 
     resize(1100, 760);
+
+    // Restore the user's dock layout + window geometry from last session (A3).
+    // First launch: saved state is absent → restoreState returns false and the
+    // defaults above stay in effect. Docks must already exist + be named
+    // (setObjectName in the ctor above) for restoreState to relocate them.
+    QSettings settings("micro-forge", "gui");
+    restoreGeometry(settings.value("geometry").toByteArray());
+    restoreState(settings.value("windowState").toByteArray());
 }
 
 void MainWindow::rebuildSession() {
@@ -206,6 +216,15 @@ void MainWindow::refreshFromSnapshot() {
     gpio_panel_->refresh(snap);
     periph_panel_->refresh(snap);
     board_view_->refresh(snap);
+}
+
+void MainWindow::closeEvent(QCloseEvent* event) {
+    // Persist dock layout + window geometry so the next launch opens the way
+    // the user left it (A3). Docks were all given objectNames in the ctor.
+    QSettings settings("micro-forge", "gui");
+    settings.setValue("geometry", saveGeometry());
+    settings.setValue("windowState", saveState());
+    QMainWindow::closeEvent(event);
 }
 
 } // namespace micro_forge::gui

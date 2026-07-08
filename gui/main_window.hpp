@@ -12,6 +12,7 @@
 #include <QMainWindow>
 #include <QString>
 
+class QCloseEvent;
 class QComboBox;
 class QLabel;
 class QPushButton;
@@ -38,6 +39,9 @@ class MainWindow : public QMainWindow {
   public:
     explicit MainWindow(const QString& firmware_path,
                         QWidget* parent = nullptr);
+
+  protected:
+    void closeEvent(QCloseEvent* event) override;
 
   private slots:
     void onTick();
