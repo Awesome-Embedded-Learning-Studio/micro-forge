@@ -49,9 +49,6 @@ const char* bus_error_name_raw(std::uint32_t raw) {
 
 FaultPanel::FaultPanel(QWidget* parent) : QWidget(parent) {
     auto* lay = new QVBoxLayout(this);
-    auto* title = new QLabel("Fault detail");
-    title->setStyleSheet("font-weight: bold;");
-    lay->addWidget(title);
 
     label_ = new QLabel("— none —");
     label_->setStyleSheet("font-family: monospace;");

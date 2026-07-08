@@ -15,9 +15,6 @@ namespace micro_forge::gui::panels {
 
 StatusPanel::StatusPanel(QWidget* parent) : QWidget(parent) {
     auto* lay = new QVBoxLayout(this);
-    auto* title = new QLabel("Status / masks (xPSR, PRIMASK, MSP/PSP, ...)");
-    title->setStyleSheet("font-weight: bold;");
-    lay->addWidget(title);
 
     table_ = new QTableWidget(7, 2);
     table_->setHorizontalHeaderLabels({"field", "value"});

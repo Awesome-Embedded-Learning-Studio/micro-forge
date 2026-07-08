@@ -10,9 +10,6 @@ namespace micro_forge::gui::panels {
 
 SerialPanel::SerialPanel(QWidget* parent) : QWidget(parent) {
     auto* lay = new QVBoxLayout(this);
-    auto* title = new QLabel("Serial output");
-    title->setStyleSheet("font-weight: bold;");
-    lay->addWidget(title);
 
     view_ = new QTextEdit;
     view_->setReadOnly(true);

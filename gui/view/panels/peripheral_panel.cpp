@@ -12,9 +12,6 @@ namespace micro_forge::gui::panels {
 
 PeripheralPanel::PeripheralPanel(QWidget* parent) : QWidget(parent) {
     auto* lay = new QVBoxLayout(this);
-    auto* title = new QLabel("Peripherals (SysTick / NVIC / SCB)");
-    title->setStyleSheet("font-weight: bold;");
-    lay->addWidget(title);
 
     label_ = new QLabel;
     label_->setStyleSheet("font-family: monospace;");

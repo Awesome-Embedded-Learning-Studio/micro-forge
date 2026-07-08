@@ -13,9 +13,6 @@ namespace micro_forge::gui::panels {
 
 GpioPanel::GpioPanel(QWidget* parent) : QWidget(parent) {
     auto* lay = new QVBoxLayout(this);
-    auto* title = new QLabel("GPIO output (A/B/C, pin0..pin15)");
-    title->setStyleSheet("font-weight: bold;");
-    lay->addWidget(title);
 
     label_ = new QLabel;
     label_->setStyleSheet("font-family: monospace;");

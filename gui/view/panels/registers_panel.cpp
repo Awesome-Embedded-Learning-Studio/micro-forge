@@ -15,9 +15,6 @@ namespace micro_forge::gui::panels {
 
 RegistersPanel::RegistersPanel(QWidget* parent) : QWidget(parent) {
     auto* lay = new QVBoxLayout(this);
-    auto* title = new QLabel("CPU registers (r0-r12, sp, lr, pc)");
-    title->setStyleSheet("font-weight: bold;");
-    lay->addWidget(title);
 
     table_ = new QTableWidget(16, 2);
     table_->setHorizontalHeaderLabels({"reg", "value"});
