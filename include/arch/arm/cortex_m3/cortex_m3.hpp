@@ -42,6 +42,13 @@ class CortexM3CPU : public CPU {
 
     void launch() noexcept { current_status_ = State::Running; };
 
+    // Raw observer pointers, not WeakPtr — intentional (C2 close-out). NVIC/SCB
+    // live in Stm32f103Parts, a SoC member alongside the CPU, so they outlive
+    // it and there is NO reference cycle to break (NVIC→CPU uses callbacks /
+    // WeakPtr; the CPU→NVIC link is one-way). Used on the exception path
+    // (raise_irq, priority lookup) — not per-instruction. Same reasoning as the
+    // bus_ pointer above; see notes 041. A WeakPtr here would add a
+    // control-block deref + IsValid with no cycle-prevention benefit.
     void set_nvic(periph::NvicPeripheral& nvic) { nvic_ = &nvic; }
     void set_scb(periph::ScbPeripheral& scb) { scb_ = &scb; }
     void set_vector_table_base(addr_t base) { vector_table_base_ = base; }
