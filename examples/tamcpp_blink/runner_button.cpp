@@ -5,6 +5,7 @@
 // 空闲态让 Button 进 Idle,再注入按下/释放。
 #include "arch/arm/cortex_m3/cortex_m3.hpp"
 #include "chips/stm32f1/soc/stm32f103_soc.hpp"
+#include "tools/mmio_trace.hpp"
 
 #include <cstdio>
 #include <fstream>
@@ -58,12 +59,27 @@ int main(int argc, char** argv) {
         auto idr = (*soc)->parts().gpioa.read(0x08, Width::Word);
         auto odr = (*soc)->parts().gpioc.read(0x0C, Width::Word);
         auto tck = (*soc)->parts().sram.read(0x10, Width::Word);
+        auto scc = (*soc)->parts().sram.read(0x08, Width::Word);
         auto pc = cm3->pc();
-        fprintf(stderr, "[%s] PC=0x%X PA0_IDR=0x%X PC13_ODR=0x%X uwTick=0x%X\n",
+        fprintf(stderr, "[%s] PC=0x%X SCC=0x%X uwTick=0x%X PA0=0x%X PC13=0x%X",
                 tag, pc.has_value() ? *pc : 0xDEAD,
-                idr.has_value() ? *idr : 0xDEAD, odr.has_value() ? *odr : 0xDEAD,
-                tck.has_value() ? *tck : 0xDEAD);
+                scc.has_value() ? *scc : 0xDEAD, tck.has_value() ? *tck : 0xDEAD,
+                idr.has_value() ? *idr : 0xDEAD, odr.has_value() ? *odr : 0xDEAD);
+        if (cm3->last_fault()) {
+            auto& f = *cm3->last_fault();
+            fprintf(stderr, " FAULT pc=0x%X addr=0x%X kind=%d", f.pc,
+                    f.access_addr.has_value() ? *f.access_addr : 0xDEAD,
+                    static_cast<int>(f.kind));
+        }
+        fprintf(stderr, "\n");
     };
+    tools::enable_mmio_trace(*(*soc)->machine().bus, [](const tools::MmioAccess& a) {
+        if (a.addr == 0x40010808U) {
+            fprintf(stderr, "[mmio] %c IDR=0x%X\n",
+                    a.is_write ? 'W' : 'R', a.value);
+        }
+    });
+
     // 1) 上拉空闲
     (*soc)->parts().gpioa.simulate_input(0, true);
     (*soc)->run(10000000);
