@@ -5,6 +5,7 @@
 #include "introspection/introspection.hpp"
 
 #include "arch/arm/cortex_m3/cortex_m3.hpp"
+#include "chips/stm32f1/soc/clock_domains.hpp"
 #include "chips/stm32f1/soc/stm32f103_soc.hpp"
 #include "cpu/cpu.hpp"
 
@@ -13,7 +14,9 @@
 
 using namespace micro_forge;
 using micro_forge::cpu::CPU;
+using micro_forge::chips::stm32f1::ClockDomain;
 using micro_forge::chips::stm32f1::Stm32f103Soc;
+using micro_forge::chips::stm32f1::domain_index;
 
 namespace micro_forge::introspection {
 
@@ -36,6 +39,16 @@ IntrospectionSnapshot read_introspection(Stm32f103Soc& soc,
     p.nvic.enabled_count = parts.nvic.enabled_count();
     p.scb = {parts.scb.icsr(), parts.scb.vtor(), parts.scb.aircr(),
              parts.scb.prigroup()};
+
+    // Clock tree (B1): 3 sim domains queried via the coordinator's VirtualClock.
+    if (soc.machine().coord) {
+        auto& clk = soc.machine().coord->clock();
+        p.clock.sysclk = clk.sysclk_freq_hz();
+        // AHB prescaler is not modeled → HCLK mirrors SYSCLK.
+        p.clock.hclk = clk.sysclk_freq_hz();
+        p.clock.apb1 = clk.domain_freq_hz(domain_index(ClockDomain::Apb1));
+        p.clock.apb2 = clk.domain_freq_hz(domain_index(ClockDomain::Apb2));
+    }
 
     auto cm3 = soc.cortex_m3_cpu();
     if (!cm3.IsValid()) {

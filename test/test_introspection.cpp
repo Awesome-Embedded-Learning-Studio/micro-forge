@@ -86,6 +86,21 @@ TEST(Introspection, FreshSocPeripheralsAreQuiescent) {
     EXPECT_EQ(snap.peripherals.scb.prigroup, 0u);
 }
 
+TEST(Introspection, FreshSocClockTreeIsHsiDefault) {
+    auto soc = Stm32f103Soc::create();
+    ASSERT_TRUE(soc.has_value());
+    const auto snap = read_introspection(**soc, "");
+
+    // STM32F103 reset default: HSI 8 MHz, no PLL, all buses undivided (8/8/8).
+    constexpr uint32_t k8MHz = 8'000'000u;
+    const auto& clk = snap.peripherals.clock;
+    EXPECT_EQ(clk.sysclk, k8MHz);
+    EXPECT_EQ(clk.apb1, k8MHz);
+    EXPECT_EQ(clk.apb2, k8MHz);
+    // AHB prescaler is not modeled → HCLK mirrors SYSCLK.
+    EXPECT_EQ(clk.hclk, clk.sysclk);
+}
+
 #ifdef INTROSPECTION_HELLO_ELF
 namespace {
 std::vector<uint8_t> read_file(const std::string& path) {

@@ -14,6 +14,7 @@
 #include "gui/view/panels/serial_panel.hpp"
 #include "gui/view/panels/status_panel.hpp"
 #include "gui/view/board_view/board_view.hpp"
+#include "gui/view/panels/clock_panel.hpp"
 
 #include "cpu/cpu.hpp"
 
@@ -70,6 +71,7 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     fault_panel_ = new panels::FaultPanel;
     gpio_panel_ = new panels::GpioPanel;
     periph_panel_ = new panels::PeripheralPanel;
+    clock_panel_ = new panels::ClockPanel;
     board_view_ = new view::BoardView;
 
     // Central: the board (chip + LEDs) — micro-forge's visual main stage.
@@ -98,6 +100,11 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     periph_dock->setObjectName("periph_dock");
     periph_dock->setWidget(periph_panel_);
     addDockWidget(Qt::RightDockWidgetArea, periph_dock);
+
+    auto* clock_dock = new QDockWidget("Clock tree", this);
+    clock_dock->setObjectName("clock_dock");
+    clock_dock->setWidget(clock_panel_);
+    addDockWidget(Qt::RightDockWidgetArea, clock_dock);
 
     // Bottom dock: GPIO + serial output (side by side).
     auto* gpio_dock = new QDockWidget("GPIO", this);
@@ -232,6 +239,7 @@ void MainWindow::refreshFromSnapshot() {
     fault_panel_->refresh(snap);
     gpio_panel_->refresh(snap);
     periph_panel_->refresh(snap);
+    clock_panel_->refresh(snap);
     board_view_->refresh(snap);
 }
 
