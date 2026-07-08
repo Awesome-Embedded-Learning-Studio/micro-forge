@@ -30,7 +30,7 @@ class ClockPanel;
 } // namespace micro_forge::gui::panels
 
 namespace micro_forge::gui::view {
-class BoardView;
+class Stm32BoardWidget;
 } // namespace micro_forge::gui::view
 
 namespace micro_forge::gui {
@@ -71,7 +71,7 @@ class MainWindow : public QMainWindow {
     panels::PeripheralPanel* periph_panel_ = nullptr;
     panels::ClockPanel* clock_panel_ = nullptr;
     panels::MemoryPanel* memory_panel_ = nullptr;
-    view::BoardView* board_view_ = nullptr;
+    view::Stm32BoardWidget* board_widget_ = nullptr;
 };
 
 } // namespace micro_forge::gui

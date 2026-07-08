@@ -13,7 +13,7 @@
 #include "gui/view/panels/registers_panel.hpp"
 #include "gui/view/panels/serial_panel.hpp"
 #include "gui/view/panels/status_panel.hpp"
-#include "gui/view/board_view/board_view.hpp"
+#include "gui/view/widgets/stm32_board_widget.hpp"
 #include "gui/view/panels/clock_panel.hpp"
 #include "gui/view/panels/memory_panel.hpp"
 
@@ -43,6 +43,7 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
 
     // ── toolbar: run / step / reset + state + speed ──
     auto* toolbar = addToolBar("main");
+    toolbar->setObjectName("main_toolbar"); // saveState/restoreState need it
     run_btn_ = new QPushButton("Run");
     auto* step_btn = new QPushButton("Step");
     auto* reset_btn = new QPushButton("Reset");
@@ -74,12 +75,12 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     periph_panel_ = new panels::PeripheralPanel;
     clock_panel_ = new panels::ClockPanel;
     memory_panel_ = new panels::MemoryPanel;
-    board_view_ = new view::BoardView;
+    board_widget_ = new view::Stm32BoardWidget;
 
     // Central: the board (chip + LEDs) — micro-forge's visual main stage.
     // Serial output moves to the bottom dock so firmware output stays visible
     // alongside the GPIO dock while the board owns the centre.
-    setCentralWidget(board_view_);
+    setCentralWidget(board_widget_);
 
     // Left dock: CPU registers.
     auto* regs_dock = new QDockWidget("CPU registers", this);
@@ -250,7 +251,7 @@ void MainWindow::refreshFromSnapshot() {
     gpio_panel_->refresh(snap);
     periph_panel_->refresh(snap);
     clock_panel_->refresh(snap);
-    board_view_->refresh(snap);
+    board_widget_->refresh(snap);
     refreshMemory();
 }
 

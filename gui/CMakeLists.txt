@@ -11,7 +11,7 @@ add_executable(micro-forge-gui
     main.cpp
     main_window.cpp
     model/session.cpp
-    view/board_view/board_view.cpp
+    view/widgets/stm32_board_widget.cpp
     view/panels/registers_panel.cpp
     view/panels/gpio_panel.cpp
     view/panels/serial_panel.cpp
