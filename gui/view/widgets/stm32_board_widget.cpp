@@ -2,6 +2,7 @@
 #include "gui/view/widgets/stm32_board_widget.hpp"
 
 #include "QuarkWidgets/LedPanel.hpp"
+#include "QuarkWidgets/QuarkBulb.hpp"
 
 #include <QColor>
 #include <QFont>
@@ -15,8 +16,6 @@
 #include <QSizePolicy>
 #include <QString>
 
-#include <cstdint>
-
 namespace micro_forge::gui::view {
 
 namespace {
@@ -25,7 +24,7 @@ constexpr int kChipH = 250;
 constexpr int kPinGap = 22;
 constexpr int kPinStart = 30; // first pin offset from chip top (room for label)
 constexpr int kWireLen = 70;  // pin wire length out to the LED
-constexpr int kLedR = 10;     // LED radius
+constexpr int kPc13Bulb = 24; // PC13 on-board bulb side, px
 } // namespace
 
 Stm32BoardWidget::Stm32BoardWidget(QWidget* parent) : QWidget(parent) {
@@ -39,6 +38,11 @@ Stm32BoardWidget::Stm32BoardWidget(QWidget* parent) : QWidget(parent) {
     ledPanel_->setLabelPrefix(QStringLiteral("PA"));
     ledPanel_->setColor(QColor(90, 220, 100));
     ledPanel_->setBulbSize(QSize(24, 24));
+
+    // On-board PC13 LED — same green "lit" semantics as the port-A row.
+    pc13Bulb_ = new quark::QuarkBulb(this);
+    pc13Bulb_->setColor(QColor(90, 220, 100));
+    pc13Bulb_->setFixedSize(kPc13Bulb, kPc13Bulb);
 }
 
 void Stm32BoardWidget::refresh(
@@ -47,18 +51,29 @@ void Stm32BoardWidget::refresh(
     odr_[1] = snap.peripherals.gpio[1].odr; // B (rendered pins use A/C)
     odr_[2] = snap.peripherals.gpio[2].odr; // C
     if (ledPanel_ != nullptr) ledPanel_->setLevels(odr_[0]); // PA0..PA7
+    if (pc13Bulb_ != nullptr)                              // PC13 = port C bit 13
+        pc13Bulb_->setState(static_cast<bool>((odr_[2] >> 13) & 1u));
     update(); // async — never block the tick loop on a repaint.
 }
 
 void Stm32BoardWidget::resizeEvent(QResizeEvent*) {
-    if (ledPanel_ == nullptr) return;
     const int chip_x = (width() - kChipW) / 2;
     const int chip_y = (height() - kChipH) / 2;
-    // Place the LED panel just past the UART wire stubs, aligned to the chip.
-    const int x = chip_x + kChipW + kWireLen + 20;
-    const QSize hint = ledPanel_->sizeHint();
-    ledPanel_->setGeometry(x, chip_y, qMax(96, hint.width()),
-                           qMax(kChipH, hint.height()));
+
+    if (ledPanel_ != nullptr) {
+        // Place the LED panel just past the UART wire stubs, aligned to the chip.
+        const int x = chip_x + kChipW + kWireLen + 20;
+        const QSize hint = ledPanel_->sizeHint();
+        ledPanel_->setGeometry(x, chip_y, qMax(96, hint.width()),
+                               qMax(kChipH, hint.height()));
+    }
+    if (pc13Bulb_ != nullptr) {
+        // Below the chip, on centre: the pin pad + wire are painted in
+        // paintEvent; the bulb self-draws here.
+        const int cx = chip_x + kChipW / 2;
+        const int y1 = chip_y + kChipH + 38;   // wire length, matches paintEvent
+        pc13Bulb_->setGeometry(cx - kPc13Bulb / 2, y1, kPc13Bulb, kPc13Bulb);
+    }
 }
 
 void Stm32BoardWidget::paintEvent(QPaintEvent*) {
@@ -89,12 +104,9 @@ void Stm32BoardWidget::paintEvent(QPaintEvent*) {
     p.setFont(small);
     p.drawText(QPoint(chip.x() + kChipW / 2 - 24, chip.y() + 26), "Cortex-M3");
 
-    const auto bit = [](std::uint16_t odr, int pin) -> bool {
-        return (odr >> pin) & 1u;
-    };
-
     // ── PA0..PA7 LEDs: hosted by the ledPanel_ child (see refresh / resizeEvent).
-    //    Only the UART markers (PA9/PA10) + SWD + PC13 are painted below.
+    //    Only the UART markers (PA9/PA10) + SWD + the PC13 pad/wire/label are
+    //    painted below — PC13's LED itself is the pc13Bulb_ child.
 
     // PA9/PA10 UART markers (wire + label, no LED).
     const auto rightTag = [&](int row, const QString& name,
@@ -136,24 +148,20 @@ void Stm32BoardWidget::paintEvent(QPaintEvent*) {
     p.drawText(QPoint(chip_x - kWireLen, chip_y + kPinStart + 2 * kPinGap + 14),
                "SWD");
 
-    // ── bottom: PC13 board LED ──
+    // ── bottom: PC13 — pin pad + wire + label painted here; the LED itself
+    //    is the pc13Bulb_ child (positioned in resizeEvent, lit in refresh) ──
     {
         const int x = chip_x + kChipW / 2;
         const int y0 = chip_y + kChipH;
         const int y1 = y0 + 38;
         p.setPen(QPen(QColor(200, 200, 200), 1));
         p.setBrush(QColor(210, 210, 210));
-        p.drawRect(x - 3, y0 - 4, 6, 8);
+        p.drawRect(x - 3, y0 - 4, 6, 8);          // pin pad on the chip edge
         p.setPen(QPen(QColor(40, 160, 200), 2));
-        p.drawLine(x, y0, x, y1);
-        const QRect led_rect(x - kLedR, y1, kLedR * 2, kLedR * 2);
-        const bool on = bit(odr_[2], 13);
-        p.setPen(QPen(QColor(60, 60, 60), 1));
-        p.setBrush(on ? QColor(90, 220, 100) : QColor(70, 70, 70));
-        p.drawEllipse(led_rect);
+        p.drawLine(x, y0, x, y1);                 // wire down to the bulb
         p.setPen(QColor(40, 40, 40));
         p.setFont(small);
-        p.drawText(led_rect.x() - 10, led_rect.bottom() + 12, "PC13 / LED");
+        p.drawText(x - 30, y1 + kPc13Bulb + 14, "PC13 / LED");
     }
 
     // ── legend ──

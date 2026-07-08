@@ -7,7 +7,8 @@
 //
 // Port A (PA0..PA7) is shown via a quark::LedPanel child — any demo firmware
 // driving a port-A pin lights up (gpio_blink uses PA5, the F103 CubeMX example
-// uses PA1). PA9/PA10 UART markers + SWD + PC13 are still custom-painted here.
+// uses PA1). PC13 is a quark::QuarkBulb child. PA9/PA10 UART markers + SWD +
+// the PC13 pin pad/wire/label are still custom-painted here.
 #pragma once
 
 #include "introspection/introspection.hpp"
@@ -17,7 +18,7 @@
 
 #include <QWidget>
 
-namespace quark { class LedPanel; }  // hosted child for PA0..PA7
+namespace quark { class LedPanel; class QuarkBulb; }  // hosted children
 
 namespace micro_forge::gui::view {
 
@@ -40,6 +41,9 @@ class Stm32BoardWidget : public QWidget {
 
     // Port-A LED row (PA0..PA7 + ODR hex), driven from odr_[0].
     quark::LedPanel* ledPanel_{};
+
+    // On-board PC13 LED, driven from odr_[2] bit 13.
+    quark::QuarkBulb* pc13Bulb_{};
 };
 
 } // namespace micro_forge::gui::view
