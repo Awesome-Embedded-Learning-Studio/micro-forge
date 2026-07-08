@@ -130,20 +130,15 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     connect(reset_btn, &QPushButton::clicked,
             this, &MainWindow::onResetClicked);
 
-    // A2 input: forward panel signals to the session (panels stay decoupled
-    // from the simulator — they only emit, MainWindow routes).
+    // A2 USART RX input: forward the serial panel's input to the session.
+    // (GPIO toggle buttons were removed — simulate_input writes the IDR, which
+    // the ODR-based display doesn't reflect and demo firmware doesn't read.)
     connect(serial_panel_, &panels::SerialPanel::inputSubmitted,
             this, [this](const QString& text) {
                 const auto bytes = text.toUtf8();
                 for (const char b : bytes) {
                     session_.inject_rx(static_cast<std::uint8_t>(b));
                 }
-            });
-    connect(gpio_panel_, &panels::GpioPanel::gpioInputRequested,
-            this, [this](char port, int pin, bool high) {
-                session_.simulate_gpio_input(port,
-                                             static_cast<std::uint8_t>(pin),
-                                             high);
             });
     // C4-mem: a new address → dump it immediately (don't wait for the tick).
     connect(memory_panel_, &panels::MemoryPanel::addr_changed,
