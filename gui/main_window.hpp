@@ -1,9 +1,10 @@
 // micro-forge GUI main window.
 //
-// Thin Qt view over a model::Session. Owns only UI: a control bar plus a set
-// of panels (registers / serial / gpio / ...) refreshed from the session's
-// IntrospectionSnapshot each tick. Each panel is an independent widget under
-// view/panels/. The sim never runs on a QThread (DIRECTIVES §E).
+// QMainWindow shell: a toolbar (run/step/reset + state) plus dockable panels.
+// Serial output is central; registers dock left; status / fault / peripherals
+// dock right; GPIO dock bottom. Users can drag/fold/float any dock. All panels
+// refresh from the session's snapshot each tick — MainWindow owns no simulator
+// state (that's in model::Session).
 #pragma once
 
 #include "gui/model/session.hpp"
@@ -19,6 +20,9 @@ namespace micro_forge::gui::panels {
 class RegistersPanel;
 class GpioPanel;
 class SerialPanel;
+class StatusPanel;
+class FaultPanel;
+class PeripheralPanel;
 } // namespace micro_forge::gui::panels
 
 namespace micro_forge::gui {
@@ -49,6 +53,9 @@ class MainWindow : public QMainWindow {
     panels::RegistersPanel* regs_panel_ = nullptr;
     panels::SerialPanel* serial_panel_ = nullptr;
     panels::GpioPanel* gpio_panel_ = nullptr;
+    panels::StatusPanel* status_panel_ = nullptr;
+    panels::FaultPanel* fault_panel_ = nullptr;
+    panels::PeripheralPanel* periph_panel_ = nullptr;
 };
 
 } // namespace micro_forge::gui

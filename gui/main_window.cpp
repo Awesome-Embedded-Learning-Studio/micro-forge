@@ -1,15 +1,16 @@
 // micro-forge GUI main window implementation.
 //
-// QMainWindow shell: a toolbar (run/step/reset + state) plus dockable panels.
-// The serial output panel is the central widget (main interaction surface);
-// registers dock left, GPIO dock bottom. Users can drag/fold/float any dock.
-// All panels refresh from the session's snapshot each tick — MainWindow owns
-// no simulator state (that's in model::Session).
+// QMainWindow shell assembling dockable panels around a central serial output.
+// Drives the session via QTimer and refreshes every panel from the snapshot
+// each tick. Owns no simulator state — that's in model::Session.
 #include "gui/main_window.hpp"
 
+#include "gui/view/panels/fault_panel.hpp"
 #include "gui/view/panels/gpio_panel.hpp"
+#include "gui/view/panels/peripheral_panel.hpp"
 #include "gui/view/panels/registers_panel.hpp"
 #include "gui/view/panels/serial_panel.hpp"
+#include "gui/view/panels/status_panel.hpp"
 
 #include "cpu/cpu.hpp"
 
@@ -45,17 +46,36 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
 
     // ── panels ──
     regs_panel_ = new panels::RegistersPanel;
+    status_panel_ = new panels::StatusPanel;
     serial_panel_ = new panels::SerialPanel;
+    fault_panel_ = new panels::FaultPanel;
     gpio_panel_ = new panels::GpioPanel;
+    periph_panel_ = new panels::PeripheralPanel;
 
-    // Central: serial output (the surface the user watches while firmware runs).
+    // Central: serial output (the surface watched while firmware runs).
     setCentralWidget(serial_panel_);
 
     // Left dock: CPU registers.
     auto* regs_dock = new QDockWidget("CPU registers", this);
-    regs_dock->setObjectName("regs_dock"); // for saveState/restoreState later
+    regs_dock->setObjectName("regs_dock");
     regs_dock->setWidget(regs_panel_);
     addDockWidget(Qt::LeftDockWidgetArea, regs_dock);
+
+    // Right dock: status / fault / peripherals (stacked vertically).
+    auto* status_dock = new QDockWidget("Status / masks", this);
+    status_dock->setObjectName("status_dock");
+    status_dock->setWidget(status_panel_);
+    addDockWidget(Qt::RightDockWidgetArea, status_dock);
+
+    auto* fault_dock = new QDockWidget("Fault", this);
+    fault_dock->setObjectName("fault_dock");
+    fault_dock->setWidget(fault_panel_);
+    addDockWidget(Qt::RightDockWidgetArea, fault_dock);
+
+    auto* periph_dock = new QDockWidget("Peripherals", this);
+    periph_dock->setObjectName("periph_dock");
+    periph_dock->setWidget(periph_panel_);
+    addDockWidget(Qt::RightDockWidgetArea, periph_dock);
 
     // Bottom dock: GPIO.
     auto* gpio_dock = new QDockWidget("GPIO", this);
@@ -84,7 +104,7 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
         timer_->start();
     }
 
-    resize(960, 720);
+    resize(1100, 760);
 }
 
 void MainWindow::rebuildSession() {
@@ -154,8 +174,11 @@ void MainWindow::refreshFromSnapshot() {
     state_label_->setText(label);
 
     regs_panel_->refresh(snap);
+    status_panel_->refresh(snap);
     serial_panel_->refresh(snap);
+    fault_panel_->refresh(snap);
     gpio_panel_->refresh(snap);
+    periph_panel_->refresh(snap);
 }
 
 } // namespace micro_forge::gui
