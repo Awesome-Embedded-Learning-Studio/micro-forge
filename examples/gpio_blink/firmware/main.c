@@ -16,14 +16,10 @@ void reset_handler(void) {
     /* Set PA5 to output push-pull, 2MHz (CNF5=00, MODE5=10) */
     GPIOA_CRH = (GPIOA_CRH & ~(0xF << 20)) | (0x2 << 20);
 
-    for (int i = 0; i < 3; i++) {
-        GPIOA_BSRR = (1 << 5); /* Set PA5 */
-        delay(100000);
-        GPIOA_BSRR = (1 << (16 + 5)); /* Reset PA5 */
-        delay(100000);
-    }
-
     while (1) {
-        __asm volatile("nop");
+        GPIOA_BSRR = (1 << 5); /* Set PA5 */
+        delay(20000);
+        GPIOA_BSRR = (1 << (16 + 5)); /* Reset PA5 */
+        delay(20000);
     }
 }
