@@ -2,7 +2,9 @@
 //
 // QMainWindow shell assembling dockable panels around a central serial output.
 // Drives the session via QTimer and refreshes every panel from the snapshot
-// each tick. Owns no simulator state — that's in model::Session.
+// each tick. A speed selector throttles how many steps per tick — firmware
+// that uses big software delays (e.g. blink) needs a higher gear to look live.
+// Owns no simulator state — that's in model::Session.
 #include "gui/main_window.hpp"
 
 #include "gui/view/panels/fault_panel.hpp"
@@ -14,6 +16,7 @@
 
 #include "cpu/cpu.hpp"
 
+#include <QComboBox>
 #include <QDockWidget>
 #include <QLabel>
 #include <QPushButton>
@@ -21,6 +24,7 @@
 #include <QToolBar>
 #include <QTimer>
 
+#include <cstddef>
 #include <cstdint>
 
 namespace micro_forge::gui {
@@ -31,7 +35,7 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
 
     session_.set_firmware(firmware_path.toStdString());
 
-    // ── toolbar: run / step / reset + state label ──
+    // ── toolbar: run / step / reset + state + speed ──
     auto* toolbar = addToolBar("main");
     run_btn_ = new QPushButton("Run");
     auto* step_btn = new QPushButton("Step");
@@ -43,6 +47,17 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     toolbar->addWidget(reset_btn);
     toolbar->addSeparator();
     toolbar->addWidget(state_label_);
+    toolbar->addSeparator();
+    toolbar->addWidget(new QLabel(tr("Speed:")));
+    speed_combo_ = new QComboBox;
+    // Steps per tick (~20 ticks/sec). Higher gears make software-delay
+    // firmware (blink loops) visibly animate instead of crawling.
+    speed_combo_->addItem(tr("1×"), 20000);
+    speed_combo_->addItem(tr("5×"), 100000);
+    speed_combo_->addItem(tr("25×"), 500000);
+    speed_combo_->addItem(tr("100×"), 2000000);
+    speed_combo_->setCurrentIndex(0);
+    toolbar->addWidget(speed_combo_);
 
     // ── panels ──
     regs_panel_ = new panels::RegistersPanel;
@@ -141,7 +156,9 @@ void MainWindow::onResetClicked() {
 
 void MainWindow::onTick() {
     if (running_ && session_.valid()) {
-        session_.run(20000);
+        const auto steps =
+            static_cast<std::size_t>(speed_combo_->currentData().toInt());
+        session_.run(steps);
         refreshFromSnapshot();
     }
 }

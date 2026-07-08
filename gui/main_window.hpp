@@ -1,10 +1,10 @@
 // micro-forge GUI main window.
 //
-// QMainWindow shell: a toolbar (run/step/reset + state) plus dockable panels.
-// Serial output is central; registers dock left; status / fault / peripherals
-// dock right; GPIO dock bottom. Users can drag/fold/float any dock. All panels
-// refresh from the session's snapshot each tick — MainWindow owns no simulator
-// state (that's in model::Session).
+// QMainWindow shell: a toolbar (run/step/reset + state + speed) plus dockable
+// panels. Serial output is central; registers dock left; status / fault /
+// peripherals dock right; GPIO dock bottom. Users can drag/fold/float any
+// dock. All panels refresh from the session's snapshot each tick — MainWindow
+// owns no simulator state (that's in model::Session).
 #pragma once
 
 #include "gui/model/session.hpp"
@@ -12,6 +12,7 @@
 #include <QMainWindow>
 #include <QString>
 
+class QComboBox;
 class QLabel;
 class QPushButton;
 class QTimer;
@@ -50,6 +51,7 @@ class MainWindow : public QMainWindow {
     QTimer* timer_ = nullptr;
     QLabel* state_label_ = nullptr;
     QPushButton* run_btn_ = nullptr;
+    QComboBox* speed_combo_ = nullptr;
     panels::RegistersPanel* regs_panel_ = nullptr;
     panels::SerialPanel* serial_panel_ = nullptr;
     panels::GpioPanel* gpio_panel_ = nullptr;
