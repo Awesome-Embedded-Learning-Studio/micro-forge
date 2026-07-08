@@ -239,6 +239,28 @@ if(TARGET hello_firmware)
     )
 endif()
 
+# ── GUI model (Session) unit tests — Qt-free, plain gtest ──
+# Compiles gui/model/session.cpp directly so the harness needs no Qt. The
+# SESSION_HELLO_ELF cases load real firmware and check run/cycles/USART.
+add_executable(test_gui_session
+    test_gui_session.cpp
+    ${CMAKE_SOURCE_DIR}/gui/model/session.cpp
+)
+target_include_directories(test_gui_session PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(test_gui_session PRIVATE micro_forge GTest::gtest_main)
+gtest_discover_tests(test_gui_session)
+if(TARGET hello_firmware)
+    target_compile_definitions(test_gui_session PRIVATE
+        SESSION_HELLO_ELF="${CMAKE_CURRENT_BINARY_DIR}/hello.elf"
+    )
+    add_dependencies(test_gui_session hello_firmware)
+    add_custom_command(TARGET test_gui_session POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_CURRENT_BINARY_DIR}/../examples/hello_world/hello.elf
+            ${CMAKE_CURRENT_BINARY_DIR}/hello.elf
+    )
+endif()
+
 # ── Meta-guard: test-discovery regression floor (COVERAGE-METHODOLOGY §3) ──
 # Cheap `ctest -N` count check — fails if a refactor silently drops test
 # discovery (build stays green, coverage evaporates). Bash on the Linux test

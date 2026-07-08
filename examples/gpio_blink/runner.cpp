@@ -1,8 +1,15 @@
+// gpio_blink example runner — loads blink firmware and runs it.
+//
+// Default: runs forever (no max-steps) since the firmware blinks in an
+// infinite loop. Each PA5 edge is printed as it happens — that's the visible
+// "blink" on a headless run. Stop with Ctrl+C.
 #include "chips/stm32f1/soc/stm32f103_soc.hpp"
+#include "cpu/cpu.hpp"
+#include "sim/coordinator.hpp"
 
 #include <cstdio>
 #include <fstream>
-#include <iostream>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -31,12 +38,18 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // Each PA5 edge prints live — the visible blink on a headless run.
     int toggle_count = 0;
     (*soc)->parts().gpioa.set_pin_change_callback(
-        [&](uint8_t pin, bool /*high*/) {
-            if (pin == 5) {
-                toggle_count++;
+        [&](uint8_t pin, bool high) {
+            if (pin != 5) {
+                return;
             }
+            ++toggle_count;
+            printf("PA5 %s  (toggle #%d)\n",
+                   high ? "HIGH \xE2\x97\x8F" : "LOW  \xC2\xB7",
+                   toggle_count);
+            fflush(stdout);
         });
 
     auto r = (*soc)->load_elf(data);
@@ -45,8 +58,18 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    (*soc)->run(200000);
-
-    printf("GPIO PA5 toggled %d times\n", toggle_count);
-    return toggle_count >= 6 ? 0 : 1; // 3 on + 3 off = 6
+    // Run forever; the firmware loops, the user stops with Ctrl+C. A fault
+    // breaks out and reports the state + how far it got.
+    fprintf(stderr, "blink running — Ctrl+C to stop\n");
+    while (true) {
+        const auto res = (*soc)->run(100000);
+        if (res != sim::RunResult::Running) {
+            const auto state = (*soc)->machine().cpu->state().value_or(
+                cpu::CPU::State::Halted);
+            fprintf(stderr, "stopped: state=%d (after %d toggles)\n",
+                    static_cast<int>(state), toggle_count);
+            break;
+        }
+    }
+    return 0;
 }

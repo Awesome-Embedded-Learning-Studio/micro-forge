@@ -1,23 +1,30 @@
-// micro-forge GUI main window (G5b).
+// micro-forge GUI main window.
 //
-// Owns the simulator (a Stm32f103Soc) and drives it from the Qt main thread:
-// a QTimer fires onTick(), which runs a small chunk of steps and refreshes
-// the CPU panel from introspection::read_introspection(). The sim never runs on a
-// QThread — that would break deterministic replay (DIRECTIVES §E).
+// QMainWindow shell: a toolbar (run/step/reset + state + speed) plus dockable
+// panels. Serial output is central; registers dock left; status / fault /
+// peripherals dock right; GPIO dock bottom. Users can drag/fold/float any
+// dock. All panels refresh from the session's snapshot each tick — MainWindow
+// owns no simulator state (that's in model::Session).
 #pragma once
 
-#include "chips/stm32f1/soc/stm32f103_soc.hpp"
+#include "gui/model/session.hpp"
 
 #include <QMainWindow>
 #include <QString>
-#include <memory>
-#include <string>
-#include <vector>
 
+class QComboBox;
 class QLabel;
 class QPushButton;
-class QTableWidget;
 class QTimer;
+
+namespace micro_forge::gui::panels {
+class RegistersPanel;
+class GpioPanel;
+class SerialPanel;
+class StatusPanel;
+class FaultPanel;
+class PeripheralPanel;
+} // namespace micro_forge::gui::panels
 
 namespace micro_forge::gui {
 
@@ -35,20 +42,22 @@ class MainWindow : public QMainWindow {
     void onResetClicked();
 
   private:
-    void rebuildSoc();
+    void rebuildSession();
     void refreshFromSnapshot();
 
-    std::unique_ptr<chips::stm32f1::Stm32f103Soc> soc_;
-    std::string usart_output_;
-    QString firmware_path_;
-    std::vector<uint8_t> firmware_data_;
+    model::Session session_;
     bool running_ = false;
 
     QTimer* timer_ = nullptr;
     QLabel* state_label_ = nullptr;
-    QTableWidget* regs_table_ = nullptr;
-    QLabel* gpio_label_ = nullptr;
     QPushButton* run_btn_ = nullptr;
+    QComboBox* speed_combo_ = nullptr;
+    panels::RegistersPanel* regs_panel_ = nullptr;
+    panels::SerialPanel* serial_panel_ = nullptr;
+    panels::GpioPanel* gpio_panel_ = nullptr;
+    panels::StatusPanel* status_panel_ = nullptr;
+    panels::FaultPanel* fault_panel_ = nullptr;
+    panels::PeripheralPanel* periph_panel_ = nullptr;
 };
 
 } // namespace micro_forge::gui

@@ -1,80 +1,102 @@
-// micro-forge GUI main window implementation (G5b/G5c).
+// micro-forge GUI main window implementation.
+//
+// QMainWindow shell assembling dockable panels around a central serial output.
+// Drives the session via QTimer and refreshes every panel from the snapshot
+// each tick. A speed selector throttles how many steps per tick — firmware
+// that uses big software delays (e.g. blink) needs a higher gear to look live.
+// Owns no simulator state — that's in model::Session.
 #include "gui/main_window.hpp"
 
-#include "introspection/introspection.hpp"
+#include "gui/view/panels/fault_panel.hpp"
+#include "gui/view/panels/gpio_panel.hpp"
+#include "gui/view/panels/peripheral_panel.hpp"
+#include "gui/view/panels/registers_panel.hpp"
+#include "gui/view/panels/serial_panel.hpp"
+#include "gui/view/panels/status_panel.hpp"
+
 #include "cpu/cpu.hpp"
 
-#include <QChar>
-#include <QHBoxLayout>
-#include <QHeaderView>
+#include <QComboBox>
+#include <QDockWidget>
 #include <QLabel>
-#include <QLatin1Char>
 #include <QPushButton>
 #include <QString>
-#include <QTableWidget>
-#include <QTableWidgetItem>
+#include <QToolBar>
 #include <QTimer>
-#include <QVBoxLayout>
-#include <QWidget>
 
-#include <fstream>
-#include <iterator>
+#include <cstddef>
+#include <cstdint>
 
 namespace micro_forge::gui {
 
-namespace {
-
-std::vector<uint8_t> read_file(const QString& path) {
-    std::ifstream f(path.toUtf8().constData(), std::ios::binary);
-    return {std::istreambuf_iterator<char>(f), {}};
-}
-
-bool is_elf(const std::vector<uint8_t>& d) {
-    return d.size() >= 4 && d[0] == 0x7f && d[1] == 'E' && d[2] == 'L' &&
-           d[3] == 'F';
-}
-
-} // namespace
-
 MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
-    : QMainWindow(parent), firmware_path_(firmware_path) {
+    : QMainWindow(parent) {
     setWindowTitle("micro-forge");
 
-    auto* central = new QWidget;
-    auto* root = new QVBoxLayout(central);
+    session_.set_firmware(firmware_path.toStdString());
 
-    // ── control bar ──
-    auto* bar = new QHBoxLayout;
+    // ── toolbar: run / step / reset + state + speed ──
+    auto* toolbar = addToolBar("main");
     run_btn_ = new QPushButton("Run");
     auto* step_btn = new QPushButton("Step");
     auto* reset_btn = new QPushButton("Reset");
-    bar->addWidget(run_btn_);
-    bar->addWidget(step_btn);
-    bar->addWidget(reset_btn);
-    bar->addStretch();
     state_label_ = new QLabel("idle");
     state_label_->setStyleSheet("font-family: monospace;");
-    bar->addWidget(state_label_);
-    root->addLayout(bar);
+    toolbar->addWidget(run_btn_);
+    toolbar->addWidget(step_btn);
+    toolbar->addWidget(reset_btn);
+    toolbar->addSeparator();
+    toolbar->addWidget(state_label_);
+    toolbar->addSeparator();
+    toolbar->addWidget(new QLabel(tr("Speed:")));
+    speed_combo_ = new QComboBox;
+    // Steps per tick (~20 ticks/sec). Higher gears make software-delay
+    // firmware (blink loops) visibly animate instead of crawling.
+    speed_combo_->addItem(tr("1×"), 20000);
+    speed_combo_->addItem(tr("5×"), 100000);
+    speed_combo_->addItem(tr("25×"), 500000);
+    speed_combo_->addItem(tr("100×"), 2000000);
+    speed_combo_->setCurrentIndex(0);
+    toolbar->addWidget(speed_combo_);
 
-    // ── CPU registers (r0-r12, sp, lr, pc) ──
-    regs_table_ = new QTableWidget(16, 2);
-    regs_table_->setHorizontalHeaderLabels({"reg", "value"});
-    regs_table_->verticalHeader()->setVisible(false);
-    regs_table_->horizontalHeader()->setStretchLastSection(true);
-    regs_table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    root->addWidget(regs_table_);
+    // ── panels ──
+    regs_panel_ = new panels::RegistersPanel;
+    status_panel_ = new panels::StatusPanel;
+    serial_panel_ = new panels::SerialPanel;
+    fault_panel_ = new panels::FaultPanel;
+    gpio_panel_ = new panels::GpioPanel;
+    periph_panel_ = new panels::PeripheralPanel;
 
-    // ── GPIO panel: A/B/C port ODR with per-pin LED glyphs ──
-    auto* gpio_title = new QLabel("GPIO output (A/B/C, pin0..pin15)");
-    gpio_title->setStyleSheet("font-weight: bold;");
-    root->addWidget(gpio_title);
-    gpio_label_ = new QLabel;
-    gpio_label_->setStyleSheet("font-family: monospace;");
-    root->addWidget(gpio_label_);
+    // Central: serial output (the surface watched while firmware runs).
+    setCentralWidget(serial_panel_);
 
-    setCentralWidget(central);
-    resize(480, 720);
+    // Left dock: CPU registers.
+    auto* regs_dock = new QDockWidget("CPU registers", this);
+    regs_dock->setObjectName("regs_dock");
+    regs_dock->setWidget(regs_panel_);
+    addDockWidget(Qt::LeftDockWidgetArea, regs_dock);
+
+    // Right dock: status / fault / peripherals (stacked vertically).
+    auto* status_dock = new QDockWidget("Status / masks", this);
+    status_dock->setObjectName("status_dock");
+    status_dock->setWidget(status_panel_);
+    addDockWidget(Qt::RightDockWidgetArea, status_dock);
+
+    auto* fault_dock = new QDockWidget("Fault", this);
+    fault_dock->setObjectName("fault_dock");
+    fault_dock->setWidget(fault_panel_);
+    addDockWidget(Qt::RightDockWidgetArea, fault_dock);
+
+    auto* periph_dock = new QDockWidget("Peripherals", this);
+    periph_dock->setObjectName("periph_dock");
+    periph_dock->setWidget(periph_panel_);
+    addDockWidget(Qt::RightDockWidgetArea, periph_dock);
+
+    // Bottom dock: GPIO.
+    auto* gpio_dock = new QDockWidget("GPIO", this);
+    gpio_dock->setObjectName("gpio_dock");
+    gpio_dock->setWidget(gpio_panel_);
+    addDockWidget(Qt::BottomDockWidgetArea, gpio_dock);
 
     connect(run_btn_, &QPushButton::clicked, this, &MainWindow::onRunClicked);
     connect(step_btn, &QPushButton::clicked, this, &MainWindow::onStepClicked);
@@ -85,7 +107,7 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     timer_->setInterval(50); // ~20 UI ticks/sec
     connect(timer_, &QTimer::timeout, this, &MainWindow::onTick);
 
-    rebuildSoc();
+    rebuildSession();
     refreshFromSnapshot();
 
     // Test/CI hook: auto-run under offscreen so a headless launch exercises
@@ -96,35 +118,14 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
         run_btn_->setText("Pause");
         timer_->start();
     }
+
+    resize(1100, 760);
 }
 
-void MainWindow::rebuildSoc() {
-    usart_output_.clear();
-    auto created = chips::stm32f1::Stm32f103Soc::create();
-    if (!created) {
-        soc_.reset();
-        state_label_->setText("SoC create failed");
-        return;
-    }
-    soc_ = std::move(*created);
-    soc_->parts().event_bus.uart.connect(
-        [this](const micro_forge::hooks::UartByte& e) {
-            usart_output_ += static_cast<char>(e.byte);
-        });
-
-    if (!firmware_path_.isEmpty()) {
-        firmware_data_ = read_file(firmware_path_);
-        if (firmware_data_.empty()) {
-            state_label_->setText(QString("cannot read: ") + firmware_path_);
-            return;
-        }
-        auto lr = is_elf(firmware_data_)
-                      ? soc_->load_elf(firmware_data_)
-                      : soc_->load_bin(0x08000000u, firmware_data_);
-        if (!lr) {
-            state_label_->setText(
-                QString("load failed: ") + QString::fromStdString(lr.error()));
-        }
+void MainWindow::rebuildSession() {
+    auto r = session_.rebuild();
+    if (!r) {
+        state_label_->setText(QString::fromStdString(r.error()));
     }
 }
 
@@ -141,32 +142,32 @@ void MainWindow::onRunClicked() {
 }
 
 void MainWindow::onStepClicked() {
-    if (soc_) {
-        soc_->run(1);
-        refreshFromSnapshot();
-    }
+    session_.step();
+    refreshFromSnapshot();
 }
 
 void MainWindow::onResetClicked() {
     running_ = false;
     run_btn_->setText("Run");
     timer_->stop();
-    rebuildSoc();
+    rebuildSession();
     refreshFromSnapshot();
 }
 
 void MainWindow::onTick() {
-    if (soc_ && running_) {
-        soc_->run(20000);
+    if (running_ && session_.valid()) {
+        const auto steps =
+            static_cast<std::size_t>(speed_combo_->currentData().toInt());
+        session_.run(steps);
         refreshFromSnapshot();
     }
 }
 
 void MainWindow::refreshFromSnapshot() {
-    if (!soc_) {
+    if (!session_.valid()) {
         return;
     }
-    const auto snap = introspection::read_introspection(*soc_, usart_output_);
+    const auto snap = session_.snapshot();
 
     const char* st = "?";
     switch (snap.cpu.state) {
@@ -189,40 +190,12 @@ void MainWindow::refreshFromSnapshot() {
     }
     state_label_->setText(label);
 
-    static constexpr const char* kNames[16] = {
-        "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
-        "r8", "r9", "r10", "r11", "r12", "sp", "lr", "pc"};
-    auto hex = [](uint32_t v) {
-        return QString("0x%1").arg(v, 8, 16, QLatin1Char('0'));
-    };
-    for (int i = 0; i < 13; ++i) {
-        regs_table_->setItem(i, 0, new QTableWidgetItem(kNames[i]));
-        regs_table_->setItem(i, 1, new QTableWidgetItem(hex(snap.cpu.regs[i])));
-    }
-    regs_table_->setItem(13, 0, new QTableWidgetItem(kNames[13]));
-    regs_table_->setItem(13, 1, new QTableWidgetItem(hex(snap.cpu.sp)));
-    regs_table_->setItem(14, 0, new QTableWidgetItem(kNames[14]));
-    regs_table_->setItem(14, 1, new QTableWidgetItem(hex(snap.cpu.lr)));
-    regs_table_->setItem(15, 0, new QTableWidgetItem(kNames[15]));
-    regs_table_->setItem(15, 1, new QTableWidgetItem(hex(snap.cpu.pc)));
-
-    // GPIO: 3 ports (A/B/C), each ODR hex + 16 LED glyphs (pin0..pin15).
-    auto led = [](uint16_t odr) {
-        QString s;
-        for (int i = 0; i < 16; ++i) {
-            s += (odr >> i) & 1 ? QChar(0x25CF) : QChar(0x00B7); // ● or ·
-        }
-        return s;
-    };
-    QString g;
-    for (int i = 0; i < 3; ++i) {
-        const auto& port = snap.peripherals.gpio[i];
-        g += QString("%1 0x%2  %3\n")
-                 .arg(QChar(port.port))
-                 .arg(port.odr, 4, 16, QLatin1Char('0'))
-                 .arg(led(port.odr));
-    }
-    gpio_label_->setText(g);
+    regs_panel_->refresh(snap);
+    status_panel_->refresh(snap);
+    serial_panel_->refresh(snap);
+    fault_panel_->refresh(snap);
+    gpio_panel_->refresh(snap);
+    periph_panel_->refresh(snap);
 }
 
 } // namespace micro_forge::gui
