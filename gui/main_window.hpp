@@ -26,6 +26,10 @@ class FaultPanel;
 class PeripheralPanel;
 } // namespace micro_forge::gui::panels
 
+namespace micro_forge::gui::view {
+class BoardView;
+} // namespace micro_forge::gui::view
+
 namespace micro_forge::gui {
 
 class MainWindow : public QMainWindow {
@@ -58,6 +62,7 @@ class MainWindow : public QMainWindow {
     panels::StatusPanel* status_panel_ = nullptr;
     panels::FaultPanel* fault_panel_ = nullptr;
     panels::PeripheralPanel* periph_panel_ = nullptr;
+    view::BoardView* board_view_ = nullptr;
 };
 
 } // namespace micro_forge::gui

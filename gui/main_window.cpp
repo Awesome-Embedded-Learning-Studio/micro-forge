@@ -13,6 +13,7 @@
 #include "gui/view/panels/registers_panel.hpp"
 #include "gui/view/panels/serial_panel.hpp"
 #include "gui/view/panels/status_panel.hpp"
+#include "gui/view/board_view/board_view.hpp"
 
 #include "cpu/cpu.hpp"
 
@@ -66,9 +67,12 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     fault_panel_ = new panels::FaultPanel;
     gpio_panel_ = new panels::GpioPanel;
     periph_panel_ = new panels::PeripheralPanel;
+    board_view_ = new view::BoardView;
 
-    // Central: serial output (the surface watched while firmware runs).
-    setCentralWidget(serial_panel_);
+    // Central: the board (chip + LEDs) — micro-forge's visual main stage.
+    // Serial output moves to the bottom dock so firmware output stays visible
+    // alongside the GPIO dock while the board owns the centre.
+    setCentralWidget(board_view_);
 
     // Left dock: CPU registers.
     auto* regs_dock = new QDockWidget("CPU registers", this);
@@ -92,11 +96,16 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     periph_dock->setWidget(periph_panel_);
     addDockWidget(Qt::RightDockWidgetArea, periph_dock);
 
-    // Bottom dock: GPIO.
+    // Bottom dock: GPIO + serial output (side by side).
     auto* gpio_dock = new QDockWidget("GPIO", this);
     gpio_dock->setObjectName("gpio_dock");
     gpio_dock->setWidget(gpio_panel_);
     addDockWidget(Qt::BottomDockWidgetArea, gpio_dock);
+
+    auto* serial_dock = new QDockWidget("Serial", this);
+    serial_dock->setObjectName("serial_dock");
+    serial_dock->setWidget(serial_panel_);
+    addDockWidget(Qt::BottomDockWidgetArea, serial_dock);
 
     connect(run_btn_, &QPushButton::clicked, this, &MainWindow::onRunClicked);
     connect(step_btn, &QPushButton::clicked, this, &MainWindow::onStepClicked);
@@ -196,6 +205,7 @@ void MainWindow::refreshFromSnapshot() {
     fault_panel_->refresh(snap);
     gpio_panel_->refresh(snap);
     periph_panel_->refresh(snap);
+    board_view_->refresh(snap);
 }
 
 } // namespace micro_forge::gui
