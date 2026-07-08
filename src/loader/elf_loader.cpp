@@ -155,7 +155,18 @@ load_elf(memory::Bus& bus, std::span<const uint8_t> elf_data) {
 
         auto seg_data = elf_data.subspan(phdr->p_offset, phdr->p_filesz);
 
-        auto res = write_segment(bus, phdr->p_vaddr, seg_data, phdr->p_memsz);
+        // 裸机 ELF 约定:.data 段 p_vaddr=SRAM(运行时位置),p_paddr=flash LMA
+        // (初值存储位置)。初值应加载到 p_paddr,让 startup 的 CopyDataInit 从
+        // _sidata(=p_paddr)复制到 SRAM(p_vaddr)——这与真实烧录器行为一致。
+        // .text 段 p_vaddr==p_paddr 无变化;p_paddr 未设(==0)时 fallback p_vaddr。
+        // 旧实现按 p_vaddr 加载,导致 .data 初值被写到 SRAM 后又被 CopyDataInit
+        // 从空 flash LMA 用 0 覆盖(SystemCoreClock 被清零,SysTick 不配)。
+        uint32_t load_addr = phdr->p_vaddr;
+        if (phdr->p_paddr != 0 && phdr->p_paddr != phdr->p_vaddr) {
+            load_addr = phdr->p_paddr;
+        }
+
+        auto res = write_segment(bus, load_addr, seg_data, phdr->p_memsz);
         if (!res) {
             return std::unexpected(res.error());
         }

@@ -26,8 +26,16 @@ CPU::CPUExpected<void> CortexM3CPU::check_and_handle_interrupt() {
     // running exception's priority. An exception may pre-empt only if its
     // preemption-group priority is strictly smaller than the active one. This
     // (rather than an early return in handler mode) is what enables nesting.
+    //
+    // Thread mode uses 0xFF directly (NOT preempt_priority(0xFF)): that helper
+    // truncates to the preempt-group width (e.g. 0xF for 4-bit STM32F1), which
+    // equals the lowest-priority exception's preempt (e.g. SysTick at 0xF0 →
+    // 0xF). The strict `<` would then block that exception from preempting
+    // thread mode, violating ARMv7-M (thread is preempted by ANY exception).
+    // 0xFF is larger than any exception preempt (0..0xF), so all pending
+    // exceptions preempt thread mode; handler-mode nesting is unaffected.
     const uint8_t active_preempt =
-        preempt_priority(in_handler_mode_ ? current_priority_ : 0xFFu);
+        in_handler_mode_ ? preempt_priority(current_priority_) : 0xFFu;
 
     // Pick the highest-priority candidate across SysTick and external IRQs.
     bool take_systick = false;
