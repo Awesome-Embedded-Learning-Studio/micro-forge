@@ -71,8 +71,13 @@ TEST(E2E, GpioBlink) {
     ASSERT_NE(*state, cpu::CPU::State::Faulted)
         << "CPU faulted during execution";
 
-    EXPECT_GE(toggle_count, 6)
-        << "Expected at least 6 PA5 toggles, got " << toggle_count;
+    // Report the real toggle count so the blink rate is observable, and
+    // tighten the floor to the real lower bound (the old >=6 was far below
+    // actual and hid regressions). ~33 toggles/4M steps ≈ 300 ms/toggle at 1×.
+    std::cout << "[GpioBlink] PA5 toggles over 4M steps = " << toggle_count
+              << "\n";
+    EXPECT_GE(toggle_count, 25)
+        << "Expected >= 25 PA5 toggles, got " << toggle_count;
 }
 
 #ifdef E2E_HAL_UART_ELF

@@ -17,7 +17,7 @@
 set -euo pipefail
 
 BUILD="${1:-build}"
-BASELINE=357   # floor = PRODUCT test count — only ever raised, never lowered (2026-07-08: 353→357, GUI Session tests)
+BASELINE=360   # floor = PRODUCT test count — only ever raised, never lowered (2026-07-08: 357→360, A2 input-injection tests)
 
 if [[ ! -d "$BUILD" ]]; then
   echo "skip: build dir '$BUILD' not found (run cmake configure first)"

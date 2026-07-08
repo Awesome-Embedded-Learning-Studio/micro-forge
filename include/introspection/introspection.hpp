@@ -65,12 +65,24 @@ struct ScbSnapshot {
     uint8_t prigroup = 0; // AIRCR bits [10:8]
 };
 
+// Clock tree — SYSCLK (source after PLL) → HCLK (AHB/CPU) → APB1/APB2
+// prescalers. The sim tracks 3 domains (Sysclk/Apb1/Apb2); the AHB prescaler
+// is not modeled, so HCLK is reported equal to SYSCLK. RCC frequency changes
+// surface here on the next snapshot (B1).
+struct ClockSnapshot {
+    uint32_t sysclk = 0;
+    uint32_t hclk = 0;
+    uint32_t apb1 = 0;
+    uint32_t apb2 = 0;
+};
+
 struct PeripheralsSnapshot {
     std::string_view usart_output;
     std::array<GpioPortSnapshot, 3> gpio{}; // ports A, B, C (in that order)
     SysTickSnapshot systick;
     NvicSnapshot nvic;
     ScbSnapshot scb;
+    ClockSnapshot clock;
 };
 
 struct IntrospectionSnapshot {

@@ -12,6 +12,7 @@
 #include <QMainWindow>
 #include <QString>
 
+class QCloseEvent;
 class QComboBox;
 class QLabel;
 class QPushButton;
@@ -23,8 +24,14 @@ class GpioPanel;
 class SerialPanel;
 class StatusPanel;
 class FaultPanel;
+class MemoryPanel;
 class PeripheralPanel;
+class ClockPanel;
 } // namespace micro_forge::gui::panels
+
+namespace micro_forge::gui::view {
+class Stm32BoardWidget;
+} // namespace micro_forge::gui::view
 
 namespace micro_forge::gui {
 
@@ -35,6 +42,9 @@ class MainWindow : public QMainWindow {
     explicit MainWindow(const QString& firmware_path,
                         QWidget* parent = nullptr);
 
+  protected:
+    void closeEvent(QCloseEvent* event) override;
+
   private slots:
     void onTick();
     void onRunClicked();
@@ -44,6 +54,7 @@ class MainWindow : public QMainWindow {
   private:
     void rebuildSession();
     void refreshFromSnapshot();
+    void refreshMemory(); // C4-mem: re-dump the memory panel's tracked region.
 
     model::Session session_;
     bool running_ = false;
@@ -58,6 +69,9 @@ class MainWindow : public QMainWindow {
     panels::StatusPanel* status_panel_ = nullptr;
     panels::FaultPanel* fault_panel_ = nullptr;
     panels::PeripheralPanel* periph_panel_ = nullptr;
+    panels::ClockPanel* clock_panel_ = nullptr;
+    panels::MemoryPanel* memory_panel_ = nullptr;
+    view::Stm32BoardWidget* board_widget_ = nullptr;
 };
 
 } // namespace micro_forge::gui

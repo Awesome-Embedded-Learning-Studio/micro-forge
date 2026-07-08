@@ -13,13 +13,19 @@
 #include "gui/view/panels/registers_panel.hpp"
 #include "gui/view/panels/serial_panel.hpp"
 #include "gui/view/panels/status_panel.hpp"
+#include "gui/view/widgets/stm32_board_widget.hpp"
+#include "gui/view/panels/clock_panel.hpp"
+#include "gui/view/panels/memory_panel.hpp"
 
 #include "cpu/cpu.hpp"
 
+#include <QByteArray>
+#include <QCloseEvent>
 #include <QComboBox>
 #include <QDockWidget>
 #include <QLabel>
 #include <QPushButton>
+#include <QSettings>
 #include <QString>
 #include <QToolBar>
 #include <QTimer>
@@ -37,6 +43,7 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
 
     // ── toolbar: run / step / reset + state + speed ──
     auto* toolbar = addToolBar("main");
+    toolbar->setObjectName("main_toolbar"); // saveState/restoreState need it
     run_btn_ = new QPushButton("Run");
     auto* step_btn = new QPushButton("Step");
     auto* reset_btn = new QPushButton("Reset");
@@ -66,9 +73,14 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     fault_panel_ = new panels::FaultPanel;
     gpio_panel_ = new panels::GpioPanel;
     periph_panel_ = new panels::PeripheralPanel;
+    clock_panel_ = new panels::ClockPanel;
+    memory_panel_ = new panels::MemoryPanel;
+    board_widget_ = new view::Stm32BoardWidget;
 
-    // Central: serial output (the surface watched while firmware runs).
-    setCentralWidget(serial_panel_);
+    // Central: the board (chip + LEDs) — micro-forge's visual main stage.
+    // Serial output moves to the bottom dock so firmware output stays visible
+    // alongside the GPIO dock while the board owns the centre.
+    setCentralWidget(board_widget_);
 
     // Left dock: CPU registers.
     auto* regs_dock = new QDockWidget("CPU registers", this);
@@ -92,16 +104,45 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     periph_dock->setWidget(periph_panel_);
     addDockWidget(Qt::RightDockWidgetArea, periph_dock);
 
-    // Bottom dock: GPIO.
+    auto* clock_dock = new QDockWidget("Clock tree", this);
+    clock_dock->setObjectName("clock_dock");
+    clock_dock->setWidget(clock_panel_);
+    addDockWidget(Qt::RightDockWidgetArea, clock_dock);
+
+    auto* memory_dock = new QDockWidget("Memory", this);
+    memory_dock->setObjectName("memory_dock");
+    memory_dock->setWidget(memory_panel_);
+    addDockWidget(Qt::RightDockWidgetArea, memory_dock);
+
+    // Bottom dock: GPIO + serial output (side by side).
     auto* gpio_dock = new QDockWidget("GPIO", this);
     gpio_dock->setObjectName("gpio_dock");
     gpio_dock->setWidget(gpio_panel_);
     addDockWidget(Qt::BottomDockWidgetArea, gpio_dock);
 
+    auto* serial_dock = new QDockWidget("Serial", this);
+    serial_dock->setObjectName("serial_dock");
+    serial_dock->setWidget(serial_panel_);
+    addDockWidget(Qt::BottomDockWidgetArea, serial_dock);
+
     connect(run_btn_, &QPushButton::clicked, this, &MainWindow::onRunClicked);
     connect(step_btn, &QPushButton::clicked, this, &MainWindow::onStepClicked);
     connect(reset_btn, &QPushButton::clicked,
             this, &MainWindow::onResetClicked);
+
+    // A2 USART RX input: forward the serial panel's input to the session.
+    // (GPIO toggle buttons were removed — simulate_input writes the IDR, which
+    // the ODR-based display doesn't reflect and demo firmware doesn't read.)
+    connect(serial_panel_, &panels::SerialPanel::inputSubmitted,
+            this, [this](const QString& text) {
+                const auto bytes = text.toUtf8();
+                for (const char b : bytes) {
+                    session_.inject_rx(static_cast<std::uint8_t>(b));
+                }
+            });
+    // C4-mem: a new address → dump it immediately (don't wait for the tick).
+    connect(memory_panel_, &panels::MemoryPanel::addr_changed,
+            this, [this](std::uint32_t) { refreshMemory(); });
 
     timer_ = new QTimer(this);
     timer_->setInterval(50); // ~20 UI ticks/sec
@@ -120,6 +161,14 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     }
 
     resize(1100, 760);
+
+    // Restore the user's dock layout + window geometry from last session (A3).
+    // First launch: saved state is absent → restoreState returns false and the
+    // defaults above stay in effect. Docks must already exist + be named
+    // (setObjectName in the ctor above) for restoreState to relocate them.
+    QSettings settings("micro-forge", "gui");
+    restoreGeometry(settings.value("geometry").toByteArray());
+    restoreState(settings.value("windowState").toByteArray());
 }
 
 void MainWindow::rebuildSession() {
@@ -196,6 +245,28 @@ void MainWindow::refreshFromSnapshot() {
     fault_panel_->refresh(snap);
     gpio_panel_->refresh(snap);
     periph_panel_->refresh(snap);
+    clock_panel_->refresh(snap);
+    board_widget_->refresh(snap);
+    refreshMemory();
+}
+
+void MainWindow::refreshMemory() {
+    if (!session_.valid() || !memory_panel_->has_addr()) {
+        return;
+    }
+    // Dump 64 bytes from the tracked address; cheap enough to run per tick.
+    const auto dump =
+        session_.read_memory(memory_panel_->current_addr(), 64);
+    memory_panel_->show_dump(QString::fromStdString(dump));
+}
+
+void MainWindow::closeEvent(QCloseEvent* event) {
+    // Persist dock layout + window geometry so the next launch opens the way
+    // the user left it (A3). Docks were all given objectNames in the ctor.
+    QSettings settings("micro-forge", "gui");
+    settings.setValue("geometry", saveGeometry());
+    settings.setValue("windowState", saveState());
+    QMainWindow::closeEvent(event);
 }
 
 } // namespace micro_forge::gui

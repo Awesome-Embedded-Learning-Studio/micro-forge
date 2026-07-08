@@ -2,6 +2,7 @@
 #include "gui/model/session.hpp"
 
 #include "hooks/events.hpp" // hooks::UartByte
+#include "tools/memory_dump.hpp"
 
 #include <cstdint>
 #include <fstream>
@@ -71,6 +72,31 @@ introspection::IntrospectionSnapshot Session::snapshot() const {
         return {};
     }
     return introspection::read_introspection(*soc_, usart_output_);
+}
+
+void Session::inject_rx(std::uint8_t byte) {
+    if (soc_) {
+        soc_->parts().usart1.inject_rx(byte);
+    }
+}
+
+void Session::simulate_gpio_input(char port, std::uint8_t pin, bool high) {
+    if (soc_) {
+        soc_->parts().gpio(port).simulate_input(pin, high);
+    }
+}
+
+std::string Session::read_memory(std::uint32_t addr, std::uint32_t len) const {
+    if (!soc_) {
+        return {};
+    }
+    std::string out;
+    tools::memory_dump(*soc_->machine().bus, addr, len,
+        [&out](std::string_view line) {
+            out.append(line);
+            out.push_back('\n');
+        });
+    return out;
 }
 
 } // namespace micro_forge::gui::model

@@ -1,7 +1,7 @@
-// Serial output panel — see serial_panel.hpp.
+// Serial panel — see serial_panel.hpp.
 #include "gui/view/panels/serial_panel.hpp"
 
-#include <QLabel>
+#include <QLineEdit>
 #include <QString>
 #include <QTextEdit>
 #include <QVBoxLayout>
@@ -15,6 +15,15 @@ SerialPanel::SerialPanel(QWidget* parent) : QWidget(parent) {
     view_->setReadOnly(true);
     view_->setStyleSheet("font-family: monospace;");
     lay->addWidget(view_);
+
+    input_ = new QLineEdit;
+    input_->setPlaceholderText("Send to USART RX — type then Enter");
+    lay->addWidget(input_);
+
+    connect(input_, &QLineEdit::returnPressed, this, [this] {
+        emit inputSubmitted(input_->text());
+        input_->clear();
+    });
 }
 
 void SerialPanel::refresh(const introspection::IntrospectionSnapshot& snap) {

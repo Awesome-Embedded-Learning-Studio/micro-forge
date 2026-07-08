@@ -46,6 +46,15 @@ class Session {
     // USART bytes accumulated since rebuild(); the view drains this per tick.
     std::string_view usart_output() const noexcept { return usart_output_; }
 
+    // Inject external input into the simulated peripherals (A2). Forwarded to
+    // the SoC; no-op when invalid (no SoC loaded).
+    void inject_rx(std::uint8_t byte);
+    void simulate_gpio_input(char port, std::uint8_t pin, bool high);
+
+    // Hex dump of a memory region (C4-mem). Returns formatted lines joined by
+    // newlines; empty when invalid. Read-only — safe from the GUI tick thread.
+    std::string read_memory(std::uint32_t addr, std::uint32_t len) const;
+
   private:
     std::unique_ptr<chips::stm32f1::Stm32f103Soc> soc_;
     std::string usart_output_;
