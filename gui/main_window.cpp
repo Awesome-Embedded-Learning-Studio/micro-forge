@@ -17,6 +17,7 @@
 
 #include "cpu/cpu.hpp"
 
+#include <QByteArray>
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QDockWidget>
@@ -113,6 +114,22 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     connect(step_btn, &QPushButton::clicked, this, &MainWindow::onStepClicked);
     connect(reset_btn, &QPushButton::clicked,
             this, &MainWindow::onResetClicked);
+
+    // A2 input: forward panel signals to the session (panels stay decoupled
+    // from the simulator — they only emit, MainWindow routes).
+    connect(serial_panel_, &panels::SerialPanel::inputSubmitted,
+            this, [this](const QString& text) {
+                const auto bytes = text.toUtf8();
+                for (const char b : bytes) {
+                    session_.inject_rx(static_cast<std::uint8_t>(b));
+                }
+            });
+    connect(gpio_panel_, &panels::GpioPanel::gpioInputRequested,
+            this, [this](char port, int pin, bool high) {
+                session_.simulate_gpio_input(port,
+                                             static_cast<std::uint8_t>(pin),
+                                             high);
+            });
 
     timer_ = new QTimer(this);
     timer_->setInterval(50); // ~20 UI ticks/sec

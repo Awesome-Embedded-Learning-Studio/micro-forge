@@ -35,6 +35,37 @@ TEST(GuiSession, StepOnHaltedSessionStaysValid) {
     EXPECT_EQ(s.snapshot().cpu.state, CPU::State::Halted);
 }
 
+// A2 input injection: inject_rx / simulate_gpio_input must be safe on a valid
+// session (no crash, no state corruption) and silent no-ops on an invalid one.
+TEST(GuiSession, InjectRxOnValidSessionIsSafe) {
+    Session s;
+    ASSERT_TRUE(s.rebuild().has_value());
+    s.inject_rx('A');
+    s.inject_rx('B');
+    EXPECT_TRUE(s.valid());
+    // No firmware reads RX, so the session stays Halted; bytes just queue.
+    EXPECT_EQ(s.snapshot().cpu.state, CPU::State::Halted);
+}
+
+TEST(GuiSession, SimulateGpioInputIsSafe) {
+    Session s;
+    ASSERT_TRUE(s.rebuild().has_value());
+    s.simulate_gpio_input('A', 5, true);
+    s.simulate_gpio_input('C', 13, false);
+    EXPECT_TRUE(s.valid());
+    EXPECT_EQ(s.snapshot().cpu.state, CPU::State::Halted);
+}
+
+TEST(GuiSession, InjectOnInvalidSessionIsNoOp) {
+    Session s; // never rebuilt → invalid
+    s.inject_rx('X');
+    s.simulate_gpio_input('A', 0, true);
+    EXPECT_FALSE(s.valid());
+    const auto snap = s.snapshot();
+    EXPECT_EQ(snap.cpu.state, CPU::State::Halted);
+    EXPECT_EQ(snap.cycles, 0u);
+}
+
 #ifdef SESSION_HELLO_ELF
 TEST(GuiSession, LoadsFirmwareAndRunsAndEmitsUsart) {
     Session s;

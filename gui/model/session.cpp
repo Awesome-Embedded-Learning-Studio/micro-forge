@@ -73,4 +73,16 @@ introspection::IntrospectionSnapshot Session::snapshot() const {
     return introspection::read_introspection(*soc_, usart_output_);
 }
 
+void Session::inject_rx(std::uint8_t byte) {
+    if (soc_) {
+        soc_->parts().usart1.inject_rx(byte);
+    }
+}
+
+void Session::simulate_gpio_input(char port, std::uint8_t pin, bool high) {
+    if (soc_) {
+        soc_->parts().gpio(port).simulate_input(pin, high);
+    }
+}
+
 } // namespace micro_forge::gui::model
