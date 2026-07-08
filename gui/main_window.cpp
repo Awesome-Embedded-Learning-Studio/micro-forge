@@ -1,8 +1,10 @@
 // micro-forge GUI main window implementation.
 //
-// Thin Qt view: assembles the control bar + panels, drives the session via
-// QTimer, and refreshes every panel from the snapshot each tick. Owns no
-// simulator state — that's in model::Session.
+// QMainWindow shell: a toolbar (run/step/reset + state) plus dockable panels.
+// The serial output panel is the central widget (main interaction surface);
+// registers dock left, GPIO dock bottom. Users can drag/fold/float any dock.
+// All panels refresh from the session's snapshot each tick — MainWindow owns
+// no simulator state (that's in model::Session).
 #include "gui/main_window.hpp"
 
 #include "gui/view/panels/gpio_panel.hpp"
@@ -11,13 +13,12 @@
 
 #include "cpu/cpu.hpp"
 
-#include <QHBoxLayout>
+#include <QDockWidget>
 #include <QLabel>
 #include <QPushButton>
 #include <QString>
+#include <QToolBar>
 #include <QTimer>
-#include <QVBoxLayout>
-#include <QWidget>
 
 #include <cstdint>
 
@@ -29,33 +30,38 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
 
     session_.set_firmware(firmware_path.toStdString());
 
-    auto* central = new QWidget;
-    auto* root = new QVBoxLayout(central);
-
-    // ── control bar ──
-    auto* bar = new QHBoxLayout;
+    // ── toolbar: run / step / reset + state label ──
+    auto* toolbar = addToolBar("main");
     run_btn_ = new QPushButton("Run");
     auto* step_btn = new QPushButton("Step");
     auto* reset_btn = new QPushButton("Reset");
-    bar->addWidget(run_btn_);
-    bar->addWidget(step_btn);
-    bar->addWidget(reset_btn);
-    bar->addStretch();
     state_label_ = new QLabel("idle");
     state_label_->setStyleSheet("font-family: monospace;");
-    bar->addWidget(state_label_);
-    root->addLayout(bar);
+    toolbar->addWidget(run_btn_);
+    toolbar->addWidget(step_btn);
+    toolbar->addWidget(reset_btn);
+    toolbar->addSeparator();
+    toolbar->addWidget(state_label_);
 
-    // ── panels (fixed vertical layout for now; dock organization comes next) ──
+    // ── panels ──
     regs_panel_ = new panels::RegistersPanel;
-    root->addWidget(regs_panel_);
     serial_panel_ = new panels::SerialPanel;
-    root->addWidget(serial_panel_);
     gpio_panel_ = new panels::GpioPanel;
-    root->addWidget(gpio_panel_);
 
-    setCentralWidget(central);
-    resize(480, 780);
+    // Central: serial output (the surface the user watches while firmware runs).
+    setCentralWidget(serial_panel_);
+
+    // Left dock: CPU registers.
+    auto* regs_dock = new QDockWidget("CPU registers", this);
+    regs_dock->setObjectName("regs_dock"); // for saveState/restoreState later
+    regs_dock->setWidget(regs_panel_);
+    addDockWidget(Qt::LeftDockWidgetArea, regs_dock);
+
+    // Bottom dock: GPIO.
+    auto* gpio_dock = new QDockWidget("GPIO", this);
+    gpio_dock->setObjectName("gpio_dock");
+    gpio_dock->setWidget(gpio_panel_);
+    addDockWidget(Qt::BottomDockWidgetArea, gpio_dock);
 
     connect(run_btn_, &QPushButton::clicked, this, &MainWindow::onRunClicked);
     connect(step_btn, &QPushButton::clicked, this, &MainWindow::onStepClicked);
@@ -77,6 +83,8 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
         run_btn_->setText("Pause");
         timer_->start();
     }
+
+    resize(960, 720);
 }
 
 void MainWindow::rebuildSession() {
