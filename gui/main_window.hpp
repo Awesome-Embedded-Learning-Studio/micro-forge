@@ -1,10 +1,9 @@
 // micro-forge GUI main window.
 //
-// Thin Qt view over a model::Session: a QTimer fires onTick(), which asks the
-// session to run a small chunk of steps and then refreshes the panels from the
-// session's IntrospectionSnapshot. Owns no simulator state directly — that
-// lives in model::Session (Qt-free, unit-testable). The sim never runs on a
-// QThread — that would break deterministic replay (DIRECTIVES §E).
+// Thin Qt view over a model::Session. Owns only UI: a control bar plus a set
+// of panels (registers / serial / gpio / ...) refreshed from the session's
+// IntrospectionSnapshot each tick. Each panel is an independent widget under
+// view/panels/. The sim never runs on a QThread (DIRECTIVES §E).
 #pragma once
 
 #include "gui/model/session.hpp"
@@ -14,8 +13,13 @@
 
 class QLabel;
 class QPushButton;
-class QTableWidget;
 class QTimer;
+
+namespace micro_forge::gui::panels {
+class RegistersPanel;
+class GpioPanel;
+class SerialPanel;
+} // namespace micro_forge::gui::panels
 
 namespace micro_forge::gui {
 
@@ -41,9 +45,10 @@ class MainWindow : public QMainWindow {
 
     QTimer* timer_ = nullptr;
     QLabel* state_label_ = nullptr;
-    QTableWidget* regs_table_ = nullptr;
-    QLabel* gpio_label_ = nullptr;
     QPushButton* run_btn_ = nullptr;
+    panels::RegistersPanel* regs_panel_ = nullptr;
+    panels::SerialPanel* serial_panel_ = nullptr;
+    panels::GpioPanel* gpio_panel_ = nullptr;
 };
 
 } // namespace micro_forge::gui

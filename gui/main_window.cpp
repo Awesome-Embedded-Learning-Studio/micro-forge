@@ -1,21 +1,20 @@
 // micro-forge GUI main window implementation.
 //
-// Thin Qt view over a model::Session. Owns only UI widgets; simulator state
-// (SoC, firmware, USART buffer) lives in session_. A QTimer drives run() +
-// refreshFromSnapshot() each tick — single-threaded on the Qt main thread.
+// Thin Qt view: assembles the control bar + panels, drives the session via
+// QTimer, and refreshes every panel from the snapshot each tick. Owns no
+// simulator state — that's in model::Session.
 #include "gui/main_window.hpp"
+
+#include "gui/view/panels/gpio_panel.hpp"
+#include "gui/view/panels/registers_panel.hpp"
+#include "gui/view/panels/serial_panel.hpp"
 
 #include "cpu/cpu.hpp"
 
-#include <QChar>
 #include <QHBoxLayout>
-#include <QHeaderView>
 #include <QLabel>
-#include <QLatin1Char>
 #include <QPushButton>
 #include <QString>
-#include <QTableWidget>
-#include <QTableWidgetItem>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -47,24 +46,16 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     bar->addWidget(state_label_);
     root->addLayout(bar);
 
-    // ── CPU registers (r0-r12, sp, lr, pc) ──
-    regs_table_ = new QTableWidget(16, 2);
-    regs_table_->setHorizontalHeaderLabels({"reg", "value"});
-    regs_table_->verticalHeader()->setVisible(false);
-    regs_table_->horizontalHeader()->setStretchLastSection(true);
-    regs_table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    root->addWidget(regs_table_);
-
-    // ── GPIO panel: A/B/C port ODR with per-pin LED glyphs ──
-    auto* gpio_title = new QLabel("GPIO output (A/B/C, pin0..pin15)");
-    gpio_title->setStyleSheet("font-weight: bold;");
-    root->addWidget(gpio_title);
-    gpio_label_ = new QLabel;
-    gpio_label_->setStyleSheet("font-family: monospace;");
-    root->addWidget(gpio_label_);
+    // ── panels (fixed vertical layout for now; dock organization comes next) ──
+    regs_panel_ = new panels::RegistersPanel;
+    root->addWidget(regs_panel_);
+    serial_panel_ = new panels::SerialPanel;
+    root->addWidget(serial_panel_);
+    gpio_panel_ = new panels::GpioPanel;
+    root->addWidget(gpio_panel_);
 
     setCentralWidget(central);
-    resize(480, 720);
+    resize(480, 780);
 
     connect(run_btn_, &QPushButton::clicked, this, &MainWindow::onRunClicked);
     connect(step_btn, &QPushButton::clicked, this, &MainWindow::onStepClicked);
@@ -154,40 +145,9 @@ void MainWindow::refreshFromSnapshot() {
     }
     state_label_->setText(label);
 
-    static constexpr const char* kNames[16] = {
-        "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
-        "r8", "r9", "r10", "r11", "r12", "sp", "lr", "pc"};
-    auto hex = [](std::uint32_t v) {
-        return QString("0x%1").arg(v, 8, 16, QLatin1Char('0'));
-    };
-    for (int i = 0; i < 13; ++i) {
-        regs_table_->setItem(i, 0, new QTableWidgetItem(kNames[i]));
-        regs_table_->setItem(i, 1, new QTableWidgetItem(hex(snap.cpu.regs[i])));
-    }
-    regs_table_->setItem(13, 0, new QTableWidgetItem(kNames[13]));
-    regs_table_->setItem(13, 1, new QTableWidgetItem(hex(snap.cpu.sp)));
-    regs_table_->setItem(14, 0, new QTableWidgetItem(kNames[14]));
-    regs_table_->setItem(14, 1, new QTableWidgetItem(hex(snap.cpu.lr)));
-    regs_table_->setItem(15, 0, new QTableWidgetItem(kNames[15]));
-    regs_table_->setItem(15, 1, new QTableWidgetItem(hex(snap.cpu.pc)));
-
-    // GPIO: 3 ports (A/B/C), each ODR hex + 16 LED glyphs (pin0..pin15).
-    auto led = [](std::uint16_t odr) {
-        QString s;
-        for (int i = 0; i < 16; ++i) {
-            s += (odr >> i) & 1 ? QChar(0x25CF) : QChar(0x00B7); // ● or ·
-        }
-        return s;
-    };
-    QString g;
-    for (int i = 0; i < 3; ++i) {
-        const auto& port = snap.peripherals.gpio[i];
-        g += QString("%1 0x%2  %3\n")
-                 .arg(QChar(port.port))
-                 .arg(port.odr, 4, 16, QLatin1Char('0'))
-                 .arg(led(port.odr));
-    }
-    gpio_label_->setText(g);
+    regs_panel_->refresh(snap);
+    serial_panel_->refresh(snap);
+    gpio_panel_->refresh(snap);
 }
 
 } // namespace micro_forge::gui

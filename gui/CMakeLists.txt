@@ -11,6 +11,9 @@ add_executable(micro-forge-gui
     main.cpp
     main_window.cpp
     model/session.cpp
+    view/panels/registers_panel.cpp
+    view/panels/gpio_panel.cpp
+    view/panels/serial_panel.cpp
 )
 # main.cpp / main_window.cpp include "gui/main_window.hpp" (header sits next to
 # the .cpp here), so the include root is the repo top, not src/.
