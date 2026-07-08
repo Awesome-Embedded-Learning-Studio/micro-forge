@@ -88,3 +88,32 @@ TEST(Cli, UnmappedPcFaults) {
     EXPECT_NE(r.out.find("Faulted"), std::string::npos) << r.out;
     EXPECT_NE(r.out.find("InstructionFetchFault"), std::string::npos) << r.out;
 }
+
+// probe hello.elf → the simulator implements every opcode this firmware uses
+// (it runs and prints "Hello"), so probe mode reports full coverage, exit 0 (A4).
+TEST(Cli, ProbeHelloReportsNoMissingOpcodes) {
+    auto r = run_cli(std::string("probe ") + CLI_HELLO_ELF +
+                     " --max-steps 100000");
+    EXPECT_EQ(r.code, 0) << r.out;
+    EXPECT_NE(r.out.find("[probe]"), std::string::npos) << r.out;
+    EXPECT_NE(r.out.find("no missing opcodes"), std::string::npos) << r.out;
+}
+
+// probe a firmware whose reset vector lands on 0xFFFF (an unimplemented
+// opcode) → probe mode records it and skips, reporting the missing encoding.
+TEST(Cli, ProbeReportsMissingOpcode) {
+    {
+        std::ofstream f("/tmp/cli_probe.bin", std::ios::binary);
+        const uint32_t sp = 0x20005000u;
+        const uint32_t pc = 0x08000009u; // reset → 0x08000008 (thumb)
+        const uint16_t bad_insn = 0xFFFFu;
+        f.write(reinterpret_cast<const char*>(&sp), 4);
+        f.write(reinterpret_cast<const char*>(&pc), 4);
+        f.write(reinterpret_cast<const char*>(&bad_insn), 2);
+    }
+    auto r =
+        run_cli("probe /tmp/cli_probe.bin --base 0x08000000 --max-steps 50");
+    EXPECT_EQ(r.code, 0) << r.out;
+    EXPECT_NE(r.out.find("missing opcode"), std::string::npos) << r.out;
+    EXPECT_NE(r.out.find("0xFFFF"), std::string::npos) << r.out;
+}

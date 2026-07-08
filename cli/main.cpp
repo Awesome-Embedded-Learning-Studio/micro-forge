@@ -16,8 +16,10 @@
 #include <cstdlib>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace micro_forge;
@@ -135,7 +137,10 @@ void print_usage() {
         "      (runs forever by default; Ctrl+C stops with a report)\n"
         "  dump-mem <firmware.{elf,bin}> --addr 0x20000000 [--len 256]\n"
         "      [--chip stm32f103] [--base 0x08000000]\n"
-        "      (loads firmware, dumps a memory window to stdout)\n");
+        "      (loads firmware, dumps a memory window to stdout)\n"
+        "  probe <firmware.{elf,bin}> [--max-steps 1000000]\n"
+        "      [--chip stm32f103] [--base 0x08000000]\n"
+        "      (runs in probe mode — lists opcodes the simulator can't execute)\n");
 }
 
 struct RunOptions {
@@ -401,6 +406,99 @@ int cmd_dump_mem(int argc, char** argv) {
     return 0;
 }
 
+int cmd_probe(int argc, char** argv) {
+    std::string firmware;
+    std::string chip = "stm32f103";
+    uint32_t base = 0x08000000;
+    size_t max_steps = 1'000'000;
+    for (int i = 0; i < argc; ++i) {
+        std::string a = argv[i];
+        auto next = [&]() -> const char* {
+            return (i + 1 < argc) ? argv[++i] : nullptr;
+        };
+        if (a == "--chip") {
+            const char* v = next();
+            if (!v) { std::fprintf(stderr, "--chip needs a value\n"); return 2; }
+            chip = v;
+        } else if (a == "--base") {
+            const char* v = next();
+            if (!v) { std::fprintf(stderr, "--base needs a value\n"); return 2; }
+            base = static_cast<uint32_t>(std::strtoul(v, nullptr, 0));
+        } else if (a == "--max-steps") {
+            const char* v = next();
+            if (!v) { std::fprintf(stderr, "--max-steps needs a value\n"); return 2; }
+            max_steps = static_cast<size_t>(std::strtoull(v, nullptr, 0));
+        } else if (!a.empty() && a[0] != '-') {
+            if (firmware.empty()) {
+                firmware = a;
+            } else {
+                std::fprintf(stderr, "unexpected positional arg: %s\n", a.c_str());
+                return 2;
+            }
+        } else {
+            std::fprintf(stderr, "unknown option: %s\n", a.c_str());
+            print_usage();
+            return 2;
+        }
+    }
+    if (chip != "stm32f103") {
+        std::fprintf(stderr, "unsupported chip '%s' (only stm32f103)\n", chip.c_str());
+        return 2;
+    }
+    if (firmware.empty()) {
+        std::fprintf(stderr, "missing firmware path\n");
+        print_usage();
+        return 2;
+    }
+    auto data = read_file(firmware);
+    if (data.empty()) {
+        std::fprintf(stderr, "cannot read firmware: %s\n", firmware.c_str());
+        return 1;
+    }
+    auto soc = load_firmware(data, base);
+    if (!soc) {
+        std::fprintf(stderr, "firmware load failed: %s\n", soc.error().c_str());
+        return 1;
+    }
+
+    // Probe mode: a missing opcode is recorded + skipped (PC advances past it)
+    // instead of faulting, so one run surfaces every instruction the simulator
+    // can't yet execute — something a real-hardware debugger cannot tell you.
+    auto cm3 = (*soc)->cortex_m3_cpu();
+    if (!cm3.IsValid()) {
+        std::fprintf(stderr, "[probe] CPU not wired\n");
+        return 1;
+    }
+    cm3->enable_probe_mode(true);
+    (*soc)->run(max_steps);
+
+    std::fprintf(stderr, "[probe] %s\n", firmware.c_str());
+    const auto& missing = cm3->missing_opcodes();
+    if (missing.empty()) {
+        std::fprintf(stderr,
+            "[probe] no missing opcodes — full instruction coverage\n");
+        return 0;
+    }
+    // Dedup by encoding: count executions + remember the first PC per opcode.
+    std::map<std::pair<uint16_t, uint16_t>, size_t> counts;
+    std::map<std::pair<uint16_t, uint16_t>, uint32_t> first_pc;
+    for (const auto& [pc, hw1, hw2] : missing) {
+        auto key = std::make_pair(hw1, hw2);
+        counts[key]++;
+        if (first_pc.find(key) == first_pc.end()) {
+            first_pc[key] = static_cast<uint32_t>(pc);
+        }
+    }
+    std::fprintf(stderr,
+        "[probe] %zu missing opcode execution(s), %zu unique:\n",
+        missing.size(), counts.size());
+    for (const auto& [key, cnt] : counts) {
+        std::fprintf(stderr, "  insn=0x%04X 0x%04X  x%zu  first@pc=0x%08X\n",
+                     key.first, key.second, cnt, first_pc[key]);
+    }
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -415,6 +513,9 @@ int main(int argc, char** argv) {
     }
     if (sub == "dump-mem") {
         return cmd_dump_mem(argc - 2, argv + 2);
+    }
+    if (sub == "probe") {
+        return cmd_probe(argc - 2, argv + 2);
     }
     if (sub == "-h" || sub == "--help" || sub == "help") {
         print_usage();
