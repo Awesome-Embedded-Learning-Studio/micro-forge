@@ -29,7 +29,12 @@ jobs:
           # gcc-arm-none-eabi: builds the Cortex-M3 test firmware (hello/blink/
           # systick) so test_e2e/test_cli/INTROSPECTION_HELLO_ELF configure and
           # the test-count floor gate reaches its baseline on this workflow.
-          sudo apt-get install -y g++-14 gcc-arm-none-eabi binutils-arm-none-eabi
+          # qemu-system-arm: enables the oracle_cortex_m3 conformance test
+          # (find_program in test/CMakeLists). It runs the same firmware under
+          # a reference QEMU Cortex-M3 and diffs behavior — without qemu the
+          # oracle is silently skipped on CI. The test is RUN_SERIAL so it
+          # never runs concurrently even under `ctest -j`.
+          sudo apt-get install -y g++-14 gcc-arm-none-eabi binutils-arm-none-eabi qemu-system-arm
 
       - name: Cache GoogleTest
         uses: actions/cache@v4
