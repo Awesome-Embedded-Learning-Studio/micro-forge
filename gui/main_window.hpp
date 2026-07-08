@@ -24,6 +24,7 @@ class GpioPanel;
 class SerialPanel;
 class StatusPanel;
 class FaultPanel;
+class MemoryPanel;
 class PeripheralPanel;
 class ClockPanel;
 } // namespace micro_forge::gui::panels
@@ -53,6 +54,7 @@ class MainWindow : public QMainWindow {
   private:
     void rebuildSession();
     void refreshFromSnapshot();
+    void refreshMemory(); // C4-mem: re-dump the memory panel's tracked region.
 
     model::Session session_;
     bool running_ = false;
@@ -68,6 +70,7 @@ class MainWindow : public QMainWindow {
     panels::FaultPanel* fault_panel_ = nullptr;
     panels::PeripheralPanel* periph_panel_ = nullptr;
     panels::ClockPanel* clock_panel_ = nullptr;
+    panels::MemoryPanel* memory_panel_ = nullptr;
     view::BoardView* board_view_ = nullptr;
 };
 

@@ -51,6 +51,10 @@ class Session {
     void inject_rx(std::uint8_t byte);
     void simulate_gpio_input(char port, std::uint8_t pin, bool high);
 
+    // Hex dump of a memory region (C4-mem). Returns formatted lines joined by
+    // newlines; empty when invalid. Read-only — safe from the GUI tick thread.
+    std::string read_memory(std::uint32_t addr, std::uint32_t len) const;
+
   private:
     std::unique_ptr<chips::stm32f1::Stm32f103Soc> soc_;
     std::string usart_output_;

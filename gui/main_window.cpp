@@ -15,6 +15,7 @@
 #include "gui/view/panels/status_panel.hpp"
 #include "gui/view/board_view/board_view.hpp"
 #include "gui/view/panels/clock_panel.hpp"
+#include "gui/view/panels/memory_panel.hpp"
 
 #include "cpu/cpu.hpp"
 
@@ -72,6 +73,7 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     gpio_panel_ = new panels::GpioPanel;
     periph_panel_ = new panels::PeripheralPanel;
     clock_panel_ = new panels::ClockPanel;
+    memory_panel_ = new panels::MemoryPanel;
     board_view_ = new view::BoardView;
 
     // Central: the board (chip + LEDs) — micro-forge's visual main stage.
@@ -106,6 +108,11 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     clock_dock->setWidget(clock_panel_);
     addDockWidget(Qt::RightDockWidgetArea, clock_dock);
 
+    auto* memory_dock = new QDockWidget("Memory", this);
+    memory_dock->setObjectName("memory_dock");
+    memory_dock->setWidget(memory_panel_);
+    addDockWidget(Qt::RightDockWidgetArea, memory_dock);
+
     // Bottom dock: GPIO + serial output (side by side).
     auto* gpio_dock = new QDockWidget("GPIO", this);
     gpio_dock->setObjectName("gpio_dock");
@@ -137,6 +144,9 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
                                              static_cast<std::uint8_t>(pin),
                                              high);
             });
+    // C4-mem: a new address → dump it immediately (don't wait for the tick).
+    connect(memory_panel_, &panels::MemoryPanel::addr_changed,
+            this, [this](std::uint32_t) { refreshMemory(); });
 
     timer_ = new QTimer(this);
     timer_->setInterval(50); // ~20 UI ticks/sec
@@ -241,6 +251,17 @@ void MainWindow::refreshFromSnapshot() {
     periph_panel_->refresh(snap);
     clock_panel_->refresh(snap);
     board_view_->refresh(snap);
+    refreshMemory();
+}
+
+void MainWindow::refreshMemory() {
+    if (!session_.valid() || !memory_panel_->has_addr()) {
+        return;
+    }
+    // Dump 64 bytes from the tracked address; cheap enough to run per tick.
+    const auto dump =
+        session_.read_memory(memory_panel_->current_addr(), 64);
+    memory_panel_->show_dump(QString::fromStdString(dump));
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {

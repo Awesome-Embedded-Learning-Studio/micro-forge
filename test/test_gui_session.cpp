@@ -66,6 +66,20 @@ TEST(GuiSession, InjectOnInvalidSessionIsNoOp) {
     EXPECT_EQ(snap.cycles, 0u);
 }
 
+// C4-mem: read_memory returns a formatted hex dump on a valid session and an
+// empty string when invalid (no SoC to read from).
+TEST(GuiSession, ReadMemoryOnValidSessionReturnsDump) {
+    Session s;
+    ASSERT_TRUE(s.rebuild().has_value());
+    const auto dump = s.read_memory(0x08000000u, 16);
+    EXPECT_FALSE(dump.empty()) << "memory_dump should format 16 bytes";
+}
+
+TEST(GuiSession, ReadMemoryOnInvalidSessionIsEmpty) {
+    Session s; // never rebuilt → invalid
+    EXPECT_TRUE(s.read_memory(0x08000000u, 16).empty());
+}
+
 #ifdef SESSION_HELLO_ELF
 TEST(GuiSession, LoadsFirmwareAndRunsAndEmitsUsart) {
     Session s;
