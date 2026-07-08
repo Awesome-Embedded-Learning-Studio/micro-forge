@@ -29,12 +29,13 @@ jobs:
           # gcc-arm-none-eabi: builds the Cortex-M3 test firmware (hello/blink/
           # systick) so test_e2e/test_cli/INTROSPECTION_HELLO_ELF configure and
           # the test-count floor gate reaches its baseline on this workflow.
-          # qemu-system-arm: enables the oracle_cortex_m3 conformance test
-          # (find_program in test/CMakeLists). It runs the same firmware under
-          # a reference QEMU Cortex-M3 and diffs behavior — without qemu the
-          # oracle is silently skipped on CI. The test is RUN_SERIAL so it
-          # never runs concurrently even under `ctest -j`.
-          sudo apt-get install -y g++-14 gcc-arm-none-eabi binutils-arm-none-eabi qemu-system-arm
+          # qemu-system-arm + gdb-multiarch: enable the oracle_cortex_m3
+          # conformance test (find_program in test/CMakeLists). It runs the
+          # same firmware under a reference QEMU Cortex-M3 + gdbstub and diffs
+          # behavior — without both the oracle is skipped on CI. gdb-multiarch
+          # is wired to the oracle via ARM_GDB in the Test step (ubuntu's
+          # gcc-arm-none-eabi ships no gdb of its own).
+          sudo apt-get install -y g++-14 gcc-arm-none-eabi binutils-arm-none-eabi qemu-system-arm gdb-multiarch
 
       - name: Cache GoogleTest
         uses: actions/cache@v4
@@ -50,6 +51,8 @@ jobs:
 
       - name: Test
         working-directory: build
+        env:
+          ARM_GDB: gdb-multiarch  # oracle_cortex_m3 gdbstub client
         run: ctest --output-on-failure --timeout 60 -j "$(nproc)"
 
       - name: Upload test logs on failure
