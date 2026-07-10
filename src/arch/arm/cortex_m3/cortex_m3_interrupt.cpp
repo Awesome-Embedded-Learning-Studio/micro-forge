@@ -95,6 +95,15 @@ CortexM3CPU::exception_entry_common(addr_t vector_addr, uint8_t new_priority) {
     // what makes nested preemption return to the right active priority.
     active_priorities_.push_back(current_priority_);
 
+    // ITSTATE lives in xPSR on Cortex-M and the hardware-stacked xPSR restores
+    // it on exception return.  Our IT decoder keeps the remaining conditions
+    // out-of-band, so suspend them explicitly and start the handler outside
+    // any interrupted thread/handler IT block.
+    suspended_it_states_.push_back(
+        {std::move(it_conditions_), it_condition_pos_});
+    it_conditions_.clear();
+    it_condition_pos_ = 0;
+
     // Switch active stack to MSP for stacking. Handler mode always uses MSP;
     // if thread mode was on PSP, preserve PSP then load MSP. The active-SP
     // invariant (R13 == active shadow) is maintained because push_stack routes
@@ -228,6 +237,18 @@ CPU::CPUExpected<void> CortexM3CPU::interrupt_return(data_t exc_return) {
         return std::unexpected{xpsr_val.error()};
     }
     xpsr_ = *xpsr_val;
+
+    // Restore the IT block interrupted by this exception.  This must happen
+    // before the resumed instruction is fetched; otherwise handler
+    // instructions consume the thread's conditions and conditional moves can
+    // become unconditional after return.
+    if (suspended_it_states_.empty()) {
+        return std::unexpected{CPUError::ExceptionReturnFault};
+    }
+    auto suspended_it = std::move(suspended_it_states_.back());
+    suspended_it_states_.pop_back();
+    it_conditions_ = std::move(suspended_it.conditions);
+    it_condition_pos_ = suspended_it.condition_pos;
 
     // Restore PC (clear Thumb bit). write_reg(15) writes R15 directly.
     if (auto r = write_reg(15, *pc_val & ~1u); !r) {

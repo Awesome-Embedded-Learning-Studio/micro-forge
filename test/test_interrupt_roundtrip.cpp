@@ -155,6 +155,42 @@ TEST_F(InterruptTest, BxLrReturnFromInterrupt) {
     EXPECT_EQ(cpu_->pc().value(), kMainCode);
 }
 
+TEST_F(InterruptTest, ExceptionPreservesInterruptedItBlock) {
+    store_vector_table_entry(0, kInitSp);
+    store_vector_table_entry(1, kMainCode);
+    store_vector_table_entry(16, kHandlerCode | 1u); // IRQ 0
+
+    // Exact control-flow shape used by HAL_GPIO_ReadPin:
+    //   Z=0; ite ne; movne r1,#1; moveq r1,#0
+    // Take the interrupt after ITE and before either conditional instruction.
+    store_instructions(kMainCode,
+                       {0x2001, // movs r0,#1  (Z=0)
+                        0xBF14, // ite ne
+                        0x2101, // movne r1,#1
+                        0x2100, // moveq r1,#0
+                        0xE7FE});
+    // Deliberately change flags in the handler.  Its instructions must not
+    // consume the thread's pending NE/EQ conditions.
+    store_instructions(kHandlerCode,
+                       {0x2200,   // movs r2,#0  (Z=1)
+                        0x4770}); // bx lr
+
+    ASSERT_TRUE(cpu_->set_pc(kMainCode).has_value());
+    ASSERT_TRUE(cpu_->step().has_value()); // movs r0,#1
+    ASSERT_TRUE(cpu_->step().has_value()); // ite ne
+
+    ASSERT_TRUE(nvic_.write(0x000, 1u, Width::Word).has_value());
+    nvic_.set_pending(0);
+    ASSERT_TRUE(cpu_->step().has_value()); // exception entry
+    ASSERT_TRUE(cpu_->step().has_value()); // handler changes flags
+    ASSERT_TRUE(cpu_->step().has_value()); // bx lr / exception return
+
+    ASSERT_TRUE(cpu_->step().has_value()); // movne r1,#1
+    ASSERT_TRUE(cpu_->step().has_value()); // moveq skipped
+    EXPECT_EQ(cpu_->register_value(1).value(), 1u);
+    EXPECT_EQ(cpu_->pc().value(), kMainCode + 8u);
+}
+
 // ── Test 2: Stack frame layout verification ──
 
 TEST_F(InterruptTest, StackFrameLayout) {
