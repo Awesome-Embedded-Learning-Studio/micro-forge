@@ -51,8 +51,12 @@ void Stm32BoardWidget::refresh(
     odr_[1] = snap.peripherals.gpio[1].odr; // B (rendered pins use A/C)
     odr_[2] = snap.peripherals.gpio[2].odr; // C
     if (ledPanel_ != nullptr) ledPanel_->setLevels(odr_[0]); // PA0..PA7
-    if (pc13Bulb_ != nullptr)                              // PC13 = port C bit 13
-        pc13Bulb_->setState(static_cast<bool>((odr_[2] >> 13) & 1u));
+    if (pc13Bulb_ != nullptr) {                            // PC13 = port C bit 13
+        // Blue Pill PC13 LED is active-low: lit when ODR bit13 == 0 (firmware
+        // led.on() writes BSRR reset → ODR=0 → LED conducts). Invert so the
+        // bulb reflects the physical LED, not the raw register bit.
+        pc13Bulb_->setState(!static_cast<bool>((odr_[2] >> 13) & 1u));
+    }
     update(); // async — never block the tick loop on a repaint.
 }
 
