@@ -187,6 +187,30 @@ if(TARGET hello_firmware AND TARGET blink_firmware AND TARGET systick_firmware)
         message(STATUS "STM32CubeF1 submodule not found — skipping E2E.HalUartTransmit")
     endif()
 
+    # TAMCPP C++ HAL 样例 E2E — 需 STM32CubeF1 submodule + TAMCPP_ROOT
+    if(TARGET tamcpp_led_firmware AND TARGET tamcpp_button_firmware AND TARGET tamcpp_uart_firmware)
+        message(STATUS "TAMCPP + STM32CubeF1 found — enabling E2E.Tamcpp{Led,Button,Uart}")
+        target_compile_definitions(test_e2e PRIVATE
+            E2E_TAMCPP_LED_ELF="${CMAKE_CURRENT_BINARY_DIR}/../examples/tamcpp_blink/firmware/led.elf"
+            E2E_TAMCPP_BUTTON_ELF="${CMAKE_CURRENT_BINARY_DIR}/../examples/tamcpp_blink/firmware/button.elf"
+            E2E_TAMCPP_UART_ELF="${CMAKE_CURRENT_BINARY_DIR}/../examples/tamcpp_blink/firmware/uart.elf"
+        )
+        add_dependencies(test_e2e tamcpp_led_firmware tamcpp_button_firmware tamcpp_uart_firmware)
+        add_custom_command(TARGET test_e2e POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${CMAKE_CURRENT_BINARY_DIR}/../examples/tamcpp_blink/firmware/led.elf
+                ${CMAKE_CURRENT_BINARY_DIR}/tamcpp_led.elf
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${CMAKE_CURRENT_BINARY_DIR}/../examples/tamcpp_blink/firmware/button.elf
+                ${CMAKE_CURRENT_BINARY_DIR}/tamcpp_button.elf
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${CMAKE_CURRENT_BINARY_DIR}/../examples/tamcpp_blink/firmware/uart.elf
+                ${CMAKE_CURRENT_BINARY_DIR}/tamcpp_uart.elf
+        )
+    else()
+        message(STATUS "TAMCPP samples not found — skipping E2E.Tamcpp{Led,Button,Uart}")
+    endif()
+
     gtest_discover_tests(test_e2e)
 endif()
 
