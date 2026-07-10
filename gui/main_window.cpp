@@ -153,13 +153,22 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     connect(reset_btn, &QPushButton::clicked,
             this, &MainWindow::onResetClicked);
 
-    // USART RX: forward the serial panel's input box to the session.
+    // USART RX: forward the serial panel's input box to the session. Inject one
+    // byte at a time and run enough steps for the RXNE IRQ to consume it (the
+    // USART model has a single-slot DR — back-to-back injects with no run in
+    // between overwrite DR and lose bytes). Append CRLF so the firmware's line
+    // parser (main.cpp: waits for '\r'/'\n') fires handle_command.
     connect(serial_panel_, &panels::SerialPanel::inputSubmitted,
             this, [this](const QString& text) {
                 const auto bytes = text.toUtf8();
                 for (const char b : bytes) {
                     session_.inject_rx(static_cast<std::uint8_t>(b));
+                    session_.run(50'000);
                 }
+                session_.inject_rx('\r');
+                session_.run(50'000);
+                session_.inject_rx('\n');
+                session_.run(50'000);
             });
     // GPIO input injection (PA0 button in gpio_panel): firmware that polls IDR
     // — e.g. TAMCPP 2_button_control's HAL_GPIO_ReadPin — sees the level.
