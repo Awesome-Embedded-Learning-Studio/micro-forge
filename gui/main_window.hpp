@@ -14,6 +14,8 @@
 
 class QCloseEvent;
 class QComboBox;
+class QDragEnterEvent;
+class QDropEvent;
 class QLabel;
 class QPushButton;
 class QTimer;
@@ -44,6 +46,8 @@ class MainWindow : public QMainWindow {
 
   protected:
     void closeEvent(QCloseEvent* event) override;
+    void dragEnterEvent(QDragEnterEvent* event) override;
+    void dropEvent(QDropEvent* event) override;
 
   private slots:
     void onTick();
@@ -53,6 +57,7 @@ class MainWindow : public QMainWindow {
 
   private:
     void rebuildSession();
+    void loadFirmware(const QString& path);
     void refreshFromSnapshot();
     void refreshMemory(); // C4-mem: re-dump the memory panel's tracked region.
 
