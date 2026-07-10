@@ -37,6 +37,6 @@
 - button spike:`on=1 off=1 PA0=1 PC13=1 state=0 [PASS]`。
 - uart spike:TX `UART Logger Ready!` + RX `OK: LED ON`(`TX banner=1 RX cmd=1`)。
 
-## 下一步
+## 状态(线 A 完成)
 
-- ctest E2E:tamcpp led/button/uart 进 ctest(参考 hal_uart E2E,test/CMakeLists.txt 加 `E2E_TAMCPP_*_ELF` 宏 + `test_e2e.cpp` #ifdef TEST)。
+`E2E.Tamcpp{Led,Button,Uart}` 三 TEST 进 ctest(ctest 372 绿)。线 A 三样例全通,6 个模拟器 bug 修完:elf_loader `.data` LMA / SysTick 线程优先级 / nvic IPR 字节写 / IT mask 解码 / ITSTATE 异常保存 / `t16_pop` pop{pc} SP writeback。分支 `feat/run-tamcpp-samples`(本批 commit 本地未 push)。
