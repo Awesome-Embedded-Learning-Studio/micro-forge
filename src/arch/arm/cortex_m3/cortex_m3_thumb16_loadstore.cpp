@@ -270,11 +270,17 @@ CPU::CPUExpected<void> CortexM3CPU::t16_pop(uint16_t insn) {
         if (!v) {
             return std::unexpected{v.error()};
         }
-        auto res = write_pc(*v);
-        if (!res) {
-            return res;
+        // Commit SP BEFORE write_pc. pop {pc} of an EXC_RETURN magic makes
+        // write_pc() run interrupt_return(), which pops the 8-word exception
+        // frame starting at [sp+4]. Doing the SP writeback after write_pc
+        // instead clobbers interrupt_return's restored SP with the stale local
+        // sp (pre-+4), leaking 0x20 of stack every exception (e.g. every
+        // STM32F1 USART RXNE IRQ → line_buf drift → command parse fail).
+        auto wb = write_reg(13, sp + 4);
+        if (!wb) {
+            return wb;
         }
-        sp += 4;
+        return write_pc(*v);
     }
     auto wr = write_reg(13, sp);
     if (!wr) {
