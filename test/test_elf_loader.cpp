@@ -136,6 +136,40 @@ TEST(ElfLoaderTest, BssZeroFill) {
     EXPECT_EQ(*r1, 0u);
 }
 
+// 裸机 .data 段:p_vaddr=SRAM(运行时位置),p_paddr=flash LMA(初值存储)。
+// loader 应把初值加载到 p_paddr(flash),SRAM(p_vaddr)留给 startup 的
+// CopyDataInit 从 _sidata(=p_paddr)复制——与真实烧录器行为一致。
+// 旧实现按 p_vaddr 加载,导致 CopyDataInit 从空 flash LMA 用 0 覆盖 SRAM 初值
+// (TAMCPP 样例 SystemCoreClock 被清零 → SysTick 不配 → HAL_Delay 死循环)。
+TEST(ElfLoaderTest, DataSegmentLoadedToFlashLmaWhenVaddrDiffers) {
+    Bus bus;
+    FlatMemory flash(8 * 1024);
+    FlatMemory sram(4 * 1024);
+    ASSERT_TRUE(
+        bus.map(region(0x08000000, 8 * 1024, flash.GetWeak())).has_value());
+    ASSERT_TRUE(
+        bus.map(region(0x20000000, 4 * 1024, sram.GetWeak())).has_value());
+
+    uint8_t data[] = {0xDE, 0xAD, 0xBE, 0xEF}; // 模拟 .data 初值
+    auto elf = build_minimal_elf(0x20000000, 0x20000001, data);
+    // patch p_paddr = flash LMA,与 p_vaddr(0x20000000)分离
+    uint32_t lma = 0x08001000;
+    std::memcpy(elf.data() + 52 + 12, &lma, 4);
+
+    auto result = load_elf(bus, elf);
+    ASSERT_TRUE(result.has_value());
+
+    // 初值在 flash LMA:startup CopyDataInit 从这里复制
+    auto flash_val = bus.read(0x08001000, Width::Word);
+    ASSERT_TRUE(flash_val.has_value());
+    EXPECT_EQ(*flash_val, 0xEFBEADDEu);
+
+    // SRAM(VMA)未被 elf_loader 写——模拟真实上电:SRAM=0,等 startup 复制
+    auto sram_val = bus.read(0x20000000, Width::Word);
+    ASSERT_TRUE(sram_val.has_value());
+    EXPECT_EQ(*sram_val, 0u);
+}
+
 TEST(ElfLoaderTest, PayloadTailLengthsWriteExactBytes) {
     for (size_t len = 1; len <= 5; ++len) {
         Bus bus;

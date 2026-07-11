@@ -4,6 +4,7 @@
 #include <QChar>
 #include <QLabel>
 #include <QLatin1Char>
+#include <QPushButton>
 #include <QString>
 #include <QVBoxLayout>
 
@@ -17,6 +18,15 @@ GpioPanel::GpioPanel(QWidget* parent) : QWidget(parent) {
     label_ = new QLabel;
     label_->setStyleSheet("font-family: monospace;");
     lay->addWidget(label_);
+
+    // PA0 input button (active-low): hold = press (drive IDR low), release =
+    // idle (drive IDR high). Forwarded to session.simulate_gpio_input. Useful
+    // for firmware that polls IDR (TAMCPP 2_button_control's ReadPin).
+    pa0_btn_ = new QPushButton("PA0 button — hold = press");
+    pa0_btn_->setCheckable(true);
+    lay->addWidget(pa0_btn_);
+    connect(pa0_btn_, &QPushButton::toggled, this,
+            [this](bool checked) { emit injectGpio('A', 0, !checked); });
 }
 
 void GpioPanel::refresh(const introspection::IntrospectionSnapshot& snap) {

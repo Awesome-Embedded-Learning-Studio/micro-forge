@@ -23,12 +23,20 @@
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QDockWidget>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QKeySequence>
 #include <QLabel>
+#include <QMenuBar>
+#include <QMimeData>
 #include <QPushButton>
 #include <QSettings>
 #include <QString>
 #include <QToolBar>
 #include <QTimer>
+#include <QUrl>
 
 #include <cstddef>
 #include <cstdint>
@@ -38,6 +46,21 @@ namespace micro_forge::gui {
 MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     : QMainWindow(parent) {
     setWindowTitle("micro-forge");
+    setAcceptDrops(true); // drag-and-drop an .elf/.bin onto the window to load it
+
+    // File menu: Open firmware via dialog — alternative to drag-and-drop /
+    // command-line. Reuses loadFirmware (stop, set path, rebuild, refresh).
+    auto* file_menu = menuBar()->addMenu(tr("&File"));
+    auto* open_action =
+        file_menu->addAction(tr("&Open firmware..."), this, [this]() {
+            const QString path = QFileDialog::getOpenFileName(
+                this, tr("Open firmware"), QString(),
+                tr("Firmware (*.elf *.bin);;All files (*)"));
+            if (!path.isEmpty()) {
+                loadFirmware(path);
+            }
+        });
+    open_action->setShortcut(QKeySequence::Open); // Ctrl+O
 
     session_.set_firmware(firmware_path.toStdString());
 
@@ -130,15 +153,28 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     connect(reset_btn, &QPushButton::clicked,
             this, &MainWindow::onResetClicked);
 
-    // A2 USART RX input: forward the serial panel's input to the session.
-    // (GPIO toggle buttons were removed — simulate_input writes the IDR, which
-    // the ODR-based display doesn't reflect and demo firmware doesn't read.)
+    // USART RX: forward the serial panel's input box to the session. Inject one
+    // byte at a time and run enough steps for the RXNE IRQ to consume it (the
+    // USART model has a single-slot DR — back-to-back injects with no run in
+    // between overwrite DR and lose bytes). Append CRLF so the firmware's line
+    // parser (main.cpp: waits for '\r'/'\n') fires handle_command.
     connect(serial_panel_, &panels::SerialPanel::inputSubmitted,
             this, [this](const QString& text) {
                 const auto bytes = text.toUtf8();
                 for (const char b : bytes) {
                     session_.inject_rx(static_cast<std::uint8_t>(b));
+                    session_.run(50'000);
                 }
+                session_.inject_rx('\r');
+                session_.run(50'000);
+                session_.inject_rx('\n');
+                session_.run(50'000);
+            });
+    // GPIO input injection (PA0 button in gpio_panel): firmware that polls IDR
+    // — e.g. TAMCPP 2_button_control's HAL_GPIO_ReadPin — sees the level.
+    connect(gpio_panel_, &panels::GpioPanel::injectGpio,
+            this, [this](char port, std::uint8_t pin, bool high) {
+                session_.simulate_gpio_input(port, pin, high);
             });
     // C4-mem: a new address → dump it immediately (don't wait for the tick).
     connect(memory_panel_, &panels::MemoryPanel::addr_changed,
@@ -267,6 +303,34 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     settings.setValue("geometry", saveGeometry());
     settings.setValue("windowState", saveState());
     QMainWindow::closeEvent(event);
+}
+
+void MainWindow::dragEnterEvent(QDragEnterEvent* event) {
+    if (event->mimeData()->hasUrls()) {
+        event->acceptProposedAction();
+    }
+}
+
+void MainWindow::dropEvent(QDropEvent* event) {
+    const auto urls = event->mimeData()->urls();
+    if (urls.isEmpty()) {
+        return;
+    }
+    const QString path = urls.first().toLocalFile();
+    if (path.isEmpty()) {
+        return;
+    }
+    loadFirmware(path);
+    event->acceptProposedAction();
+}
+
+void MainWindow::loadFirmware(const QString& path) {
+    running_ = false;
+    run_btn_->setText("Run");
+    timer_->stop();
+    session_.set_firmware(path.toStdString());
+    rebuildSession();
+    refreshFromSnapshot();
 }
 
 } // namespace micro_forge::gui

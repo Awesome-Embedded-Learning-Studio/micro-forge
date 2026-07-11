@@ -26,8 +26,16 @@ CPU::CPUExpected<void> CortexM3CPU::check_and_handle_interrupt() {
     // running exception's priority. An exception may pre-empt only if its
     // preemption-group priority is strictly smaller than the active one. This
     // (rather than an early return in handler mode) is what enables nesting.
+    //
+    // Thread mode uses 0xFF directly (NOT preempt_priority(0xFF)): that helper
+    // truncates to the preempt-group width (e.g. 0xF for 4-bit STM32F1), which
+    // equals the lowest-priority exception's preempt (e.g. SysTick at 0xF0 →
+    // 0xF). The strict `<` would then block that exception from preempting
+    // thread mode, violating ARMv7-M (thread is preempted by ANY exception).
+    // 0xFF is larger than any exception preempt (0..0xF), so all pending
+    // exceptions preempt thread mode; handler-mode nesting is unaffected.
     const uint8_t active_preempt =
-        preempt_priority(in_handler_mode_ ? current_priority_ : 0xFFu);
+        in_handler_mode_ ? preempt_priority(current_priority_) : 0xFFu;
 
     // Pick the highest-priority candidate across SysTick and external IRQs.
     bool take_systick = false;
@@ -86,6 +94,15 @@ CortexM3CPU::exception_entry_common(addr_t vector_addr, uint8_t new_priority) {
     // Save the priority we are suspending; restored on return. This stack is
     // what makes nested preemption return to the right active priority.
     active_priorities_.push_back(current_priority_);
+
+    // ITSTATE lives in xPSR on Cortex-M and the hardware-stacked xPSR restores
+    // it on exception return.  Our IT decoder keeps the remaining conditions
+    // out-of-band, so suspend them explicitly and start the handler outside
+    // any interrupted thread/handler IT block.
+    suspended_it_states_.push_back(
+        {std::move(it_conditions_), it_condition_pos_});
+    it_conditions_.clear();
+    it_condition_pos_ = 0;
 
     // Switch active stack to MSP for stacking. Handler mode always uses MSP;
     // if thread mode was on PSP, preserve PSP then load MSP. The active-SP
@@ -220,6 +237,18 @@ CPU::CPUExpected<void> CortexM3CPU::interrupt_return(data_t exc_return) {
         return std::unexpected{xpsr_val.error()};
     }
     xpsr_ = *xpsr_val;
+
+    // Restore the IT block interrupted by this exception.  This must happen
+    // before the resumed instruction is fetched; otherwise handler
+    // instructions consume the thread's conditions and conditional moves can
+    // become unconditional after return.
+    if (suspended_it_states_.empty()) {
+        return std::unexpected{CPUError::ExceptionReturnFault};
+    }
+    auto suspended_it = std::move(suspended_it_states_.back());
+    suspended_it_states_.pop_back();
+    it_conditions_ = std::move(suspended_it.conditions);
+    it_condition_pos_ = suspended_it.condition_pos;
 
     // Restore PC (clear Thumb bit). write_reg(15) writes R15 directly.
     if (auto r = write_reg(15, *pc_val & ~1u); !r) {

@@ -222,12 +222,23 @@ CPU::CPUExpected<void> CortexM3CPU::t16_pop(uint16_t insn) {
             it_conditions_.clear();
             it_condition_pos_ = 0;
             it_conditions_.reserve(static_cast<std::size_t>(count));
+            // ARMv7-M IT mask: bit3 is the count sentinel, bits below it encode
+            // THEN/ELSE per slot. countr_zero(mask) gives count, but slot i's
+            // THEN/ELSE bit is mask[4-i] (slot1→mask[3], slot2→mask[2], …), NOT
+            // mask[3-i]. Encoding proof (firstcond[0]=1):
+            //   itt ne=0xBF1C mask=0b1100 → slot1 mask[3]=1==1 THEN  → ne
+            //   ite ne=0xBF14 mask=0b0100 → slot1 mask[3]=0≠1   ELSE → eq
+            //   itee ne=0xBF12 mask=0b0010 → [ne,eq,eq]
+            // The old `1u<<(3-slot)` (mask[3-slot]) collapsed itt and ite (both
+            // have mask[2]=1) to the same [ne,ne], so ite's ELSE slot executed
+            // under the THEN condition — e.g. HAL_GPIO_ReadPin's
+            // `ite ne; movne r0,#1; moveq r0,#0` always returned 0.
             for (int slot = 0; slot < count; ++slot) {
                 if (slot == 0) {
                     it_conditions_.push_back(first_cond);
                     continue;
                 }
-                uint8_t bit = 1u << (3 - slot);
+                uint8_t bit = 1u << (4 - slot);
                 bool then_path = (mask & bit) != 0;
                 it_conditions_.push_back(then_path ? first_cond
                                                    : (first_cond ^ 1u));
@@ -259,11 +270,17 @@ CPU::CPUExpected<void> CortexM3CPU::t16_pop(uint16_t insn) {
         if (!v) {
             return std::unexpected{v.error()};
         }
-        auto res = write_pc(*v);
-        if (!res) {
-            return res;
+        // Commit SP BEFORE write_pc. pop {pc} of an EXC_RETURN magic makes
+        // write_pc() run interrupt_return(), which pops the 8-word exception
+        // frame starting at [sp+4]. Doing the SP writeback after write_pc
+        // instead clobbers interrupt_return's restored SP with the stale local
+        // sp (pre-+4), leaking 0x20 of stack every exception (e.g. every
+        // STM32F1 USART RXNE IRQ → line_buf drift → command parse fail).
+        auto wb = write_reg(13, sp + 4);
+        if (!wb) {
+            return wb;
         }
-        sp += 4;
+        return write_pc(*v);
     }
     auto wr = write_reg(13, sp);
     if (!wr) {

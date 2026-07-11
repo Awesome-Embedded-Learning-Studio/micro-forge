@@ -273,8 +273,16 @@ class CortexM3CPU : public CPU {
     // Probe mode state
     bool probe_mode_ = false;
     std::vector<std::tuple<addr_t, uint16_t, uint16_t>> missing_opcodes_;
+    struct ItState {
+        std::vector<uint8_t> conditions;
+        size_t condition_pos = 0;
+    };
     std::vector<uint8_t> it_conditions_;
     size_t it_condition_pos_ = 0;
+    // ITSTATE is part of xPSR on real Cortex-M hardware and is therefore
+    // preserved across exception entry/return.  The emulator represents it
+    // separately, so keep an explicit stack for nested exceptions.
+    std::vector<ItState> suspended_it_states_;
     std::optional<BusError> pending_bus_error_;
     std::optional<addr_t> pending_access_addr_;
     std::optional<Width> pending_access_width_;

@@ -57,6 +57,7 @@ CPU::CPUExpected<void> CortexM3CPU::reset() {
     active_priorities_.clear();
     it_conditions_.clear();
     it_condition_pos_ = 0;
+    suspended_it_states_.clear();
     current_status_ = State::Halted;
     cycles_ = 0;
     return {};
