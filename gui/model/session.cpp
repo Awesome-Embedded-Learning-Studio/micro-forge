@@ -5,6 +5,7 @@
 #include "tools/memory_dump.hpp"
 
 #include <cstdint>
+#include <cstdlib>
 #include <fstream>
 #include <iterator>
 
@@ -52,6 +53,16 @@ std::expected<void, std::string> Session::rebuild() {
                       : soc_->load_bin(0x08000000u, firmware_data_);
         if (!lr) {
             return std::unexpected("load failed: " + lr.error());
+        }
+    }
+
+    // P2.a WFI fast-forward (opt-in via env): lets WFI-based firmware run in
+    // real time in the GUI by skipping sleep straight to the next IRQ. Off
+    // by default — never affects busy-wait (HAL_Delay) firmware.
+    if (const char* ff = std::getenv("MICRO_FORGE_FAST_FORWARD")) {
+        std::string s(ff);
+        if (s == "1" || s == "on" || s == "true") {
+            soc_->set_fast_forward_enabled(true);
         }
     }
     return {};
