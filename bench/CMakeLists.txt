@@ -16,4 +16,23 @@ if(MICRO_FORGE_BUILD_BENCH)
     # Point the bench at the committed armcc/AC6 corpus.
     target_compile_definitions(micro-forge-bench PRIVATE
         MF_BENCH_FW_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../test/firmware/armcc")
+
+    # Google Benchmark — micro-benchmarks that localize the per-cycle cost
+    # breakdown (dispatch / bus / peripheral tick) which bench_sim.cpp only
+    # measures end-to-end with hand-rolled chrono. Fetched the same way test/
+    # pulls GoogleTest; GB's own tests/install are disabled so they never
+    # enter our build or ctest.
+    include(FetchContent)
+    FetchContent_Declare(
+        googlebenchmark
+        GIT_REPOSITORY https://github.com/google/benchmark.git
+        GIT_TAG        v1.9.0
+    )
+    set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googlebenchmark)
+
+    add_executable(micro-forge-bench-micro bench_micro.cpp)
+    target_link_libraries(micro-forge-bench-micro PRIVATE
+        micro_forge benchmark::benchmark)
 endif()

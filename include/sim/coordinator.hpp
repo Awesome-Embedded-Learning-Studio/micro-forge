@@ -22,7 +22,7 @@ class SimulationCoordinator {
   public:
     explicit SimulationCoordinator(VirtualClock clock);
 
-    void set_cpu(WeakPtr<cpu::CPU> cpu);
+    void set_cpu(cpu::CPU* cpu);
 
     // 注册外设及其所属时钟域（domain_index 由芯片配置层提供）
     void add_tickable(WeakPtr<periph::Device> dev, size_t domain_index);
@@ -36,7 +36,10 @@ class SimulationCoordinator {
     VirtualClock& clock() { return clock_; }
 
   private:
-    WeakPtr<cpu::CPU> cpu_;
+    cpu::CPU* cpu_ = nullptr; // raw ptr — the CPU outlives the coordinator
+                              // (both are SoC members; no reference cycle to
+                              // break). A WeakPtr here cost an IsValid +
+                              // control-block deref every step.
     VirtualClock clock_;
     std::vector<Tickable> tickables_;
     uint64_t last_cycles_ = 0;

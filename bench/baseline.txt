@@ -12,9 +12,15 @@
 #   warmup=800000 measure=8000000 reps=11, reported value = median of reps.
 # Established 2026-06-28 after the perf campaign (document/notes/019-021):
 #   +54/+57/+51% over the original Debug/-O0 baseline.
+# 2026-07-31 bump after JIT-readiness perf work (document/notes/045): the
+#   coordinator WeakPtr→raw-ptr + NVIC has_pending_irq cache — the 56% of
+#   end-to-end time a translation cache can't reach — cut per-step overhead
+#   roughly in half; end-to-end ~doubled (~50M ips, within 1.4× of the STM32
+#   72 MHz native rate). Values pinned at ~median×0.85 so the 15% tolerance
+#   absorbs WSL scheduling jitter (uart/tim dip to ~35M).
 #
 # tolerance: regression flagged when now/baseline < 1 - tolerance
 tolerance: 0.15
-gpio_iotoggle-O2 21500000
-uart_printf-O2   25500000
-tim_timebase-O2  25500000
+gpio_iotoggle-O2 50000000
+uart_printf-O2   37000000
+tim_timebase-O2  39000000

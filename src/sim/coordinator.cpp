@@ -5,8 +5,8 @@ namespace micro_forge::sim {
 SimulationCoordinator::SimulationCoordinator(VirtualClock clock)
     : clock_(std::move(clock)) {}
 
-void SimulationCoordinator::set_cpu(WeakPtr<cpu::CPU> cpu) {
-    cpu_ = std::move(cpu);
+void SimulationCoordinator::set_cpu(cpu::CPU* cpu) {
+    cpu_ = cpu;
 }
 
 void SimulationCoordinator::add_tickable(WeakPtr<periph::Device> dev,
@@ -15,7 +15,7 @@ void SimulationCoordinator::add_tickable(WeakPtr<periph::Device> dev,
 }
 
 cpu::CPU::CPUExpected<void> SimulationCoordinator::step() {
-    if (!cpu_.IsValid()) {
+    if (cpu_ == nullptr) {
         return std::unexpected(cpu::CPU::CPUError::NotRunning);
     }
 

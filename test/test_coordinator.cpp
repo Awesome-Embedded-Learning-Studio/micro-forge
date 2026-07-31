@@ -52,7 +52,7 @@ class CoordinatorTest : public ::testing::Test {
 
         VirtualClock clk(stm32f103_default_clocks);
         coordinator_ = std::make_unique<SimulationCoordinator>(std::move(clk));
-        coordinator_->set_cpu(cpu_->GetWeak());
+        coordinator_->set_cpu(cpu_.get());
     }
 
     memory::Bus bus_;

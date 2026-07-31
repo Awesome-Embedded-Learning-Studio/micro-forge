@@ -20,12 +20,13 @@ class NvicPeripheral : public Device {
 
     // Query API (CPU hot path — inline)
     bool has_pending_irq() const {
-        for (size_t i = 0; i < ispr_.size(); ++i) {
-            if (ispr_[i] & iser_[i]) {
-                return true;
-            }
-        }
-        return false;
+        // Polled every CPU step on the interrupt hot path (check_and_handle_
+        // interrupt). Reuse the highest_priority_pending_irq() cache —
+        // invalidated on every ISER/ICER/ISPR/ICPR/IPR mutation via
+        // invalidate_cache() — instead of re-scanning 8 ISPR/ISER words each
+        // step. 0xFF means "no enabled+pending IRQ", which is exactly the
+        // ispr & iser emptiness the scan computed; semantics identical.
+        return highest_priority_pending_irq() != 0xFF;
     }
 
     uint8_t highest_pending_irq() const {
