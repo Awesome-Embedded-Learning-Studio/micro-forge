@@ -56,16 +56,25 @@ std::expected<void, std::string> Session::rebuild() {
         }
     }
 
-    // P2.a WFI fast-forward (opt-in via env): lets WFI-based firmware run in
-    // real time in the GUI by skipping sleep straight to the next IRQ. Off
-    // by default — never affects busy-wait (HAL_Delay) firmware.
+    // P2.a WFI fast-forward: env (compat) OR checkbox (fast_forward_). The
+    // checkbox state persists across rebuild(); env is a one-shot default.
     if (const char* ff = std::getenv("MICRO_FORGE_FAST_FORWARD")) {
         std::string s(ff);
         if (s == "1" || s == "on" || s == "true") {
-            soc_->set_fast_forward_enabled(true);
+            fast_forward_ = true;
         }
     }
+    if (fast_forward_) {
+        soc_->set_fast_forward_enabled(true);
+    }
     return {};
+}
+
+void Session::set_fast_forward_enabled(bool on) {
+    fast_forward_ = on;
+    if (soc_) {
+        soc_->set_fast_forward_enabled(on);
+    }
 }
 
 void Session::run(std::size_t steps) {

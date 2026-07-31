@@ -20,6 +20,7 @@
 #include "cpu/cpu.hpp"
 
 #include <QByteArray>
+#include <QCheckBox>
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QDockWidget>
@@ -88,6 +89,14 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     speed_combo_->addItem(tr("100×"), 2000000);
     speed_combo_->setCurrentIndex(0);
     toolbar->addWidget(speed_combo_);
+    auto* ff_check = new QCheckBox(tr("Fast-forward WFI"));
+    ff_check->setToolTip(tr("Skip WFI sleep straight to the next IRQ (P2.a).\n"
+                            "Only affects firmware that uses WFI; busy-wait "
+                            "(HAL_Delay) is unaffected."));
+    toolbar->addWidget(ff_check);
+    connect(ff_check, &QCheckBox::toggled, this, [this](bool on) {
+        session_.set_fast_forward_enabled(on);
+    });
 
     // ── panels ──
     regs_panel_ = new panels::RegistersPanel;
