@@ -39,6 +39,11 @@ class CortexM3CPU : public CPU {
     CPUExpected<addr_t> set_pc(addr_t new_pc) override;
     CPUExpected<void> raise_irq(intr::intr_n_t irq_index) override;
     CPUExpected<ticks_t> cycles() const override;
+    // P2 fast-forward: bump cycles_ without stepping (see cpu.hpp).
+    CPUExpected<void> advance_cycles(ticks_t n) override {
+        cycles_ += n;
+        return {};
+    }
 
     void launch() noexcept { current_status_ = State::Running; };
 
@@ -54,6 +59,9 @@ class CortexM3CPU : public CPU {
     void set_vector_table_base(addr_t base) { vector_table_base_ = base; }
     void set_prigroup(uint8_t group) { prigroup_ = group & 0x7u; }
     bool in_handler_mode() const { return in_handler_mode_; }
+    // P2.a WFI fast-forward: true while suspended on WFI. The coordinator
+    // advances virtual time to the next exception to wake the CPU.
+    bool is_sleeping() const noexcept override { return sleeping_; }
     // Read-only accessors for the status / mask / stack registers. They back
     // the structured introspection snapshot (introspection::read_introspection) consumed
     // by both the CLI JSON serializer and the GUI dashboard (milestone 04).
@@ -255,6 +263,7 @@ class CortexM3CPU : public CPU {
     data_t msp_ = 0;
     data_t psp_ = 0;
     ticks_t cycles_ = 0;
+    bool sleeping_ = false; // WFI: suspend fetch until an exception arrives
 
     // Interrupt state
     periph::NvicPeripheral* nvic_ = nullptr;

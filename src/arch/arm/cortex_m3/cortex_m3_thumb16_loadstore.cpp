@@ -244,8 +244,15 @@ CPU::CPUExpected<void> CortexM3CPU::t16_pop(uint16_t insn) {
                                                    : (first_cond ^ 1u));
             }
         }
-        // Hints: NOP (0xBF00), YIELD, WFE, WFI, SEV
-        return {}; // treat all hints as NOP (old arm ended in break)
+        // Hints: NOP (0xBF00), YIELD, WFE, WFI (0xBF30), SEV.
+        // WFI suspends fetch until an enabled exception arrives — set the
+        // sleeping flag; step() stops fetching while set, and the coordinator
+        // fast-forwards virtual time to the next IRQ. Cortex-M3 treats WFI as
+        // definitive sleep (not a hint that may return early).
+        if (insn == 0xBF30u) {
+            sleeping_ = true;
+        }
+        return {};
     }
     // POP
     uint8_t rlist = reg_list(insn);

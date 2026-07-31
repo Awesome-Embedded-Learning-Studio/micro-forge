@@ -35,7 +35,16 @@ class SimulationCoordinator {
 
     VirtualClock& clock() { return clock_; }
 
+    // P2.a WFI fast-forward (emu_busy_wait_research / QEMU sleep=no / Simics
+    // hypersimulation): when enabled AND the CPU is asleep (WFI), skip ahead
+    // to the next pending exception instead of busy-stepping. Default OFF.
+    void set_fast_forward_enabled(bool on) noexcept { fast_forward_enabled_ = on; }
+    bool fast_forward_enabled() const noexcept { return fast_forward_enabled_; }
+
   private:
+    bool is_cpu_sleeping_() const noexcept; // P2.a: CPU suspended on WFI?
+
+    bool fast_forward_enabled_ = false;
     cpu::CPU* cpu_ = nullptr; // raw ptr — the CPU outlives the coordinator
                               // (both are SoC members; no reference cycle to
                               // break). A WeakPtr here cost an IsValid +

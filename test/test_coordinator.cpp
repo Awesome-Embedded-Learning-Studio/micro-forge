@@ -7,6 +7,7 @@
 #include "arch/arm/cortex_m3/cortex_m3.hpp"
 #include "cpu/cpu.hpp"
 #include "memory/bus.hpp"
+#include "memory/flat_memory.hpp"
 #include "util/weak_ptr/weak_ptr_factory.hpp"
 
 using namespace micro_forge;
@@ -39,6 +40,31 @@ class TickCounter : public periph::Device {
     uint64_t total_ticks_ = 0;
     uint64_t tick_call_count_ = 0;
     WeakPtrFactory<TickCounter> weak_factory_{this};
+};
+
+// Tickable that reports a pending event a fixed lead cycles ahead — the
+// fast-forward target. Records whether tick() fired (P2.a coordinator test).
+class ArmedTimer : public periph::Device {
+  public:
+    explicit ArmedTimer(uint64_t lead) : lead_(lead) {}
+    Expected<data_t> read(addr_t, Width) override {
+        return std::unexpected(BusError::Unmapped);
+    }
+    Expected<void> write(addr_t, data_t, Width) override {
+        return std::unexpected(BusError::Unmapped);
+    }
+    std::string_view name() const noexcept override { return "ArmedTimer"; }
+    void tick(uint64_t c) override { ticked_ = true; ticks_ += c; }
+    uint64_t cycles_until_next_event() const noexcept override { return lead_; }
+    bool ticked() const { return ticked_; }
+
+    WeakPtr<ArmedTimer> GetWeak() { return weak_factory_.GetWeakPtr(); }
+
+  private:
+    uint64_t lead_;
+    bool ticked_ = false;
+    uint64_t ticks_ = 0;
+    WeakPtrFactory<ArmedTimer> weak_factory_{this};
 };
 
 // ── 测试 ──
@@ -97,4 +123,35 @@ TEST_F(CoordinatorTest, NullDeviceDoesNotCrash) {
 
     // 不应崩溃
     (void)coordinator_->step();
+}
+
+TEST_F(CoordinatorTest, FastForwardSkipsWfiSleepToTimerEvent) {
+    // Inject WFI at 0x0.
+    memory::FlatMemory mem(4096);
+    ASSERT_TRUE(bus_.map(memory::region(0, 4096, mem.GetWeak())).has_value());
+    uint16_t wfi = 0xBF30;
+    ASSERT_TRUE(
+        mem.load(0, {reinterpret_cast<uint8_t*>(&wfi), sizeof(wfi)}).has_value());
+    (void)cpu_->set_pc(0);
+
+    ArmedTimer timer(1000);
+    coordinator_->add_tickable(timer.GetWeak(),
+                               domain_index(ClockDomain::Sysclk));
+    coordinator_->set_fast_forward_enabled(true);
+
+    // Step 1: CPU executes WFI → sleeping. (Normal step: +1 cycle, timer
+    // ticks once as on every step — that itself isn't the fast-forward signal.)
+    (void)coordinator_->step();
+    ASSERT_TRUE(cpu_->is_sleeping());
+
+    const uint64_t cycles_before = cpu_->cycles().value_or(0);
+    const uint64_t ns_before = coordinator_->clock().total_ns();
+
+    // Step 2: fast-forward — sleeping + armed timer → skip ~lead cycles to
+    // the timer event. A normal step advances +1; fast-forward jumps ~1000.
+    // (CPU wake needs a real exception source — covered by SoC WFI firmware, B.)
+    (void)coordinator_->step();
+
+    EXPECT_GT(cpu_->cycles().value_or(0), cycles_before + 100);
+    EXPECT_GT(coordinator_->clock().total_ns(), ns_before);
 }

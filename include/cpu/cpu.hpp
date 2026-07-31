@@ -49,5 +49,13 @@ struct CPU {
     virtual CPUExpected<void> raise_irq(intr::intr_n_t irq_index) = 0;
     /* CPU has ticks, so that is it! */
     virtual CPUExpected<ticks_t> cycles() const = 0;
+    // P2 fast-forward (emu_busy_wait_research): advance the cycle counter by
+    // n WITHOUT executing instructions. Lets the coordinator skip a busy-wait
+    // while keeping cpu cycles ↔ virtual-clock lockstep. Default no-op;
+    // Cortex-M3 overrides.
+    virtual CPUExpected<void> advance_cycles(ticks_t /*n*/) { return {}; }
+    // P2.a WFI fast-forward: true while suspended on WFI (definitive sleep,
+    // not a hint). Default false; Cortex-M3 overrides.
+    virtual bool is_sleeping() const noexcept { return false; }
 };
 } // namespace micro_forge::cpu

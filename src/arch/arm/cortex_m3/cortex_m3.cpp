@@ -364,7 +364,9 @@ CPU::CPUExpected<CortexM3CPU::StepFlow> CortexM3CPU::step_take_interrupt() {
     }
     if (active_priorities_.size() > depth_before) {
         // An exception entry consumed this step (covers first entry and
-        // preemption of a running handler).
+        // preemption of a running handler). Entering a handler also wakes
+        // the CPU from WFI.
+        sleeping_ = false;
         cycles_++;
         return StepFlow::Return;
     }
@@ -484,6 +486,13 @@ CPU::CPUExpected<void> CortexM3CPU::step() {
         return std::unexpected{irq.error()};
     }
     if (*irq == StepFlow::Return) {
+        return {};
+    }
+    if (sleeping_) {
+        // WFI: no exception is pending, so stay suspended — don't fetch. The
+        // coordinator advances virtual time to the next IRQ; without it, we
+        // burn one cycle per step until a timer fires.
+        cycles_++;
         return {};
     }
     return step_execute_one();
