@@ -39,6 +39,7 @@
 #include <QTimer>
 #include <QUrl>
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 
@@ -87,7 +88,8 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     speed_combo_->addItem(tr("5×"), 100000);
     speed_combo_->addItem(tr("25×"), 500000);
     speed_combo_->addItem(tr("100×"), 2000000);
-    speed_combo_->setCurrentIndex(3); // default 100× — 1× is too slow for busy-wait
+    speed_combo_->addItem(tr("Turbo"), 0); // 0 = time-budgeted (run until ~35ms elapsed)
+    speed_combo_->setCurrentIndex(4); // default Turbo — auto-scales to machine
     toolbar->addWidget(speed_combo_);
     auto* ff_check = new QCheckBox(tr("Fast-forward WFI"));
     ff_check->setToolTip(tr("Skip WFI sleep straight to the next IRQ (P2.a).\n"
@@ -96,15 +98,6 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     toolbar->addWidget(ff_check);
     connect(ff_check, &QCheckBox::toggled, this, [this](bool on) {
         session_.set_fast_forward_enabled(on);
-    });
-    auto* jit_check = new QCheckBox(tr("JIT cache"));
-    jit_check->setChecked(true); // on by default
-    jit_check->setToolTip(tr("Cache decoded instructions per PC (skip\n"
-                             "fetch+decode on repeat). +30-35% faster.\n"
-                             "Works for ALL firmware (16+32-bit)."));
-    toolbar->addWidget(jit_check);
-    connect(jit_check, &QCheckBox::toggled, this, [this](bool on) {
-        session_.set_jit_enabled(on);
     });
 
     // ── panels ──
@@ -261,7 +254,18 @@ void MainWindow::onTick() {
     if (running_ && session_.valid()) {
         const auto steps =
             static_cast<std::size_t>(speed_combo_->currentData().toInt());
-        session_.run(steps);
+        if (steps == 0) {
+            // Turbo: time-budgeted — run in batches until ~35ms elapsed,
+            // leaving ~15ms for UI refresh within the 50ms tick.
+            constexpr int kBatchSize = 500'000;
+            constexpr auto kBudget = std::chrono::milliseconds(35);
+            auto t0 = std::chrono::steady_clock::now();
+            do {
+                session_.run(kBatchSize);
+            } while (std::chrono::steady_clock::now() - t0 < kBudget);
+        } else {
+            session_.run(steps);
+        }
         refreshFromSnapshot();
     }
 }
