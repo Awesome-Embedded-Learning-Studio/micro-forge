@@ -81,6 +81,10 @@ class Stm32f103Soc {
             machine_.coord->set_fast_forward_enabled(on);
         }
     }
+    // JIT translation cache (16-bit Thumb): toggle {PC→handler} caching in
+    // the CPU. Default OFF; opt in to skip fetch+decode on repeat PCs.
+    // Defined in the .cpp (needs CortexM3CPU complete type).
+    void set_jit_enabled(bool on);
 
     Stm32f103Soc(const Stm32f103Soc&) = delete;
     Stm32f103Soc& operator=(const Stm32f103Soc&) = delete;

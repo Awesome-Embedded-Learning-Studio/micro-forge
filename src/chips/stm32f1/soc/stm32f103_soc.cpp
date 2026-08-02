@@ -177,6 +177,12 @@ Stm32f103Soc::load_elf(std::span<const uint8_t> data) {
     return {};
 }
 
+void Stm32f103Soc::set_jit_enabled(bool on) {
+    if (cortex_m3_.IsValid()) {
+        cortex_m3_->set_jit_enabled(on);
+    }
+}
+
 std::expected<void, std::string>
 Stm32f103Soc::load_bin(uint32_t base, std::span<const uint8_t> data) {
     auto r = machine_.load_bin(base, data);
