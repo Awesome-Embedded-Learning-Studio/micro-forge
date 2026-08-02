@@ -382,14 +382,16 @@ CPU::CPUExpected<void> CortexM3CPU::step_execute_one() {
     addr_t pc = *pc_res;
     pc_written_ = false; // an instruction may set this via write_reg(15)
 
-    // JIT translation cache (16-bit only): on hit, skip fetch16 +
-    // translate_16bit — dispatch the cached handler directly. IT block
-    // condition, pc_written, fault escalation all run exactly as the miss
-    // path below, just with hw1 from cache instead of fetch.
+    // JIT translation cache (unified 16/32-bit): on hit, skip fetch16 +
+    // translate — dispatch the cached handler directly. IT block condition,
+    // pc_written, fault escalation all run exactly as the miss path below.
     if (tcache_enabled_) {
         auto it = tcache_.find(pc);
         if (it != tcache_.end() && it->second.handler != nullptr) {
-            const uint16_t hit_hw1 = it->second.insn;
+            const auto& ci = it->second;
+            const uint16_t hit_hw1 = ci.hw1;
+            const uint16_t hit_hw2 = ci.hw2;
+            const bool hit_is32 = ci.is_32bit;
             bool execute_instruction = true;
             if (it_condition_pos_ < it_conditions_.size()) {
                 uint8_t it_cond = it_conditions_[it_condition_pos_++];
@@ -399,27 +401,39 @@ CPU::CPUExpected<void> CortexM3CPU::step_execute_one() {
                 }
                 execute_instruction = condition_need_execute(it_cond);
             }
-            MF_PERF_INC(instr_16bit);
+            if (hit_is32) {
+                MF_PERF_INC(instr_32bit);
+            } else {
+                MF_PERF_INC(instr_16bit);
+            }
             auto exec_res = execute_instruction
-                                ? (this->*it->second.handler)(hit_hw1, 0)
+                                ? (this->*ci.handler)(hit_hw1, hit_hw2)
                                 : CPUExpected<void>{};
             if (exec_res.has_value() && !pc_written_) {
-                auto wr = write_reg(15, pc + 2);
+                auto wr = write_reg(15, pc + (hit_is32 ? 4 : 2));
                 if (!wr) {
                     return wr;
                 }
             }
             if (!exec_res.has_value()) {
-                LOG_ERROR("fault", "PC=0x%08X opcode=0x%04X kind=%s", pc,
-                          hit_hw1, cpu_error_name(exec_res.error()));
+                if (hit_is32) {
+                    uint32_t insn32 = (static_cast<uint32_t>(hit_hw1) << 16) |
+                                      hit_hw2;
+                    LOG_ERROR("fault",
+                              "PC=0x%08X opcode=0x%08X kind=%s", pc, insn32,
+                              cpu_error_name(exec_res.error()));
+                } else {
+                    LOG_ERROR("fault", "PC=0x%08X opcode=0x%04X kind=%s",
+                              pc, hit_hw1, cpu_error_name(exec_res.error()));
+                }
                 if (probe_mode_) {
-                    missing_opcodes_.emplace_back(pc, hit_hw1, 0);
-                    auto wr = write_reg(15, pc + 2);
+                    missing_opcodes_.emplace_back(pc, hit_hw1, hit_hw2);
+                    auto wr = write_reg(15, pc + (hit_is32 ? 4 : 2));
                     if (!wr) {
                         return wr;
                     }
                 } else if (!try_escalate_fault(exec_res.error(), pc, hit_hw1,
-                                               0, false)) {
+                                               hit_hw2, hit_is32)) {
                     current_status_ = State::Faulted;
                     return exec_res;
                 }
@@ -478,6 +492,13 @@ CPU::CPUExpected<void> CortexM3CPU::step_execute_one() {
                 return wr;
             }
         }
+        // JIT: cache the decoded 32-bit insn for future hits at this PC.
+        if (tcache_enabled_ && exec_res.has_value()) {
+            auto h = translate_32bit(hw1, *hw2_res);
+            if (h != nullptr) {
+                tcache_[pc] = {h, hw1, *hw2_res, true};
+            }
+        }
     } else {
         MF_PERF_INC(instr_16bit);
         exec_res =
@@ -489,12 +510,10 @@ CPU::CPUExpected<void> CortexM3CPU::step_execute_one() {
             }
         }
         // JIT: cache the decoded 16-bit insn for future hits at this PC.
-        // translate_16bit re-runs the same dispatch execute_16bit just did
-        // internally — cheap relative to the fetch16 we'll skip on every hit.
         if (tcache_enabled_ && exec_res.has_value()) {
             auto h = translate_16bit(hw1);
             if (h != nullptr) {
-                tcache_[pc] = {h, hw1};
+                tcache_[pc] = {h, hw1, 0, false};
             }
         }
     }

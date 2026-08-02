@@ -331,7 +331,9 @@ class CortexM3CPU : public CPU {
     // JIT translation cache (16-bit Thumb): PC → {handler, insn}.
     struct CachedInsn {
         Handler16 handler;
-        uint16_t insn;
+        uint16_t hw1;
+        uint16_t hw2;     // 0 for 16-bit
+        bool is_32bit;    // false for 16-bit
     };
     std::unordered_map<addr_t, CachedInsn> tcache_;
     bool tcache_enabled_ = false;
