@@ -19,7 +19,7 @@ using namespace thumb;
 // can't).
 
 // Sign/zero extend byte/halfword (0xB200): SXTH/SXTB/UXTH/UXTB.
-CPU::CPUExpected<void> CortexM3CPU::t16_extend(uint16_t insn) {
+CPU::CPUExpected<void> CortexM3CPU::t16_extend(uint16_t insn, uint16_t) {
     uint8_t rm = (insn >> 3) & 0x7u;
     uint8_t rd = insn & 0x7u;
     uint8_t op = (insn >> 6) & 0x3u;
@@ -40,7 +40,7 @@ CPU::CPUExpected<void> CortexM3CPU::t16_extend(uint16_t insn) {
 }
 
 // Byte-reversal (0xBA00): REV/REV16/REVSH.
-CPU::CPUExpected<void> CortexM3CPU::t16_reverse(uint16_t insn) {
+CPU::CPUExpected<void> CortexM3CPU::t16_reverse(uint16_t insn, uint16_t) {
     uint8_t rm = (insn >> 3) & 0x7u;
     uint8_t rd = insn & 0x7u;
     uint8_t op = (insn >> 6) & 0x3u;
@@ -66,7 +66,7 @@ CPU::CPUExpected<void> CortexM3CPU::t16_reverse(uint16_t insn) {
 }
 
 // Shift immediate (0b00000-0b00010): LSL/LSR/ASR #imm.
-CPU::CPUExpected<void> CortexM3CPU::t16_shift_imm(uint16_t insn) {
+CPU::CPUExpected<void> CortexM3CPU::t16_shift_imm(uint16_t insn, uint16_t) {
     uint8_t op = (insn >> 11) & 0x3; // 0=LSL, 1=LSR, 2=ASR
     uint8_t imm = imm5(insn);
     uint8_t rm = rn3(insn);
@@ -91,7 +91,7 @@ CPU::CPUExpected<void> CortexM3CPU::t16_shift_imm(uint16_t insn) {
 }
 
 // Add/subtract register or 3-bit immediate (0b00011).
-CPU::CPUExpected<void> CortexM3CPU::t16_addsub_reg3(uint16_t insn) {
+CPU::CPUExpected<void> CortexM3CPU::t16_addsub_reg3(uint16_t insn, uint16_t) {
     bool is_imm = (insn >> 10) & 0x1;
     bool is_sub = (insn >> 9) & 0x1;
     uint8_t rm_or_imm = rm3(insn);
@@ -110,7 +110,7 @@ CPU::CPUExpected<void> CortexM3CPU::t16_addsub_reg3(uint16_t insn) {
 }
 
 // MOVS/CMP/ADDS/SUBS Rd, imm8 (0b00100-0b00111).
-CPU::CPUExpected<void> CortexM3CPU::t16_imm8_dataops(uint16_t insn) {
+CPU::CPUExpected<void> CortexM3CPU::t16_imm8_dataops(uint16_t insn, uint16_t) {
     switch (decode_key(insn)) {
         // MOVS Rd, imm8
         case 0b00100: {
@@ -151,7 +151,7 @@ CPU::CPUExpected<void> CortexM3CPU::t16_imm8_dataops(uint16_t insn) {
 }
 
 // Special data instructions / BX (0b01000, bit10=1): ADD/CMP/MOV high, BX/BLX.
-CPU::CPUExpected<void> CortexM3CPU::t16_special_bx(uint16_t insn) {
+CPU::CPUExpected<void> CortexM3CPU::t16_special_bx(uint16_t insn, uint16_t) {
     uint8_t op = (insn >> 8) & 0x3;
     uint8_t rm = rm4(insn);
     uint8_t rd = rd4(insn);
@@ -188,7 +188,7 @@ CPU::CPUExpected<void> CortexM3CPU::t16_special_bx(uint16_t insn) {
 
 // Data processing register (0b01000, bit10=0): AND/EOR/shift-reg/ADC/SBC/
 // ROR/TST/RSB/CMN/ORR/MUL/BIC/MVN.
-CPU::CPUExpected<void> CortexM3CPU::t16_dataproc_reg(uint16_t insn) {
+CPU::CPUExpected<void> CortexM3CPU::t16_dataproc_reg(uint16_t insn, uint16_t) {
     // op=bits[9:6], Rm/Rs=bits[5:3], Rdn/Rd=bits[2:0].
     // (rm3() reads bits[8:6], which is the store-reg-offset Rm field,
     //  NOT the data-proc Rm — that was the bug.)

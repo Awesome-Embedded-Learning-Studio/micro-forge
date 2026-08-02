@@ -16,7 +16,7 @@ using namespace thumb;
 // rr/wr/br/bw are the shared member accessors.
 
 // LDR literal (PC-relative) (0b01001).
-CPU::CPUExpected<void> CortexM3CPU::t16_ldr_literal(uint16_t insn) {
+CPU::CPUExpected<void> CortexM3CPU::t16_ldr_literal(uint16_t insn, uint16_t) {
     uint8_t rt = rd8(insn);
     addr_t addr = ((rr(15) + 4) & ~0x3u) + imm8(insn) * 4;
     auto val = br(addr, Width::Word);
@@ -28,7 +28,7 @@ CPU::CPUExpected<void> CortexM3CPU::t16_ldr_literal(uint16_t insn) {
 
 // Load/store register offset (0b01010 STR/STRH/STRB/LDRSB, 0b01011 LDR/LDRH/
 // LDRB/LDRSH). op = bits[10:9].
-CPU::CPUExpected<void> CortexM3CPU::t16_loadstore_reg_offset(uint16_t insn) {
+CPU::CPUExpected<void> CortexM3CPU::t16_loadstore_reg_offset(uint16_t insn, uint16_t) {
     uint8_t op = (insn >> 9) & 0x3;
     uint8_t rm = rm3(insn), rn = rn3(insn), rt = rd3(insn);
     addr_t addr = rr(rn) + rr(rm);
@@ -93,7 +93,7 @@ CPU::CPUExpected<void> CortexM3CPU::t16_loadstore_reg_offset(uint16_t insn) {
 }
 
 // Load/store immediate offset (0b01100-0b10001): STR/LDR/STRB/LDRB/STRH/LDRH.
-CPU::CPUExpected<void> CortexM3CPU::t16_loadstore_imm_offset(uint16_t insn) {
+CPU::CPUExpected<void> CortexM3CPU::t16_loadstore_imm_offset(uint16_t insn, uint16_t) {
     switch (decode_key(insn)) {
         // STR word immediate offset
         case 0b01100: {
@@ -142,7 +142,7 @@ CPU::CPUExpected<void> CortexM3CPU::t16_loadstore_imm_offset(uint16_t insn) {
 }
 
 // Load/store SP-relative (0b10010 STR, 0b10011 LDR).
-CPU::CPUExpected<void> CortexM3CPU::t16_loadstore_sp_rel(uint16_t insn) {
+CPU::CPUExpected<void> CortexM3CPU::t16_loadstore_sp_rel(uint16_t insn, uint16_t) {
     switch (decode_key(insn)) {
         // STR SP-relative
         case 0b10010: {
@@ -164,7 +164,7 @@ CPU::CPUExpected<void> CortexM3CPU::t16_loadstore_sp_rel(uint16_t insn) {
 
 // PUSH / ADD SP / SUB SP (0b10110).
 // bits[10:9]=00 → ADD/SUB SP, SP, #imm7<<2; bits[10:9]=10 → PUSH.
-CPU::CPUExpected<void> CortexM3CPU::t16_push(uint16_t insn) {
+CPU::CPUExpected<void> CortexM3CPU::t16_push(uint16_t insn, uint16_t) {
     uint8_t sub_op = (insn >> 9) & 0x3;
     if (sub_op == 0b00) {
         // ADD/SUB SP, SP, #imm7<<2
@@ -204,7 +204,7 @@ CPU::CPUExpected<void> CortexM3CPU::t16_push(uint16_t insn) {
 }
 
 // POP / Hints (0b10111). bits[10:9]=10 → POP; bits[10:9]=11 → hints/BKPT/IT.
-CPU::CPUExpected<void> CortexM3CPU::t16_pop(uint16_t insn) {
+CPU::CPUExpected<void> CortexM3CPU::t16_pop(uint16_t insn, uint16_t) {
     uint8_t sub_op = (insn >> 9) & 0x3;
     if (sub_op == 0b11) {
         // BKPT #imm8 (0xBExx): no debugger attached → HardFault.
@@ -297,7 +297,7 @@ CPU::CPUExpected<void> CortexM3CPU::t16_pop(uint16_t insn) {
 }
 
 // STMIA / LDMIA (0b11000 / 0b11001).
-CPU::CPUExpected<void> CortexM3CPU::t16_stm_ldm(uint16_t insn) {
+CPU::CPUExpected<void> CortexM3CPU::t16_stm_ldm(uint16_t insn, uint16_t) {
     switch (decode_key(insn)) {
         // STMIA Rd!, <reg_list>
         case 0b11000: {

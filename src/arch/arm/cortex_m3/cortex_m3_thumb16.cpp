@@ -21,7 +21,7 @@ using namespace thumb;
 // dispatch becomes a pure handler binding). Bodies are byte-identical to the
 // former inline blocks — only moved into named functions. ──
 
-CPU::CPUExpected<void> CortexM3CPU::t16_cps(uint16_t insn) { // CPSIE/CPSID
+CPU::CPUExpected<void> CortexM3CPU::t16_cps(uint16_t insn, uint16_t) { // CPSIE/CPSID
     bool disable = (insn >> 4) & 1u;
     if (insn & 0x2u) { // i → PRIMASK
         if (disable) {
@@ -40,7 +40,7 @@ CPU::CPUExpected<void> CortexM3CPU::t16_cps(uint16_t insn) { // CPSIE/CPSID
     return {};
 }
 
-CPU::CPUExpected<void> CortexM3CPU::t16_cbz(uint16_t insn) { // CBZ/CBNZ
+CPU::CPUExpected<void> CortexM3CPU::t16_cbz(uint16_t insn, uint16_t) { // CBZ/CBNZ
     uint8_t rn = insn & 0x7u;
     bool non_zero = insn & 0x0800u;
     uint32_t offset =
@@ -56,7 +56,7 @@ CPU::CPUExpected<void> CortexM3CPU::t16_cbz(uint16_t insn) { // CBZ/CBNZ
     return {};
 }
 
-CPU::CPUExpected<void> CortexM3CPU::t16_adr(uint16_t insn) { // ADR (PC-relative)
+CPU::CPUExpected<void> CortexM3CPU::t16_adr(uint16_t insn, uint16_t) { // ADR (PC-relative)
     uint8_t rd = rd8(insn);
     auto pc_res = read_pc_raw();
     if (!pc_res) {
@@ -66,11 +66,11 @@ CPU::CPUExpected<void> CortexM3CPU::t16_adr(uint16_t insn) { // ADR (PC-relative
     return wr(rd, base + imm8(insn) * 4u);
 }
 
-CPU::CPUExpected<void> CortexM3CPU::t16_add_sp(uint16_t insn) { // ADD Rd, SP
+CPU::CPUExpected<void> CortexM3CPU::t16_add_sp(uint16_t insn, uint16_t) { // ADD Rd, SP
     return wr(rd8(insn), rr(13) + imm8(insn) * 4u);
 }
 
-CPU::CPUExpected<void> CortexM3CPU::t16_b_cond(uint16_t insn) { // B<cond>
+CPU::CPUExpected<void> CortexM3CPU::t16_b_cond(uint16_t insn, uint16_t) { // B<cond>
     uint8_t c = cond(insn);
     if (c == 0xE) {
         return std::unexpected{CPUError::IllegalInstruction};
@@ -98,7 +98,7 @@ CPU::CPUExpected<void> CortexM3CPU::t16_b_cond(uint16_t insn) { // B<cond>
     return {};
 }
 
-CPU::CPUExpected<void> CortexM3CPU::t16_b(uint16_t insn) { // B (unconditional)
+CPU::CPUExpected<void> CortexM3CPU::t16_b(uint16_t insn, uint16_t) { // B (unconditional)
     int32_t offset = static_cast<int16_t>(imm11(insn) << 5) >> 5;
     offset <<= 1;
     auto pc_res = read_pc_raw();
@@ -155,7 +155,7 @@ CPU::CPUExpected<void> CortexM3CPU::execute_16bit(uint16_t insn) {
     if (h == nullptr) {
         return std::unexpected{CPUError::IllegalInstruction};
     }
-    return (this->*h)(insn);
+    return (this->*h)(insn, 0);
 }
 
 } // namespace micro_forge::cpu::arm::cortex_m3

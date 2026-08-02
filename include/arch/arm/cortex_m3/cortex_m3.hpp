@@ -112,36 +112,36 @@ class CortexM3CPU : public CPU {
     // (the same dispatch execute_16bit uses, but returns the handler instead
     // of calling it). nullptr = illegal opcode. Lets a translation cache
     // bind {PC → handler} once and skip the fetch+decode on hit.
-    using Handler16 = CPUExpected<void> (CortexM3CPU::*)(uint16_t);
+    using Handler16 = CPUExpected<void> (CortexM3CPU::*)(uint16_t, uint16_t);
     Handler16 translate_16bit(uint16_t insn) const noexcept;
     // 16-bit Thumb family handlers — split out of execute_16bit so no single
     // translation unit exceeds the DIRECTIVES 700-line cap. Each returns the
     // result of its (prefix-/decode_key-matched) block; execute_16bit
     // dispatches. The extend/reverse prefix probes run *before* the decode_key
     // switch — that order is load-bearing (see OPEN GOTCHAS).
-    CPUExpected<void> t16_extend(uint16_t insn);
-    CPUExpected<void> t16_reverse(uint16_t insn);
+    CPUExpected<void> t16_extend(uint16_t insn, uint16_t);
+    CPUExpected<void> t16_reverse(uint16_t insn, uint16_t);
     // Inline cases lifted out of execute_16bit's switch so the dispatch path
     // is a pure handler binding (JIT translate reuses it). Semantics identical
     // to the former inline blocks — only moved into named functions.
-    CPUExpected<void> t16_cps(uint16_t insn);      // CPSIE/CPSID (0xB660)
-    CPUExpected<void> t16_cbz(uint16_t insn);      // CBZ/CBNZ    (0xB100)
-    CPUExpected<void> t16_adr(uint16_t insn);      // ADR         (0b10100)
-    CPUExpected<void> t16_add_sp(uint16_t insn);   // ADD Rd,SP   (0b10101)
-    CPUExpected<void> t16_b_cond(uint16_t insn);   // B<cond>     (0b11010/11011)
-    CPUExpected<void> t16_b(uint16_t insn);        // B           (0b11100)
-    CPUExpected<void> t16_shift_imm(uint16_t insn);
-    CPUExpected<void> t16_addsub_reg3(uint16_t insn);
-    CPUExpected<void> t16_imm8_dataops(uint16_t insn);
-    CPUExpected<void> t16_special_bx(uint16_t insn);
-    CPUExpected<void> t16_dataproc_reg(uint16_t insn);
-    CPUExpected<void> t16_ldr_literal(uint16_t insn);
-    CPUExpected<void> t16_loadstore_reg_offset(uint16_t insn);
-    CPUExpected<void> t16_loadstore_imm_offset(uint16_t insn);
-    CPUExpected<void> t16_loadstore_sp_rel(uint16_t insn);
-    CPUExpected<void> t16_push(uint16_t insn);
-    CPUExpected<void> t16_pop(uint16_t insn);
-    CPUExpected<void> t16_stm_ldm(uint16_t insn);
+    CPUExpected<void> t16_cps(uint16_t insn, uint16_t);      // CPSIE/CPSID (0xB660)
+    CPUExpected<void> t16_cbz(uint16_t insn, uint16_t);      // CBZ/CBNZ    (0xB100)
+    CPUExpected<void> t16_adr(uint16_t insn, uint16_t);      // ADR         (0b10100)
+    CPUExpected<void> t16_add_sp(uint16_t insn, uint16_t);   // ADD Rd,SP   (0b10101)
+    CPUExpected<void> t16_b_cond(uint16_t insn, uint16_t);   // B<cond>     (0b11010/11011)
+    CPUExpected<void> t16_b(uint16_t insn, uint16_t);        // B           (0b11100)
+    CPUExpected<void> t16_shift_imm(uint16_t insn, uint16_t);
+    CPUExpected<void> t16_addsub_reg3(uint16_t insn, uint16_t);
+    CPUExpected<void> t16_imm8_dataops(uint16_t insn, uint16_t);
+    CPUExpected<void> t16_special_bx(uint16_t insn, uint16_t);
+    CPUExpected<void> t16_dataproc_reg(uint16_t insn, uint16_t);
+    CPUExpected<void> t16_ldr_literal(uint16_t insn, uint16_t);
+    CPUExpected<void> t16_loadstore_reg_offset(uint16_t insn, uint16_t);
+    CPUExpected<void> t16_loadstore_imm_offset(uint16_t insn, uint16_t);
+    CPUExpected<void> t16_loadstore_sp_rel(uint16_t insn, uint16_t);
+    CPUExpected<void> t16_push(uint16_t insn, uint16_t);
+    CPUExpected<void> t16_pop(uint16_t insn, uint16_t);
+    CPUExpected<void> t16_stm_ldm(uint16_t insn, uint16_t);
     // 32-bit Thumb-2 family handlers — split out of execute_32bit so no single
     // translation unit exceeds the DIRECTIVES 700-line cap. Each returns the
     // result of its (already mask-matched) block; execute_32bit dispatches.

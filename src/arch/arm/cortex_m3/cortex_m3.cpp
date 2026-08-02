@@ -401,7 +401,7 @@ CPU::CPUExpected<void> CortexM3CPU::step_execute_one() {
             }
             MF_PERF_INC(instr_16bit);
             auto exec_res = execute_instruction
-                                ? (this->*it->second.handler)(hit_hw1)
+                                ? (this->*it->second.handler)(hit_hw1, 0)
                                 : CPUExpected<void>{};
             if (exec_res.has_value() && !pc_written_) {
                 auto wr = write_reg(15, pc + 2);
