@@ -17,175 +17,145 @@ using namespace thumb;
 // (small, neither dataproc nor load/store). rr/wr/br/bw are the shared member
 // accessors (cortex_m3_thumb32.cpp).
 
-CPU::CPUExpected<void> CortexM3CPU::execute_16bit(uint16_t insn) {
-    // ── CPS effect {i,f}: CPSIE (enable) / CPSID (disable) ──
-    // 0xB66x (CPSIE) / 0xB67x (CPSID); bit4 = 0/1 (enable/disable),
-    // bit1 = i (PRIMASK), bit0 = f (FAULTMASK). The old 0xFFF0 mask ignored
-    // bit[1:0], so cpsie/cpsid f silently acted on PRIMASK, not FAULTMASK.
-    if ((insn & 0xFFE0u) == 0xB660u) {
-        bool disable = (insn >> 4) & 1u;
-        if (insn & 0x2u) { // i → PRIMASK
-            if (disable) {
-                primask_ |= 1u;
-            } else {
-                primask_ &= ~1u;
-            }
+// ── Inline cases lifted out of execute_16bit (Step 1 of JIT translate:
+// dispatch becomes a pure handler binding). Bodies are byte-identical to the
+// former inline blocks — only moved into named functions. ──
+
+CPU::CPUExpected<void> CortexM3CPU::t16_cps(uint16_t insn) { // CPSIE/CPSID
+    bool disable = (insn >> 4) & 1u;
+    if (insn & 0x2u) { // i → PRIMASK
+        if (disable) {
+            primask_ |= 1u;
+        } else {
+            primask_ &= ~1u;
         }
-        if (insn & 0x1u) { // f → FAULTMASK
-            if (disable) {
-                faultmask_ |= 1u;
-            } else {
-                faultmask_ &= ~1u;
-            }
-        }
-        return {};
     }
-
-    // ── Compare and branch on zero/non-zero (CBZ / CBNZ) ──
-    // Encoding: 1011 op 0 i 1 imm5 Rn
-    if ((insn & 0xF500u) == 0xB100u) {
-        uint8_t rn = insn & 0x7u;
-        bool non_zero = insn & 0x0800u;
-        uint32_t offset =
-            (((insn >> 9) & 0x1u) << 6) | (((insn >> 3) & 0x1Fu) << 1);
-        bool branch = non_zero ? (rr(rn) != 0) : (rr(rn) == 0);
-        if (branch) {
-            auto pc_res = read_pc_raw();
-            if (!pc_res) {
-                return std::unexpected{pc_res.error()};
-            }
-            return write_reg(15, *pc_res + 4 + offset);
+    if (insn & 0x1u) { // f → FAULTMASK
+        if (disable) {
+            faultmask_ |= 1u;
+        } else {
+            faultmask_ &= ~1u;
         }
-        return {};
-    }
-
-    // ── Prefix probes BEFORE the decode_key switch (load-bearing order) ──
-    if ((insn & 0xFF00u) == 0xB200u) {
-        return t16_extend(insn); // SXTH/SXTB/UXTH/UXTB
-    }
-    if ((insn & 0xFF00u) == 0xBA00u) {
-        return t16_reverse(insn); // REV/REV16/REVSH
-    }
-
-    switch (decode_key(insn)) {
-        // ── Shift immediate (LSL/LSR/ASR) ──
-        case 0b00000:
-        case 0b00001:
-        case 0b00010:
-            return t16_shift_imm(insn);
-
-        // ── Add/subtract register or 3-bit immediate ──
-        case 0b00011:
-            return t16_addsub_reg3(insn);
-
-        // ── MOVS/CMP/ADDS/SUBS Rd, imm8 ──
-        case 0b00100:
-        case 0b00101:
-        case 0b00110:
-        case 0b00111:
-            return t16_imm8_dataops(insn);
-
-        // ── Special data / BX (bit10=1) OR Data processing register (bit10=0)
-        // ──
-        case 0b01000:
-            return ((insn >> 10) & 1) ? t16_special_bx(insn)
-                                      : t16_dataproc_reg(insn);
-
-        // ── LDR literal (PC-relative) ──
-        case 0b01001:
-            return t16_ldr_literal(insn);
-
-        // ── Load/store register offset ──
-        case 0b01010:
-        case 0b01011:
-            return t16_loadstore_reg_offset(insn);
-
-        // ── Load/store immediate offset ──
-        case 0b01100:
-        case 0b01101:
-        case 0b01110:
-        case 0b01111:
-        case 0b10000:
-        case 0b10001:
-            return t16_loadstore_imm_offset(insn);
-
-        // ── Load/store SP-relative ──
-        case 0b10010:
-        case 0b10011:
-            return t16_loadstore_sp_rel(insn);
-
-        // ── ADR / ADD Rd, SP, #imm8*4 ──
-        // 1010 0 ddd iiiiiiii → ADR: Rd = Align(PC+4, 4) + imm*4
-        // 1010 1 ddd iiiiiiii → ADD Rd, SP, #imm*4
-        case 0b10100: { // ADR (PC-relative)
-            uint8_t rd = rd8(insn);
-            auto pc_res = read_pc_raw();
-            if (!pc_res) {
-                return std::unexpected{pc_res.error()};
-            }
-            uint32_t base = (*pc_res + 4u) & ~3u;
-            return wr(rd, base + imm8(insn) * 4u);
-        }
-        case 0b10101: { // ADD Rd, SP, #imm*4
-            return wr(rd8(insn), rr(13) + imm8(insn) * 4u);
-        }
-
-        // ── PUSH / POP ──
-        case 0b10110:
-            return t16_push(insn);
-        case 0b10111:
-            return t16_pop(insn);
-
-        // ── STMIA / LDMIA ──
-        case 0b11000:
-        case 0b11001:
-            return t16_stm_ldm(insn);
-
-        // ── Conditional branch B<cond> ──
-        case 0b11010:
-        case 0b11011: {
-            uint8_t c = cond(insn);
-            if (c == 0xE) {
-                return std::unexpected{CPUError::IllegalInstruction};
-            }
-            if (c == 0xF) {
-                auto pc_res = read_pc_raw();
-                if (!pc_res) {
-                    return std::unexpected{pc_res.error()};
-                }
-                auto pc_write = write_reg(15, *pc_res + 2);
-                if (!pc_write) {
-                    return pc_write;
-                }
-                return interrupt_entry_system(11);
-            }
-            if (condition_need_execute(c)) {
-                int32_t offset = static_cast<int8_t>(imm8(insn));
-                offset <<= 1;
-                auto pc_res = read_pc_raw();
-                if (!pc_res) {
-                    return std::unexpected{pc_res.error()};
-                }
-                return write_reg(15, *pc_res + 4 + offset);
-            }
-            break; // condition false → fall through to return {}
-        }
-
-        // ── B unconditional ──
-        case 0b11100: {
-            int32_t offset = static_cast<int16_t>(imm11(insn) << 5) >> 5;
-            offset <<= 1;
-            auto pc_res = read_pc_raw();
-            if (!pc_res) {
-                return std::unexpected{pc_res.error()};
-            }
-            return write_reg(15, *pc_res + 4 + offset);
-        }
-
-        default:
-            return std::unexpected{CPUError::IllegalInstruction};
     }
     return {};
+}
+
+CPU::CPUExpected<void> CortexM3CPU::t16_cbz(uint16_t insn) { // CBZ/CBNZ
+    uint8_t rn = insn & 0x7u;
+    bool non_zero = insn & 0x0800u;
+    uint32_t offset =
+        (((insn >> 9) & 0x1u) << 6) | (((insn >> 3) & 0x1Fu) << 1);
+    bool branch = non_zero ? (rr(rn) != 0) : (rr(rn) == 0);
+    if (branch) {
+        auto pc_res = read_pc_raw();
+        if (!pc_res) {
+            return std::unexpected{pc_res.error()};
+        }
+        return write_reg(15, *pc_res + 4 + offset);
+    }
+    return {};
+}
+
+CPU::CPUExpected<void> CortexM3CPU::t16_adr(uint16_t insn) { // ADR (PC-relative)
+    uint8_t rd = rd8(insn);
+    auto pc_res = read_pc_raw();
+    if (!pc_res) {
+        return std::unexpected{pc_res.error()};
+    }
+    uint32_t base = (*pc_res + 4u) & ~3u;
+    return wr(rd, base + imm8(insn) * 4u);
+}
+
+CPU::CPUExpected<void> CortexM3CPU::t16_add_sp(uint16_t insn) { // ADD Rd, SP
+    return wr(rd8(insn), rr(13) + imm8(insn) * 4u);
+}
+
+CPU::CPUExpected<void> CortexM3CPU::t16_b_cond(uint16_t insn) { // B<cond>
+    uint8_t c = cond(insn);
+    if (c == 0xE) {
+        return std::unexpected{CPUError::IllegalInstruction};
+    }
+    if (c == 0xF) {
+        auto pc_res = read_pc_raw();
+        if (!pc_res) {
+            return std::unexpected{pc_res.error()};
+        }
+        auto pc_write = write_reg(15, *pc_res + 2);
+        if (!pc_write) {
+            return pc_write;
+        }
+        return interrupt_entry_system(11);
+    }
+    if (condition_need_execute(c)) {
+        int32_t offset = static_cast<int8_t>(imm8(insn));
+        offset <<= 1;
+        auto pc_res = read_pc_raw();
+        if (!pc_res) {
+            return std::unexpected{pc_res.error()};
+        }
+        return write_reg(15, *pc_res + 4 + offset);
+    }
+    return {};
+}
+
+CPU::CPUExpected<void> CortexM3CPU::t16_b(uint16_t insn) { // B (unconditional)
+    int32_t offset = static_cast<int16_t>(imm11(insn) << 5) >> 5;
+    offset <<= 1;
+    auto pc_res = read_pc_raw();
+    if (!pc_res) {
+        return std::unexpected{pc_res.error()};
+    }
+    return write_reg(15, *pc_res + 4 + offset);
+}
+
+CortexM3CPU::Handler16
+CortexM3CPU::translate_16bit(uint16_t insn) const noexcept {
+    // Same dispatch as execute_16bit, but returns the handler instead of
+    // calling it. nullptr = illegal opcode. A translation cache binds
+    // {PC → handler} once and skips fetch+decode on hit (JIT). Prefix-probe
+    // order is load-bearing (CPS/CBZ/extend/reverse before decode_key).
+    if ((insn & 0xFFE0u) == 0xB660u) return &CortexM3CPU::t16_cps;
+    if ((insn & 0xF500u) == 0xB100u) return &CortexM3CPU::t16_cbz;
+    if ((insn & 0xFF00u) == 0xB200u) return &CortexM3CPU::t16_extend;
+    if ((insn & 0xFF00u) == 0xBA00u) return &CortexM3CPU::t16_reverse;
+    switch (decode_key(insn)) {
+        case 0b00000: case 0b00001: case 0b00010:
+            return &CortexM3CPU::t16_shift_imm;
+        case 0b00011:
+            return &CortexM3CPU::t16_addsub_reg3;
+        case 0b00100: case 0b00101: case 0b00110: case 0b00111:
+            return &CortexM3CPU::t16_imm8_dataops;
+        case 0b01000:
+            return ((insn >> 10) & 1) ? &CortexM3CPU::t16_special_bx
+                                      : &CortexM3CPU::t16_dataproc_reg;
+        case 0b01001: return &CortexM3CPU::t16_ldr_literal;
+        case 0b01010: case 0b01011:
+            return &CortexM3CPU::t16_loadstore_reg_offset;
+        case 0b01100: case 0b01101: case 0b01110: case 0b01111:
+        case 0b10000: case 0b10001:
+            return &CortexM3CPU::t16_loadstore_imm_offset;
+        case 0b10010: case 0b10011:
+            return &CortexM3CPU::t16_loadstore_sp_rel;
+        case 0b10100: return &CortexM3CPU::t16_adr;
+        case 0b10101: return &CortexM3CPU::t16_add_sp;
+        case 0b10110: return &CortexM3CPU::t16_push;
+        case 0b10111: return &CortexM3CPU::t16_pop;
+        case 0b11000: case 0b11001: return &CortexM3CPU::t16_stm_ldm;
+        case 0b11010: case 0b11011: return &CortexM3CPU::t16_b_cond;
+        case 0b11100: return &CortexM3CPU::t16_b;
+        default: return nullptr;
+    }
+}
+
+CPU::CPUExpected<void> CortexM3CPU::execute_16bit(uint16_t insn) {
+    // Dispatch is now in translate_16bit (shared with the JIT cache). Look up
+    // the handler, then execute it — bit-identical to the former inline
+    // switch, just routed through a function pointer.
+    const Handler16 h = translate_16bit(insn);
+    if (h == nullptr) {
+        return std::unexpected{CPUError::IllegalInstruction};
+    }
+    return (this->*h)(insn);
 }
 
 } // namespace micro_forge::cpu::arm::cortex_m3
