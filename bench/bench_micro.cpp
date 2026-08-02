@@ -34,7 +34,9 @@
 
 #include <array>
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
+#include <string>
 #include <vector>
 
 using namespace micro_forge;
@@ -74,6 +76,9 @@ static void BM_DispatchBranchSelf(benchmark::State& state) {
     BareCore c;
     c.load_one(0xE7FE); // B .
     (void)c.cpu.set_pc(0);
+    if (const char* j = std::getenv("MF_JIT")) {
+        c.cpu.set_jit_enabled(std::string(j) == "1" || std::string(j) == "on");
+    }
     perf_stats::reset();
     for (auto _ : state) {
         (void)c.cpu.step();
