@@ -97,6 +97,14 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     connect(ff_check, &QCheckBox::toggled, this, [this](bool on) {
         session_.set_fast_forward_enabled(on);
     });
+    auto* jit_check = new QCheckBox(tr("JIT cache"));
+    jit_check->setToolTip(tr("Cache decoded instructions per PC (skip\n"
+                             "fetch+decode on repeat). +30-35% faster.\n"
+                             "Works for ALL firmware (16+32-bit)."));
+    toolbar->addWidget(jit_check);
+    connect(jit_check, &QCheckBox::toggled, this, [this](bool on) {
+        session_.set_jit_enabled(on);
+    });
 
     // ── panels ──
     regs_panel_ = new panels::RegistersPanel;

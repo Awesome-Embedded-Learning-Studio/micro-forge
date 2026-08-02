@@ -67,6 +67,9 @@ std::expected<void, std::string> Session::rebuild() {
     if (fast_forward_) {
         soc_->set_fast_forward_enabled(true);
     }
+    if (jit_enabled_) {
+        soc_->set_jit_enabled(true);
+    }
     return {};
 }
 
@@ -74,6 +77,13 @@ void Session::set_fast_forward_enabled(bool on) {
     fast_forward_ = on;
     if (soc_) {
         soc_->set_fast_forward_enabled(on);
+    }
+}
+
+void Session::set_jit_enabled(bool on) {
+    jit_enabled_ = on;
+    if (soc_) {
+        soc_->set_jit_enabled(on);
     }
 }
 

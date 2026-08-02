@@ -59,12 +59,16 @@ class Session {
     // rebuild re-applies it to the new SoC. Only affects WFI sleep, never
     // busy-wait (HAL_Delay).
     void set_fast_forward_enabled(bool on);
+    // JIT translation cache toggle (GUI checkbox). Persisted across rebuild().
+    // Caches {PC→handler} to skip fetch+decode on repeat PCs (+30-35%).
+    void set_jit_enabled(bool on);
 
   private:
     std::unique_ptr<chips::stm32f1::Stm32f103Soc> soc_;
     std::string usart_output_;
     std::string firmware_path_;
     bool fast_forward_ = false; // P2.a: re-applied to each rebuilt SoC
+    bool jit_enabled_ = false;  // JIT cache: re-applied to each rebuilt SoC
     std::vector<std::uint8_t> firmware_data_;
 };
 
