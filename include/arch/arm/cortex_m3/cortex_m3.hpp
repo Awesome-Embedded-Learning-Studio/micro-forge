@@ -114,6 +114,10 @@ class CortexM3CPU : public CPU {
     // bind {PC → handler} once and skip the fetch+decode on hit.
     using Handler16 = CPUExpected<void> (CortexM3CPU::*)(uint16_t, uint16_t);
     Handler16 translate_16bit(uint16_t insn) const noexcept;
+    // 32-bit counterpart of translate_16bit: same mask chain + table-driven
+    // dispatch as execute_32bit, but returns the handler pointer (or nullptr
+    // for illegal opcodes) so the JIT cache can bind {PC → handler} once.
+    Handler16 translate_32bit(uint16_t hw1, uint16_t hw2) const noexcept;
     // 16-bit Thumb family handlers — split out of execute_16bit so no single
     // translation unit exceeds the DIRECTIVES 700-line cap. Each returns the
     // result of its (prefix-/decode_key-matched) block; execute_16bit
@@ -199,6 +203,22 @@ class CortexM3CPU : public CPU {
     CPUExpected<void> t32_tbb_tbh(uint16_t hw1, uint16_t hw2);
     CPUExpected<void> t32_strd_ldrd(uint16_t hw1, uint16_t hw2);
     CPUExpected<void> t32_stm_ldm(uint16_t hw1, uint16_t hw2);
+    // Inline cases lifted out of execute_32bit's mask chain (JIT Step 2):
+    // each was an inline if-block, now a named handler — same body, same mask.
+    CPUExpected<void> t32_bl_blx(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_b_cond_w(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_b_w(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_movw(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_movt(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_barrier(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_hint_w(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_mrs(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_msr(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_bfi_bfc(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_sbfx_ubfx(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_udiv_sdiv(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_mla_mls(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_mull_mlal(uint16_t hw1, uint16_t hw2);
     // Operand helpers shared across the 32-bit handlers (promoted from the
     // execute_32bit-local lambdas so the split-out handlers can use them).
     data_t rr(uint8_t idx);
