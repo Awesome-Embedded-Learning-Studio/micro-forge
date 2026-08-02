@@ -12,6 +12,7 @@
 #include "util/weak_ptr/weak_ptr_factory.hpp"
 #include <cstdint>
 #include <tuple>
+#include <unordered_map>
 #include <vector>
 
 namespace micro_forge::cpu {
@@ -79,6 +80,17 @@ class CortexM3CPU : public CPU {
 
     // Probe mode: skip illegal instructions and log opcodes instead of halting
     void enable_probe_mode(bool on = true) { probe_mode_ = on; }
+
+    // JIT translation cache (Step 3): {PC → decoded {handler, insn}}. On
+    // hit, step_execute_one skips fetch16 + translate_16bit and dispatches
+    // the cached handler directly. Opt-in (set_jit_enabled); off by default.
+    void set_jit_enabled(bool on) noexcept {
+        tcache_enabled_ = on;
+        if (!on) {
+            tcache_.clear();
+        }
+    }
+    bool jit_enabled() const noexcept { return tcache_enabled_; }
     const auto& missing_opcodes() const { return missing_opcodes_; }
     void clear_missing_opcodes() { missing_opcodes_.clear(); }
 
@@ -296,6 +308,13 @@ class CortexM3CPU : public CPU {
 
     // Probe mode state
     bool probe_mode_ = false;
+    // JIT translation cache (16-bit Thumb): PC → {handler, insn}.
+    struct CachedInsn {
+        Handler16 handler;
+        uint16_t insn;
+    };
+    std::unordered_map<addr_t, CachedInsn> tcache_;
+    bool tcache_enabled_ = false;
     std::vector<std::tuple<addr_t, uint16_t, uint16_t>> missing_opcodes_;
     struct ItState {
         std::vector<uint8_t> conditions;
