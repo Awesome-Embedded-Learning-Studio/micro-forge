@@ -87,7 +87,7 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     speed_combo_->addItem(tr("5×"), 100000);
     speed_combo_->addItem(tr("25×"), 500000);
     speed_combo_->addItem(tr("100×"), 2000000);
-    speed_combo_->setCurrentIndex(0);
+    speed_combo_->setCurrentIndex(3); // default 100× — 1× is too slow for busy-wait
     toolbar->addWidget(speed_combo_);
     auto* ff_check = new QCheckBox(tr("Fast-forward WFI"));
     ff_check->setToolTip(tr("Skip WFI sleep straight to the next IRQ (P2.a).\n"
