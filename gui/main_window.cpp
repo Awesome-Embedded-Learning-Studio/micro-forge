@@ -20,6 +20,7 @@
 #include "cpu/cpu.hpp"
 
 #include <QByteArray>
+#include <QCheckBox>
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QDockWidget>
@@ -38,6 +39,7 @@
 #include <QTimer>
 #include <QUrl>
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 
@@ -86,8 +88,17 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
     speed_combo_->addItem(tr("5×"), 100000);
     speed_combo_->addItem(tr("25×"), 500000);
     speed_combo_->addItem(tr("100×"), 2000000);
-    speed_combo_->setCurrentIndex(0);
+    speed_combo_->addItem(tr("Turbo"), 0); // 0 = time-budgeted (run until ~35ms elapsed)
+    speed_combo_->setCurrentIndex(4); // default Turbo — auto-scales to machine
     toolbar->addWidget(speed_combo_);
+    auto* ff_check = new QCheckBox(tr("Fast-forward WFI"));
+    ff_check->setToolTip(tr("Skip WFI sleep straight to the next IRQ (P2.a).\n"
+                            "Only affects firmware that uses WFI; busy-wait "
+                            "(HAL_Delay) is unaffected."));
+    toolbar->addWidget(ff_check);
+    connect(ff_check, &QCheckBox::toggled, this, [this](bool on) {
+        session_.set_fast_forward_enabled(on);
+    });
 
     // ── panels ──
     regs_panel_ = new panels::RegistersPanel;
@@ -243,7 +254,18 @@ void MainWindow::onTick() {
     if (running_ && session_.valid()) {
         const auto steps =
             static_cast<std::size_t>(speed_combo_->currentData().toInt());
-        session_.run(steps);
+        if (steps == 0) {
+            // Turbo: time-budgeted — run in batches until ~35ms elapsed,
+            // leaving ~15ms for UI refresh within the 50ms tick.
+            constexpr int kBatchSize = 500'000;
+            constexpr auto kBudget = std::chrono::milliseconds(35);
+            auto t0 = std::chrono::steady_clock::now();
+            do {
+                session_.run(kBatchSize);
+            } while (std::chrono::steady_clock::now() - t0 < kBudget);
+        } else {
+            session_.run(steps);
+        }
         refreshFromSnapshot();
     }
 }

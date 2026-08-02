@@ -73,6 +73,19 @@ class Stm32f103Soc {
                                               std::span<const uint8_t> data);
     micro_forge::sim::RunResult run(size_t max_steps = SIZE_MAX);
 
+    // P2 fast-forward (emu_busy_wait_research): toggle busy-wait skipping in
+    // the underlying coordinator. Default OFF; opt in for HAL_Delay-style
+    // firmware to run in real time.
+    void set_fast_forward_enabled(bool on) {
+        if (machine_.coord) {
+            machine_.coord->set_fast_forward_enabled(on);
+        }
+    }
+    // JIT translation cache (16-bit Thumb): toggle {PC→handler} caching in
+    // the CPU. Default OFF; opt in to skip fetch+decode on repeat PCs.
+    // Defined in the .cpp (needs CortexM3CPU complete type).
+    void set_jit_enabled(bool on);
+
     Stm32f103Soc(const Stm32f103Soc&) = delete;
     Stm32f103Soc& operator=(const Stm32f103Soc&) = delete;
     Stm32f103Soc(Stm32f103Soc&&) = delete;

@@ -5,6 +5,7 @@
 #include "tools/memory_dump.hpp"
 
 #include <cstdint>
+#include <cstdlib>
 #include <fstream>
 #include <iterator>
 
@@ -54,7 +55,36 @@ std::expected<void, std::string> Session::rebuild() {
             return std::unexpected("load failed: " + lr.error());
         }
     }
+
+    // P2.a WFI fast-forward: env (compat) OR checkbox (fast_forward_). The
+    // checkbox state persists across rebuild(); env is a one-shot default.
+    if (const char* ff = std::getenv("MICRO_FORGE_FAST_FORWARD")) {
+        std::string s(ff);
+        if (s == "1" || s == "on" || s == "true") {
+            fast_forward_ = true;
+        }
+    }
+    if (fast_forward_) {
+        soc_->set_fast_forward_enabled(true);
+    }
+    if (jit_enabled_) {
+        soc_->set_jit_enabled(true);
+    }
     return {};
+}
+
+void Session::set_fast_forward_enabled(bool on) {
+    fast_forward_ = on;
+    if (soc_) {
+        soc_->set_fast_forward_enabled(on);
+    }
+}
+
+void Session::set_jit_enabled(bool on) {
+    jit_enabled_ = on;
+    if (soc_) {
+        soc_->set_jit_enabled(on);
+    }
 }
 
 void Session::run(std::size_t steps) {

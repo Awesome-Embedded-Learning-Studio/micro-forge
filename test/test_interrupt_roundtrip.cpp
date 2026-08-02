@@ -255,7 +255,7 @@ TEST_F(InterruptTest, SysTickRoundtrip) {
 
     VirtualClock clk(stm32f103_default_clocks);
     SimulationCoordinator coord(std::move(clk));
-    coord.set_cpu(cpu_->GetWeak());
+    coord.set_cpu(cpu_.get());
     coord.add_tickable(systick_->GetWeak(), domain_index(ClockDomain::Sysclk));
 
     bool handler_entered = false;
@@ -595,7 +595,7 @@ TEST_F(InterruptTest, TimerUifRoundtrip) {
 
     VirtualClock clk(stm32f103_default_clocks);
     SimulationCoordinator coord(std::move(clk));
-    coord.set_cpu(cpu_->GetWeak());
+    coord.set_cpu(cpu_.get());
     coord.add_tickable(tim2_.GetWeak(), domain_index(ClockDomain::Apb1));
 
     bool entered = false, returned = false;

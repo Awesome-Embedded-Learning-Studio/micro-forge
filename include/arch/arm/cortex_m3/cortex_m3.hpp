@@ -12,6 +12,7 @@
 #include "util/weak_ptr/weak_ptr_factory.hpp"
 #include <cstdint>
 #include <tuple>
+#include <unordered_map>
 #include <vector>
 
 namespace micro_forge::cpu {
@@ -39,6 +40,11 @@ class CortexM3CPU : public CPU {
     CPUExpected<addr_t> set_pc(addr_t new_pc) override;
     CPUExpected<void> raise_irq(intr::intr_n_t irq_index) override;
     CPUExpected<ticks_t> cycles() const override;
+    // P2 fast-forward: bump cycles_ without stepping (see cpu.hpp).
+    CPUExpected<void> advance_cycles(ticks_t n) override {
+        cycles_ += n;
+        return {};
+    }
 
     void launch() noexcept { current_status_ = State::Running; };
 
@@ -54,6 +60,9 @@ class CortexM3CPU : public CPU {
     void set_vector_table_base(addr_t base) { vector_table_base_ = base; }
     void set_prigroup(uint8_t group) { prigroup_ = group & 0x7u; }
     bool in_handler_mode() const { return in_handler_mode_; }
+    // P2.a WFI fast-forward: true while suspended on WFI. The coordinator
+    // advances virtual time to the next exception to wake the CPU.
+    bool is_sleeping() const noexcept override { return sleeping_; }
     // Read-only accessors for the status / mask / stack registers. They back
     // the structured introspection snapshot (introspection::read_introspection) consumed
     // by both the CLI JSON serializer and the GUI dashboard (milestone 04).
@@ -71,6 +80,17 @@ class CortexM3CPU : public CPU {
 
     // Probe mode: skip illegal instructions and log opcodes instead of halting
     void enable_probe_mode(bool on = true) { probe_mode_ = on; }
+
+    // JIT translation cache (Step 3): {PC → decoded {handler, insn}}. On
+    // hit, step_execute_one skips fetch16 + translate_16bit and dispatches
+    // the cached handler directly. Opt-in (set_jit_enabled); off by default.
+    void set_jit_enabled(bool on) noexcept {
+        tcache_enabled_ = on;
+        if (!on) {
+            tcache_.clear();
+        }
+    }
+    bool jit_enabled() const noexcept { return tcache_enabled_; }
     const auto& missing_opcodes() const { return missing_opcodes_; }
     void clear_missing_opcodes() { missing_opcodes_.clear(); }
 
@@ -88,25 +108,44 @@ class CortexM3CPU : public CPU {
     Expected<uint16_t> fetch16(addr_t addr);
     CPUExpected<void> execute_16bit(uint16_t insn);
     CPUExpected<void> execute_32bit(uint16_t hw1, uint16_t hw2);
+    // JIT translate: decode a 16-bit Thumb instruction to its handler
+    // (the same dispatch execute_16bit uses, but returns the handler instead
+    // of calling it). nullptr = illegal opcode. Lets a translation cache
+    // bind {PC → handler} once and skip the fetch+decode on hit.
+    using Handler16 = CPUExpected<void> (CortexM3CPU::*)(uint16_t, uint16_t);
+    Handler16 translate_16bit(uint16_t insn) const noexcept;
+    // 32-bit counterpart of translate_16bit: same mask chain + table-driven
+    // dispatch as execute_32bit, but returns the handler pointer (or nullptr
+    // for illegal opcodes) so the JIT cache can bind {PC → handler} once.
+    Handler16 translate_32bit(uint16_t hw1, uint16_t hw2) const noexcept;
     // 16-bit Thumb family handlers — split out of execute_16bit so no single
     // translation unit exceeds the DIRECTIVES 700-line cap. Each returns the
     // result of its (prefix-/decode_key-matched) block; execute_16bit
     // dispatches. The extend/reverse prefix probes run *before* the decode_key
     // switch — that order is load-bearing (see OPEN GOTCHAS).
-    CPUExpected<void> t16_extend(uint16_t insn);
-    CPUExpected<void> t16_reverse(uint16_t insn);
-    CPUExpected<void> t16_shift_imm(uint16_t insn);
-    CPUExpected<void> t16_addsub_reg3(uint16_t insn);
-    CPUExpected<void> t16_imm8_dataops(uint16_t insn);
-    CPUExpected<void> t16_special_bx(uint16_t insn);
-    CPUExpected<void> t16_dataproc_reg(uint16_t insn);
-    CPUExpected<void> t16_ldr_literal(uint16_t insn);
-    CPUExpected<void> t16_loadstore_reg_offset(uint16_t insn);
-    CPUExpected<void> t16_loadstore_imm_offset(uint16_t insn);
-    CPUExpected<void> t16_loadstore_sp_rel(uint16_t insn);
-    CPUExpected<void> t16_push(uint16_t insn);
-    CPUExpected<void> t16_pop(uint16_t insn);
-    CPUExpected<void> t16_stm_ldm(uint16_t insn);
+    CPUExpected<void> t16_extend(uint16_t insn, uint16_t);
+    CPUExpected<void> t16_reverse(uint16_t insn, uint16_t);
+    // Inline cases lifted out of execute_16bit's switch so the dispatch path
+    // is a pure handler binding (JIT translate reuses it). Semantics identical
+    // to the former inline blocks — only moved into named functions.
+    CPUExpected<void> t16_cps(uint16_t insn, uint16_t);      // CPSIE/CPSID (0xB660)
+    CPUExpected<void> t16_cbz(uint16_t insn, uint16_t);      // CBZ/CBNZ    (0xB100)
+    CPUExpected<void> t16_adr(uint16_t insn, uint16_t);      // ADR         (0b10100)
+    CPUExpected<void> t16_add_sp(uint16_t insn, uint16_t);   // ADD Rd,SP   (0b10101)
+    CPUExpected<void> t16_b_cond(uint16_t insn, uint16_t);   // B<cond>     (0b11010/11011)
+    CPUExpected<void> t16_b(uint16_t insn, uint16_t);        // B           (0b11100)
+    CPUExpected<void> t16_shift_imm(uint16_t insn, uint16_t);
+    CPUExpected<void> t16_addsub_reg3(uint16_t insn, uint16_t);
+    CPUExpected<void> t16_imm8_dataops(uint16_t insn, uint16_t);
+    CPUExpected<void> t16_special_bx(uint16_t insn, uint16_t);
+    CPUExpected<void> t16_dataproc_reg(uint16_t insn, uint16_t);
+    CPUExpected<void> t16_ldr_literal(uint16_t insn, uint16_t);
+    CPUExpected<void> t16_loadstore_reg_offset(uint16_t insn, uint16_t);
+    CPUExpected<void> t16_loadstore_imm_offset(uint16_t insn, uint16_t);
+    CPUExpected<void> t16_loadstore_sp_rel(uint16_t insn, uint16_t);
+    CPUExpected<void> t16_push(uint16_t insn, uint16_t);
+    CPUExpected<void> t16_pop(uint16_t insn, uint16_t);
+    CPUExpected<void> t16_stm_ldm(uint16_t insn, uint16_t);
     // 32-bit Thumb-2 family handlers — split out of execute_32bit so no single
     // translation unit exceeds the DIRECTIVES 700-line cap. Each returns the
     // result of its (already mask-matched) block; execute_32bit dispatches.
@@ -164,6 +203,22 @@ class CortexM3CPU : public CPU {
     CPUExpected<void> t32_tbb_tbh(uint16_t hw1, uint16_t hw2);
     CPUExpected<void> t32_strd_ldrd(uint16_t hw1, uint16_t hw2);
     CPUExpected<void> t32_stm_ldm(uint16_t hw1, uint16_t hw2);
+    // Inline cases lifted out of execute_32bit's mask chain (JIT Step 2):
+    // each was an inline if-block, now a named handler — same body, same mask.
+    CPUExpected<void> t32_bl_blx(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_b_cond_w(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_b_w(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_movw(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_movt(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_barrier(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_hint_w(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_mrs(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_msr(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_bfi_bfc(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_sbfx_ubfx(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_udiv_sdiv(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_mla_mls(uint16_t hw1, uint16_t hw2);
+    CPUExpected<void> t32_mull_mlal(uint16_t hw1, uint16_t hw2);
     // Operand helpers shared across the 32-bit handlers (promoted from the
     // execute_32bit-local lambdas so the split-out handlers can use them).
     data_t rr(uint8_t idx);
@@ -255,6 +310,7 @@ class CortexM3CPU : public CPU {
     data_t msp_ = 0;
     data_t psp_ = 0;
     ticks_t cycles_ = 0;
+    bool sleeping_ = false; // WFI: suspend fetch until an exception arrives
 
     // Interrupt state
     periph::NvicPeripheral* nvic_ = nullptr;
@@ -272,6 +328,15 @@ class CortexM3CPU : public CPU {
 
     // Probe mode state
     bool probe_mode_ = false;
+    // JIT translation cache (16-bit Thumb): PC → {handler, insn}.
+    struct CachedInsn {
+        Handler16 handler;
+        uint16_t hw1;
+        uint16_t hw2;     // 0 for 16-bit
+        bool is_32bit;    // false for 16-bit
+    };
+    std::unordered_map<addr_t, CachedInsn> tcache_;
+    bool tcache_enabled_ = false;
     std::vector<std::tuple<addr_t, uint16_t, uint16_t>> missing_opcodes_;
     struct ItState {
         std::vector<uint8_t> conditions;

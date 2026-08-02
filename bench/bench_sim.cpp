@@ -87,6 +87,11 @@ double run_scenario(const Scenario& s, size_t warmup, size_t measure,
             std::fprintf(stderr, "[bench] ELF load failed for %s\n", s.tag);
             return -1.0;
         }
+        // JIT translation cache (MF_JIT env): 16-bit cache skips fetch+decode.
+        if (const char* j = std::getenv("MF_JIT")) {
+            std::string s2(j);
+            (*soc)->set_jit_enabled(s2 == "1" || s2 == "on");
+        }
 
         // Warm up to steady state (boot + reach main loop). Discard the time.
         auto warm_res = (*soc)->run(warmup);

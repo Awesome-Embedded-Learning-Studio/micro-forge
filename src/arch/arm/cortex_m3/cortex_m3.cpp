@@ -364,7 +364,9 @@ CPU::CPUExpected<CortexM3CPU::StepFlow> CortexM3CPU::step_take_interrupt() {
     }
     if (active_priorities_.size() > depth_before) {
         // An exception entry consumed this step (covers first entry and
-        // preemption of a running handler).
+        // preemption of a running handler). Entering a handler also wakes
+        // the CPU from WFI.
+        sleeping_ = false;
         cycles_++;
         return StepFlow::Return;
     }
@@ -379,6 +381,67 @@ CPU::CPUExpected<void> CortexM3CPU::step_execute_one() {
     }
     addr_t pc = *pc_res;
     pc_written_ = false; // an instruction may set this via write_reg(15)
+
+    // JIT translation cache (unified 16/32-bit): on hit, skip fetch16 +
+    // translate — dispatch the cached handler directly. IT block condition,
+    // pc_written, fault escalation all run exactly as the miss path below.
+    if (tcache_enabled_) {
+        auto it = tcache_.find(pc);
+        if (it != tcache_.end() && it->second.handler != nullptr) {
+            const auto& ci = it->second;
+            const uint16_t hit_hw1 = ci.hw1;
+            const uint16_t hit_hw2 = ci.hw2;
+            const bool hit_is32 = ci.is_32bit;
+            bool execute_instruction = true;
+            if (it_condition_pos_ < it_conditions_.size()) {
+                uint8_t it_cond = it_conditions_[it_condition_pos_++];
+                if (it_condition_pos_ >= it_conditions_.size()) {
+                    it_conditions_.clear();
+                    it_condition_pos_ = 0;
+                }
+                execute_instruction = condition_need_execute(it_cond);
+            }
+            if (hit_is32) {
+                MF_PERF_INC(instr_32bit);
+            } else {
+                MF_PERF_INC(instr_16bit);
+            }
+            auto exec_res = execute_instruction
+                                ? (this->*ci.handler)(hit_hw1, hit_hw2)
+                                : CPUExpected<void>{};
+            if (exec_res.has_value() && !pc_written_) {
+                auto wr = write_reg(15, pc + (hit_is32 ? 4 : 2));
+                if (!wr) {
+                    return wr;
+                }
+            }
+            if (!exec_res.has_value()) {
+                if (hit_is32) {
+                    uint32_t insn32 = (static_cast<uint32_t>(hit_hw1) << 16) |
+                                      hit_hw2;
+                    LOG_ERROR("fault",
+                              "PC=0x%08X opcode=0x%08X kind=%s", pc, insn32,
+                              cpu_error_name(exec_res.error()));
+                } else {
+                    LOG_ERROR("fault", "PC=0x%08X opcode=0x%04X kind=%s",
+                              pc, hit_hw1, cpu_error_name(exec_res.error()));
+                }
+                if (probe_mode_) {
+                    missing_opcodes_.emplace_back(pc, hit_hw1, hit_hw2);
+                    auto wr = write_reg(15, pc + (hit_is32 ? 4 : 2));
+                    if (!wr) {
+                        return wr;
+                    }
+                } else if (!try_escalate_fault(exec_res.error(), pc, hit_hw1,
+                                               hit_hw2, hit_is32)) {
+                    current_status_ = State::Faulted;
+                    return exec_res;
+                }
+            }
+            cycles_++;
+            return {};
+        }
+    }
 
     auto hw1_res = fetch16(pc);
     if (!hw1_res) {
@@ -429,6 +492,13 @@ CPU::CPUExpected<void> CortexM3CPU::step_execute_one() {
                 return wr;
             }
         }
+        // JIT: cache the decoded 32-bit insn for future hits at this PC.
+        if (tcache_enabled_ && exec_res.has_value()) {
+            auto h = translate_32bit(hw1, *hw2_res);
+            if (h != nullptr) {
+                tcache_[pc] = {h, hw1, *hw2_res, true};
+            }
+        }
     } else {
         MF_PERF_INC(instr_16bit);
         exec_res =
@@ -437,6 +507,13 @@ CPU::CPUExpected<void> CortexM3CPU::step_execute_one() {
             auto wr = write_reg(15, pc + 2);
             if (!wr) {
                 return wr;
+            }
+        }
+        // JIT: cache the decoded 16-bit insn for future hits at this PC.
+        if (tcache_enabled_ && exec_res.has_value()) {
+            auto h = translate_16bit(hw1);
+            if (h != nullptr) {
+                tcache_[pc] = {h, hw1, 0, false};
             }
         }
     }
@@ -484,6 +561,13 @@ CPU::CPUExpected<void> CortexM3CPU::step() {
         return std::unexpected{irq.error()};
     }
     if (*irq == StepFlow::Return) {
+        return {};
+    }
+    if (sleeping_) {
+        // WFI: no exception is pending, so stay suspended — don't fetch. The
+        // coordinator advances virtual time to the next IRQ; without it, we
+        // burn one cycle per step until a timer fires.
+        cycles_++;
         return {};
     }
     return step_execute_one();

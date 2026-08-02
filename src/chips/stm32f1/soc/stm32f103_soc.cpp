@@ -148,7 +148,7 @@ Stm32f103Soc::create() {
     auto clock = sim::VirtualClock(std::span<const sim::DomainConfig>(
         stm32f103_default_clocks, kClockDomainCount));
     m.coord = std::make_unique<sim::SimulationCoordinator>(std::move(clock));
-    m.coord->set_cpu(cm3_weak);
+    m.coord->set_cpu(cm3_ptr);
     m.coord->add_tickable(p.systick.GetWeak(),
                           domain_index(ClockDomain::Sysclk));
     m.coord->add_tickable(p.tim2.GetWeak(), domain_index(ClockDomain::Apb1));
@@ -175,6 +175,12 @@ Stm32f103Soc::load_elf(std::span<const uint8_t> data) {
 
     cortex_m3_->launch();
     return {};
+}
+
+void Stm32f103Soc::set_jit_enabled(bool on) {
+    if (cortex_m3_.IsValid()) {
+        cortex_m3_->set_jit_enabled(on);
+    }
 }
 
 std::expected<void, std::string>

@@ -94,15 +94,129 @@ bool t32m_stm_ldm(uint16_t hw1, uint16_t) {
 }
 } // namespace
 
-// ── 32-bit Thumb-2 decode ──
+// ── 32-bit Thumb-2 inline handlers (JIT Step 2) ──
 //
-// This is the dispatcher: each mask is checked in the same order as before the
-// split; the large data-processing and load/store families delegate to the
-// t32_* handlers in cortex_m3_thumb32_{dataproc,loadstore}.cpp. Branches,
-// MOVW/MOVT, MSR/MRS, bitfield, multiply/divide stay inline.
+// Each was an inline if-block in execute_32bit; now a named handler with the
+// SAME body and SAME mask (translated in the same order by translate_32bit).
+// The data-processing and load/store family handlers live in the sibling
+// cortex_m3_thumb32_{dataproc,loadstore}.cpp translation units.
 
-CPU::CPUExpected<void> CortexM3CPU::execute_32bit(uint16_t hw1, uint16_t hw2) {
+// BL / BLX
+CPU::CPUExpected<void> CortexM3CPU::t32_bl_blx(uint16_t hw1, uint16_t hw2) {
+    uint32_t s = thumb32::s_bit(hw1);
+    uint16_t i10 = thumb32::hw1_imm10(hw1);
+    uint32_t j1_val = thumb32::j1(hw2);
+    uint32_t j2_val = thumb32::j2(hw2);
+    uint16_t i11 = thumb32::hw2_imm11(hw2);
 
+    uint32_t i1 = 1u ^ (j1_val ^ s);
+    uint32_t i2 = 1u ^ (j2_val ^ s);
+
+    uint32_t offset =
+        (s << 24) | (i1 << 23) | (i2 << 22) | (i10 << 12) | (i11 << 1);
+    if (s) {
+        offset |= 0xFE000000u;
+    }
+
+    auto pc_res = read_pc_raw();
+    if (!pc_res) {
+        return std::unexpected{pc_res.error()};
+    }
+    data_t next_pc = *pc_res + 4;
+
+    auto lr_res = wr(14, next_pc);
+    if (!lr_res) {
+        return lr_res;
+    }
+
+    bool is_blx = !((hw2 >> 12) & 0x1);
+    if (is_blx) {
+        return write_reg(15, (*pc_res + 4 + offset) & ~0x1u);
+    }
+    return write_reg(15, *pc_res + 4 + offset);
+}
+
+// B.W T3 (conditional branch)
+CPU::CPUExpected<void> CortexM3CPU::t32_b_cond_w(uint16_t hw1, uint16_t hw2) {
+    uint8_t c = (hw1 >> 6) & 0xFu;
+    if (!condition_need_execute(c)) {
+        return {};
+    }
+
+    uint32_t s = (hw1 >> 10) & 0x1u;
+    uint32_t j1_val = thumb32::j1(hw2);
+    uint32_t j2_val = thumb32::j2(hw2);
+    uint32_t imm6 = hw1 & 0x3Fu;
+    uint32_t imm11 = thumb32::hw2_imm11(hw2);
+    uint32_t offset = (s << 20) | (j2_val << 19) | (j1_val << 18) |
+                      (imm6 << 12) | (imm11 << 1);
+    if (s) {
+        offset |= 0xFFE00000u;
+    }
+
+    auto pc_res = read_pc_raw();
+    if (!pc_res) {
+        return std::unexpected{pc_res.error()};
+    }
+    return write_reg(15, *pc_res + 4 + offset);
+}
+
+// B.W T4 (unconditional branch)
+CPU::CPUExpected<void> CortexM3CPU::t32_b_w(uint16_t hw1, uint16_t hw2) {
+    uint32_t s = thumb32::s_bit(hw1);
+    uint16_t i10 = thumb32::hw1_imm10(hw1);
+    uint32_t j1_val = thumb32::j1(hw2);
+    uint32_t j2_val = thumb32::j2(hw2);
+    uint16_t i11 = thumb32::hw2_imm11(hw2);
+
+    uint32_t i1 = 1u ^ (j1_val ^ s);
+    uint32_t i2 = 1u ^ (j2_val ^ s);
+
+    uint32_t offset =
+        (s << 24) | (i1 << 23) | (i2 << 22) | (i10 << 12) | (i11 << 1);
+    if (s) {
+        offset |= 0xFE000000u;
+    }
+
+    auto pc_res = read_pc_raw();
+    if (!pc_res) {
+        return std::unexpected{pc_res.error()};
+    }
+    return write_reg(15, *pc_res + 4 + offset);
+}
+
+// MOVW
+CPU::CPUExpected<void> CortexM3CPU::t32_movw(uint16_t hw1, uint16_t hw2) {
+    return wr(thumb32::hw2_rd4(hw2), thumb32::decode_imm16(hw1, hw2));
+}
+
+// MOVT
+CPU::CPUExpected<void> CortexM3CPU::t32_movt(uint16_t hw1, uint16_t hw2) {
+    uint16_t imm16 = thumb32::decode_imm16(hw1, hw2);
+    uint8_t rd = thumb32::hw2_rd4(hw2);
+    data_t val = (rr(rd) & 0x0000FFFFu) | (static_cast<data_t>(imm16) << 16);
+    return wr(rd, val);
+}
+
+// DMB / DSB / ISB / CLREX — only hw2 carries the option/op fields.
+CPU::CPUExpected<void> CortexM3CPU::t32_barrier(uint16_t, uint16_t hw2) {
+    uint8_t option = hw2 & 0xFu;
+    uint8_t op = (hw2 >> 4) & 0xFu;
+    // op=4 DSB, 5 DMB, 6 ISB; op=2 CLREX (no-op on a single-core sim).
+    if (option != 0xFu ||
+        (op != 0x2u && op != 0x4u && op != 0x5u && op != 0x6u)) {
+        return std::unexpected{CPUError::IllegalInstruction};
+    }
+    return {};
+}
+
+// NOP.W / YIELD.W / SEV.W (T4 hints, f3af 80xx) ── no-op on this sim.
+CPU::CPUExpected<void> CortexM3CPU::t32_hint_w(uint16_t, uint16_t) {
+    return {};
+}
+
+// MRS — read_special lambda promoted into the handler body (uses hw2 only).
+CPU::CPUExpected<void> CortexM3CPU::t32_mrs(uint16_t, uint16_t hw2) {
     auto read_special = [&]() -> data_t {
         uint8_t sysm = hw2 & 0xFFu;
         switch (sysm) {
@@ -124,7 +238,11 @@ CPU::CPUExpected<void> CortexM3CPU::execute_32bit(uint16_t hw1, uint16_t hw2) {
                 return 0;
         }
     };
+    return wr(thumb32::hw2_rd4(hw2), read_special());
+}
 
+// MSR — write_special lambda promoted into the handler body (uses hw2).
+CPU::CPUExpected<void> CortexM3CPU::t32_msr(uint16_t hw1, uint16_t hw2) {
     auto write_special = [&](data_t value) -> CPUExpected<void> {
         uint8_t sysm = hw2 & 0xFFu;
         switch (sysm) {
@@ -164,166 +282,158 @@ CPU::CPUExpected<void> CortexM3CPU::execute_32bit(uint16_t hw1, uint16_t hw2) {
                 return std::unexpected{CPUError::IllegalInstruction};
         }
     };
+    return write_special(rr(hw1 & 0xFu));
+}
 
-    // ── BL / BLX ──
-    if ((hw1 & 0xF800) == 0xF000 && (hw2 & 0xD000) == 0xD000) {
-        uint32_t s = thumb32::s_bit(hw1);
-        uint16_t i10 = thumb32::hw1_imm10(hw1);
-        uint32_t j1_val = thumb32::j1(hw2);
-        uint32_t j2_val = thumb32::j2(hw2);
-        uint16_t i11 = thumb32::hw2_imm11(hw2);
-
-        uint32_t i1 = 1u ^ (j1_val ^ s);
-        uint32_t i2 = 1u ^ (j2_val ^ s);
-
-        uint32_t offset =
-            (s << 24) | (i1 << 23) | (i2 << 22) | (i10 << 12) | (i11 << 1);
-        if (s) {
-            offset |= 0xFE000000u;
-        }
-
-        auto pc_res = read_pc_raw();
-        if (!pc_res) {
-            return std::unexpected{pc_res.error()};
-        }
-        data_t next_pc = *pc_res + 4;
-
-        auto lr_res = wr(14, next_pc);
-        if (!lr_res) {
-            return lr_res;
-        }
-
-        bool is_blx = !((hw2 >> 12) & 0x1);
-        if (is_blx) {
-            return write_reg(15, (*pc_res + 4 + offset) & ~0x1u);
-        }
-        return write_reg(15, *pc_res + 4 + offset);
+// BFI / BFC
+CPU::CPUExpected<void> CortexM3CPU::t32_bfi_bfc(uint16_t hw1, uint16_t hw2) {
+    uint8_t rn = hw1 & 0xFu;
+    uint8_t rd = (hw2 >> 8) & 0xFu;
+    uint8_t lsb = (((hw2 >> 12) & 0x7u) << 2) | ((hw2 >> 6) & 0x3u);
+    uint8_t msb = hw2 & 0x1Fu;
+    if (msb < lsb) {
+        return std::unexpected{CPUError::IllegalInstruction};
     }
+    uint32_t width = static_cast<uint32_t>(msb - lsb + 1);
+    uint32_t field_mask = width == 32 ? 0xFFFFFFFFu : ((1u << width) - 1u);
+    uint32_t mask = field_mask << lsb;
+    uint32_t src = (rn == 15) ? 0u : (rr(rn) << lsb);
+    return wr(rd, (rr(rd) & ~mask) | (src & mask));
+}
 
-    // ── B.W T3 (conditional branch) ──
+// SBFX / UBFX
+CPU::CPUExpected<void> CortexM3CPU::t32_sbfx_ubfx(uint16_t hw1, uint16_t hw2) {
+    bool is_unsigned = (hw1 & 0x0080u) != 0;
+    uint8_t rn = hw1 & 0xFu;
+    uint8_t rd = (hw2 >> 8) & 0xFu;
+    uint8_t lsb = (((hw2 >> 12) & 0x7u) << 2) | ((hw2 >> 6) & 0x3u);
+    uint8_t width = (hw2 & 0x1Fu) + 1u;
+    if (lsb + width > 32) {
+        return std::unexpected{CPUError::IllegalInstruction};
+    }
+    uint32_t raw = rr(rn) >> lsb;
+    uint32_t mask = width == 32 ? 0xFFFFFFFFu : ((1u << width) - 1u);
+    uint32_t result = raw & mask;
+    if (!is_unsigned && width < 32 && (result & (1u << (width - 1u)))) {
+        result |= ~mask;
+    }
+    return wr(rd, result);
+}
+
+// UDIV / SDIV
+CPU::CPUExpected<void> CortexM3CPU::t32_udiv_sdiv(uint16_t hw1, uint16_t hw2) {
+    uint8_t rn = hw1 & 0xF;
+    uint8_t rm = hw2 & 0xF;
+    uint8_t rd = (hw2 >> 8) & 0xF;
+    bool is_signed = (hw1 & 0x0020u) == 0;
+    if (is_signed) {
+        int32_t a = static_cast<int32_t>(rr(rn));
+        int32_t b = static_cast<int32_t>(rr(rm));
+        if (b == 0) {
+            // Cortex-M3 SDIV/0 (CCR.DIV_0_TRP==0, reset default) returns 0
+            // for BOTH signs — confirmed vs qemu-system-arm (mps2-an385);
+            // see scripts/qemu_sdiv_oracle.sh + notes 017. (DIV_0_TRP==1
+            // UsageFault is a configurable-fault feature, not modelled.)
+            return wr(rd, 0u);
+        }
+        // INT_MIN / -1 is signed overflow (UB in C); ARMv7-M saturates to
+        // INT_MIN. Guard before the C division to avoid UB.
+        if (static_cast<uint32_t>(a) == 0x80000000u && b == -1) {
+            return wr(rd, 0x80000000u);
+        }
+        return wr(rd, static_cast<uint32_t>(a / b));
+    }
+    uint32_t a = rr(rn);
+    uint32_t b = rr(rm);
+    if (b == 0) {
+        // UDIV/0 → 0 (DIV_0_TRP==0 default).
+        return wr(rd, 0u);
+    }
+    return wr(rd, a / b);
+}
+
+// MLA / MLS
+CPU::CPUExpected<void> CortexM3CPU::t32_mla_mls(uint16_t hw1, uint16_t hw2) {
+    uint8_t rn = hw1 & 0xFu;
+    uint8_t rm = hw2 & 0xFu;
+    uint8_t rd = (hw2 >> 8) & 0xFu;
+    uint8_t ra = (hw2 >> 12) & 0xFu;
+    uint32_t product = rr(rn) * rr(rm);
+    // MUL.W (Ra=15) is MLA/MLS without an accumulator; rr(15) would fold
+    // the raw PC into the product. Treat Ra=15 as "no accumulate".
+    uint32_t acc = (ra == 15) ? 0u : rr(ra);
+    uint32_t result = (hw2 & 0x0010u) ? (acc - product) : (product + acc);
+    return wr(rd, result);
+}
+
+// SMULL/UMULL (no accumulate) and SMLAL/UMLAL (accumulate)
+CPU::CPUExpected<void> CortexM3CPU::t32_mull_mlal(uint16_t hw1, uint16_t hw2) {
+    uint16_t mp_hw1 = hw1 & 0xFFF0u;
+    uint8_t rn = hw1 & 0xFu;
+    uint8_t rm = hw2 & 0xFu;
+    uint8_t rdlo = (hw2 >> 12) & 0xFu;
+    uint8_t rdhi = (hw2 >> 8) & 0xFu;
+    bool accumulate = (mp_hw1 == 0xFBC0u || mp_hw1 == 0xFBE0u);
+    bool is_signed = (mp_hw1 == 0xFB80u || mp_hw1 == 0xFBC0u);
+    uint64_t product =
+        is_signed
+            ? static_cast<uint64_t>(
+                  static_cast<int64_t>(static_cast<int32_t>(rr(rn))) *
+                  static_cast<int64_t>(static_cast<int32_t>(rr(rm))))
+            : static_cast<uint64_t>(rr(rn)) * static_cast<uint64_t>(rr(rm));
+    // SMLAL/UMLAL accumulate the existing RdHi:RdLo (read before write).
+    uint64_t result =
+        accumulate
+            ? product + (static_cast<uint64_t>(rr(rdhi)) << 32) + rr(rdlo)
+            : product;
+    auto lo = wr(rdlo, static_cast<uint32_t>(result));
+    if (!lo) {
+        return lo;
+    }
+    return wr(rdhi, static_cast<uint32_t>(result >> 32));
+}
+
+// ── 32-bit Thumb-2 translate (JIT Step 3) ──
+//
+// Same mask chain and table-driven dispatches as the former execute_32bit,
+// but each match returns the handler pointer instead of calling it. nullptr =
+// illegal opcode. Mask order is load-bearing — see the comments on the two
+// family tables (priority) and on the inline masks (BL before B, etc.).
+CortexM3CPU::Handler16
+CortexM3CPU::translate_32bit(uint16_t hw1, uint16_t hw2) const noexcept {
+    if ((hw1 & 0xF800) == 0xF000 && (hw2 & 0xD000) == 0xD000) {
+        return &CortexM3CPU::t32_bl_blx;
+    }
     if ((hw1 & 0xF800) == 0xF000 && (hw2 & 0xD000) == 0x8000 &&
         (((hw1 >> 6) & 0xFu) < 0xEu)) {
-        uint8_t c = (hw1 >> 6) & 0xFu;
-        if (!condition_need_execute(c)) {
-            return {};
-        }
-
-        uint32_t s = (hw1 >> 10) & 0x1u;
-        uint32_t j1_val = thumb32::j1(hw2);
-        uint32_t j2_val = thumb32::j2(hw2);
-        uint32_t imm6 = hw1 & 0x3Fu;
-        uint32_t imm11 = thumb32::hw2_imm11(hw2);
-        uint32_t offset = (s << 20) | (j2_val << 19) | (j1_val << 18) |
-                          (imm6 << 12) | (imm11 << 1);
-        if (s) {
-            offset |= 0xFFE00000u;
-        }
-
-        auto pc_res = read_pc_raw();
-        if (!pc_res) {
-            return std::unexpected{pc_res.error()};
-        }
-        return write_reg(15, *pc_res + 4 + offset);
+        return &CortexM3CPU::t32_b_cond_w;
     }
-
-    // ── B.W T4 (unconditional branch) ──
     if ((hw1 & 0xF800) == 0xF000 && (hw2 & 0xD000) == 0x9000) {
-        uint32_t s = thumb32::s_bit(hw1);
-        uint16_t i10 = thumb32::hw1_imm10(hw1);
-        uint32_t j1_val = thumb32::j1(hw2);
-        uint32_t j2_val = thumb32::j2(hw2);
-        uint16_t i11 = thumb32::hw2_imm11(hw2);
-
-        uint32_t i1 = 1u ^ (j1_val ^ s);
-        uint32_t i2 = 1u ^ (j2_val ^ s);
-
-        uint32_t offset =
-            (s << 24) | (i1 << 23) | (i2 << 22) | (i10 << 12) | (i11 << 1);
-        if (s) {
-            offset |= 0xFE000000u;
-        }
-
-        auto pc_res = read_pc_raw();
-        if (!pc_res) {
-            return std::unexpected{pc_res.error()};
-        }
-        return write_reg(15, *pc_res + 4 + offset);
+        return &CortexM3CPU::t32_b_w;
     }
-
-    // ── MOVW ──
     if ((hw1 & 0xFBF0) == 0xF240) {
-        return wr(thumb32::hw2_rd4(hw2), thumb32::decode_imm16(hw1, hw2));
+        return &CortexM3CPU::t32_movw;
     }
-
-    // ── MOVT ──
     if ((hw1 & 0xFBF0) == 0xF2C0) {
-        uint16_t imm16 = thumb32::decode_imm16(hw1, hw2);
-        uint8_t rd = thumb32::hw2_rd4(hw2);
-        data_t val =
-            (rr(rd) & 0x0000FFFFu) | (static_cast<data_t>(imm16) << 16);
-        return wr(rd, val);
+        return &CortexM3CPU::t32_movt;
     }
-
-    // ── DMB / DSB / ISB / CLREX ──
     if (hw1 == 0xF3BF && (hw2 & 0xFF0Fu) == 0x8F0Fu) {
-        uint8_t option = hw2 & 0xFu;
-        uint8_t op = (hw2 >> 4) & 0xFu;
-        // op=4 DSB, 5 DMB, 6 ISB; op=2 CLREX (no-op on a single-core sim).
-        if (option != 0xFu ||
-            (op != 0x2u && op != 0x4u && op != 0x5u && op != 0x6u)) {
-            return std::unexpected{CPUError::IllegalInstruction};
-        }
-        return {};
+        return &CortexM3CPU::t32_barrier;
     }
-
-    // ── NOP.W / YIELD.W / SEV.W (T4 hints, f3af 80xx) ── no-op on this sim.
     if (hw1 == 0xF3AF && (hw2 & 0xF000u) == 0x8000u) {
-        return {};
+        return &CortexM3CPU::t32_hint_w;
     }
-
-    // ── MRS ──
     if ((hw1 & 0xFFF0) == 0xF3E0 && (hw2 & 0xF000) == 0x8000) {
-        return wr(thumb32::hw2_rd4(hw2), read_special());
+        return &CortexM3CPU::t32_mrs;
     }
-
-    // ── MSR ──
     if ((hw1 & 0xFFF0) == 0xF380 && (hw2 & 0xFF00) == 0x8800) {
-        return write_special(rr(hw1 & 0xFu));
+        return &CortexM3CPU::t32_msr;
     }
-
-    // ── BFI / BFC ──
     if ((hw1 & 0xFB70u) == 0xF360u) {
-        uint8_t rn = hw1 & 0xFu;
-        uint8_t rd = (hw2 >> 8) & 0xFu;
-        uint8_t lsb = (((hw2 >> 12) & 0x7u) << 2) | ((hw2 >> 6) & 0x3u);
-        uint8_t msb = hw2 & 0x1Fu;
-        if (msb < lsb) {
-            return std::unexpected{CPUError::IllegalInstruction};
-        }
-        uint32_t width = static_cast<uint32_t>(msb - lsb + 1);
-        uint32_t field_mask = width == 32 ? 0xFFFFFFFFu : ((1u << width) - 1u);
-        uint32_t mask = field_mask << lsb;
-        uint32_t src = (rn == 15) ? 0u : (rr(rn) << lsb);
-        return wr(rd, (rr(rd) & ~mask) | (src & mask));
+        return &CortexM3CPU::t32_bfi_bfc;
     }
-
-    // ── SBFX / UBFX ──
     if ((hw1 & 0xFB70u) == 0xF340u || (hw1 & 0xFB70u) == 0xF3C0u) {
-        bool is_unsigned = (hw1 & 0x0080u) != 0;
-        uint8_t rn = hw1 & 0xFu;
-        uint8_t rd = (hw2 >> 8) & 0xFu;
-        uint8_t lsb = (((hw2 >> 12) & 0x7u) << 2) | ((hw2 >> 6) & 0x3u);
-        uint8_t width = (hw2 & 0x1Fu) + 1u;
-        if (lsb + width > 32) {
-            return std::unexpected{CPUError::IllegalInstruction};
-        }
-        uint32_t raw = rr(rn) >> lsb;
-        uint32_t mask = width == 32 ? 0xFFFFFFFFu : ((1u << width) - 1u);
-        uint32_t result = raw & mask;
-        if (!is_unsigned && width < 32 && (result & (1u << (width - 1u)))) {
-            result |= ~mask;
-        }
-        return wr(rd, result);
+        return &CortexM3CPU::t32_sbfx_ubfx;
     }
 
     // ── Data-side family dispatch (table-driven; table order = priority) ──
@@ -338,84 +448,24 @@ CPU::CPUExpected<void> CortexM3CPU::execute_32bit(uint16_t hw1, uint16_t hw2) {
     };
     for (const auto& entry : t32_data_families) {
         if (entry.match(hw1, hw2)) {
-            return (this->*entry.handler)(hw1, hw2);
+            return entry.handler;
         }
     }
 
-    // ── UDIV / SDIV ──
     if ((hw1 & 0xFFD0) == 0xFB90 && (hw2 & 0xF0F0) == 0xF0F0) {
-        uint8_t rn = hw1 & 0xF;
-        uint8_t rm = hw2 & 0xF;
-        uint8_t rd = (hw2 >> 8) & 0xF;
-        bool is_signed = (hw1 & 0x0020u) == 0;
-        if (is_signed) {
-            int32_t a = static_cast<int32_t>(rr(rn));
-            int32_t b = static_cast<int32_t>(rr(rm));
-            if (b == 0) {
-                // Cortex-M3 SDIV/0 (CCR.DIV_0_TRP==0, reset default) returns 0
-                // for BOTH signs — confirmed vs qemu-system-arm (mps2-an385);
-                // see scripts/qemu_sdiv_oracle.sh + notes 017. (DIV_0_TRP==1
-                // UsageFault is a configurable-fault feature, not modelled.)
-                return wr(rd, 0u);
-            }
-            // INT_MIN / -1 is signed overflow (UB in C); ARMv7-M saturates to
-            // INT_MIN. Guard before the C division to avoid UB.
-            if (static_cast<uint32_t>(a) == 0x80000000u && b == -1) {
-                return wr(rd, 0x80000000u);
-            }
-            return wr(rd, static_cast<uint32_t>(a / b));
-        }
-        uint32_t a = rr(rn);
-        uint32_t b = rr(rm);
-        if (b == 0) {
-            // UDIV/0 → 0 (DIV_0_TRP==0 default).
-            return wr(rd, 0u);
-        }
-        return wr(rd, a / b);
+        return &CortexM3CPU::t32_udiv_sdiv;
     }
-
-    // ── MLA / MLS ──
     if ((hw1 & 0xFFF0u) == 0xFB00u &&
         ((hw2 & 0x00F0u) == 0x0000u || (hw2 & 0x00F0u) == 0x0010u)) {
-        uint8_t rn = hw1 & 0xFu;
-        uint8_t rm = hw2 & 0xFu;
-        uint8_t rd = (hw2 >> 8) & 0xFu;
-        uint8_t ra = (hw2 >> 12) & 0xFu;
-        uint32_t product = rr(rn) * rr(rm);
-        // MUL.W (Ra=15) is MLA/MLS without an accumulator; rr(15) would fold
-        // the raw PC into the product. Treat Ra=15 as "no accumulate".
-        uint32_t acc = (ra == 15) ? 0u : rr(ra);
-        uint32_t result = (hw2 & 0x0010u) ? (acc - product) : (product + acc);
-        return wr(rd, result);
+        return &CortexM3CPU::t32_mla_mls;
     }
-
-    // ── SMULL/UMULL (no accumulate) and SMLAL/UMLAL (accumulate) ──
-    uint16_t mp_hw1 = hw1 & 0xFFF0u;
-    if ((mp_hw1 == 0xFB80u || mp_hw1 == 0xFBA0u || mp_hw1 == 0xFBC0u ||
-         mp_hw1 == 0xFBE0u) &&
-        (hw2 & 0x00F0u) == 0x0000u) {
-        uint8_t rn = hw1 & 0xFu;
-        uint8_t rm = hw2 & 0xFu;
-        uint8_t rdlo = (hw2 >> 12) & 0xFu;
-        uint8_t rdhi = (hw2 >> 8) & 0xFu;
-        bool accumulate = (mp_hw1 == 0xFBC0u || mp_hw1 == 0xFBE0u);
-        bool is_signed = (mp_hw1 == 0xFB80u || mp_hw1 == 0xFBC0u);
-        uint64_t product =
-            is_signed
-                ? static_cast<uint64_t>(
-                      static_cast<int64_t>(static_cast<int32_t>(rr(rn))) *
-                      static_cast<int64_t>(static_cast<int32_t>(rr(rm))))
-                : static_cast<uint64_t>(rr(rn)) * static_cast<uint64_t>(rr(rm));
-        // SMLAL/UMLAL accumulate the existing RdHi:RdLo (read before write).
-        uint64_t result =
-            accumulate
-                ? product + (static_cast<uint64_t>(rr(rdhi)) << 32) + rr(rdlo)
-                : product;
-        auto lo = wr(rdlo, static_cast<uint32_t>(result));
-        if (!lo) {
-            return lo;
+    {
+        uint16_t mp_hw1 = hw1 & 0xFFF0u;
+        if ((mp_hw1 == 0xFB80u || mp_hw1 == 0xFBA0u || mp_hw1 == 0xFBC0u ||
+             mp_hw1 == 0xFBE0u) &&
+            (hw2 & 0x00F0u) == 0x0000u) {
+            return &CortexM3CPU::t32_mull_mlal;
         }
-        return wr(rdhi, static_cast<uint32_t>(result >> 32));
     }
 
     // ── Register-side family dispatch (table-driven; table order = priority)
@@ -433,11 +483,24 @@ CPU::CPUExpected<void> CortexM3CPU::execute_32bit(uint16_t hw1, uint16_t hw2) {
     };
     for (const auto& entry : t32_reg_families) {
         if (entry.match(hw1, hw2)) {
-            return (this->*entry.handler)(hw1, hw2);
+            return entry.handler;
         }
     }
 
-    return std::unexpected{CPUError::IllegalInstruction};
+    return nullptr;
+}
+
+// ── 32-bit Thumb-2 execute ──
+//
+// Dispatch is now in translate_32bit (shared with the JIT cache). Look up the
+// handler, then execute it — bit-identical to the former inline mask chain,
+// just routed through a function pointer.
+CPU::CPUExpected<void> CortexM3CPU::execute_32bit(uint16_t hw1, uint16_t hw2) {
+    const Handler16 h = translate_32bit(hw1, hw2);
+    if (h == nullptr) {
+        return std::unexpected{CPUError::IllegalInstruction};
+    }
+    return (this->*h)(hw1, hw2);
 }
 
 } // namespace micro_forge::cpu::arm::cortex_m3

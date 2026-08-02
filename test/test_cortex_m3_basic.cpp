@@ -16,6 +16,29 @@ TEST_F(CortexM3Test, MovsImm8) {
     EXPECT_EQ(reg(1), 4u);
 }
 
+// ── WFI (Wait For Interrupt) — P2.a fast-forward prerequisite ──
+
+TEST_F(CortexM3Test, WfiSetsSleepingAndSuspendsFetch) {
+    // wfi → 0xBF30
+    load_program({0xBF30});
+    reset_cpu();
+    start_cpu();
+    set_pc(0);
+
+    EXPECT_FALSE(cpu_->is_sleeping());
+    step_cpu(); // execute WFI → sleeping_ = true
+    EXPECT_TRUE(cpu_->is_sleeping());
+
+    // Asleep with no pending exception: step burns a cycle but does NOT
+    // fetch/advance PC (fetch suspended). The coordinator's fast-forward
+    // advances virtual time to the next IRQ to wake us — covered separately.
+    const addr_t pc_asleep = cpu_->pc().value_or(0xDEAD);
+    step_cpu();
+    step_cpu();
+    EXPECT_TRUE(cpu_->is_sleeping());
+    EXPECT_EQ(cpu_->pc().value_or(0xDEAD), pc_asleep);
+}
+
 // ── ADDS Rd, Rn, Rm ──
 
 TEST_F(CortexM3Test, AddsReg) {
