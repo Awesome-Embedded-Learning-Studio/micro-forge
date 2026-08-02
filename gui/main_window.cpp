@@ -98,6 +98,7 @@ MainWindow::MainWindow(const QString& firmware_path, QWidget* parent)
         session_.set_fast_forward_enabled(on);
     });
     auto* jit_check = new QCheckBox(tr("JIT cache"));
+    jit_check->setChecked(true); // on by default
     jit_check->setToolTip(tr("Cache decoded instructions per PC (skip\n"
                              "fetch+decode on repeat). +30-35% faster.\n"
                              "Works for ALL firmware (16+32-bit)."));

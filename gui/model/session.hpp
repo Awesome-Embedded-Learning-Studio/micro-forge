@@ -68,7 +68,7 @@ class Session {
     std::string usart_output_;
     std::string firmware_path_;
     bool fast_forward_ = false; // P2.a: re-applied to each rebuilt SoC
-    bool jit_enabled_ = false;  // JIT cache: re-applied to each rebuilt SoC
+    bool jit_enabled_ = true;   // JIT cache: on by default (pure optimization)
     std::vector<std::uint8_t> firmware_data_;
 };
 
