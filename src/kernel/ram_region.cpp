@@ -1,4 +1,5 @@
 #include "micro_forge/kernel/ram_region.hpp"
+#include "micro_forge/kernel/le_access.hpp"
 
 #include <algorithm>
 
@@ -14,16 +15,6 @@ namespace {
 // conversion rule ([expr.shift] with C++20 two's complement semantics), so
 // keeping each intermediate representable makes the code state its own
 // correctness instead of leaning on that clause.
-uint16_t get_le16(const uint8_t* bytes) {
-    return static_cast<uint16_t>(static_cast<unsigned>(bytes[0]) |
-                                 (static_cast<unsigned>(bytes[1]) << 8U));
-}
-
-uint32_t get_le32(const uint8_t* bytes) {
-    return static_cast<uint32_t>(bytes[0]) | (static_cast<uint32_t>(bytes[1]) << 8U) |
-           (static_cast<uint32_t>(bytes[2]) << 16U) | (static_cast<uint32_t>(bytes[3]) << 24U);
-}
-
 void put_le16(uint8_t* bytes, uint16_t value) {
     bytes[0] = static_cast<uint8_t>(value);
     bytes[1] = static_cast<uint8_t>(value >> 8U);
@@ -56,14 +47,14 @@ std::expected<uint16_t, BusError> RamRegion::read_u16(uint64_t offset) {
     if (const auto oob = first_out_of_bounds(offset, 2)) {
         return std::unexpected(BusError{.kind = BusError::Kind::kOutOfBounds, .address = *oob});
     }
-    return get_le16(bytes_.data() + offset);
+    return kernel::get_le16(bytes_.data() + offset);
 }
 
 std::expected<uint32_t, BusError> RamRegion::read_u32(uint64_t offset) {
     if (const auto oob = first_out_of_bounds(offset, 4)) {
         return std::unexpected(BusError{.kind = BusError::Kind::kOutOfBounds, .address = *oob});
     }
-    return get_le32(bytes_.data() + offset);
+    return kernel::get_le32(bytes_.data() + offset);
 }
 
 std::expected<void, BusError> RamRegion::write_u8(uint64_t offset, uint8_t value) {

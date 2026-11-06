@@ -79,7 +79,8 @@ EXCLUDED_DIRS: Tuple[str, ...] = (
     "node_modules",
     "build",
     # micro-forge: GoogleTest suites are C++ sources, not published headers.
-    "tests"
+    "tests",  # micro-forge: GoogleTest suites
+    "reference",  # local: read-only checkouts (legacy worktree, QEMU)
 )
 
 # File extensions to scan

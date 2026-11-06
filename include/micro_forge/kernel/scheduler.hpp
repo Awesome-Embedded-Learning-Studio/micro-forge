@@ -7,7 +7,6 @@
 #pragma once
 
 #include <cstdint>
-#include <expected>
 #include <functional>
 #include <optional>
 #include <queue>
