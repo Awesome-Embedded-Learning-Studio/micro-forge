@@ -3,9 +3,15 @@ build*/
 out/
 
 CLAUDE.md
-.claude/
+# .claude/agents/ is published (auditor prompts carry no machine-local
+# data); the rest of .claude/ stays out.
+.claude/*
+!.claude/agents/
 # AI dev infrastructure (internal — not exposed to the public repo).
 document/ai/
+
+# Decision log & process records (internal)
+private/
 
 # CMake generated files
 CMakeCache.txt
@@ -61,3 +67,6 @@ examples/F103/MDK-ARM/F103/*.htm
 examples/F103/MDK-ARM/F103/*.lnp
 examples/F103/MDK-ARM/F103/*.sct
 examples/F103/MDK-ARM/F103/*.build_log.htm
+
+# Reference checkouts (read-only: legacy code, QEMU sources)
+reference/

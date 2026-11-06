@@ -1,0 +1,139 @@
+decoded_insn_count 304211
+fail_site_count 27551
+fail_kind_0 26566
+fail_kind_1 981
+fail_kind_2 1
+fail_kind_3 3
+-- histogram --
+136	adc
+96821	add
+4123	and
+1	bsr
+13498	call
+13	cdq
+30	cdqe
+81	cld
+36	cli
+10	cmovcc
+7016	cmp
+26	cmpsb
+10	cmpsd
+1	cmpsq
+5	cmpxchg
+2	cpuid
+80	cwde
+394	dec
+28	div
+2	fxrstor64
+2	fxsave64
+19	hlt
+1	idiv
+3544	imul
+85	in
+545	inc
+1	invlpg
+74	iret
+29015	jcc
+3978	jmp
+9	jrcxz
+6063	lea
+3222	leave
+2	lgdt
+1	lidt
+18	lodsb
+21	lodsd
+10	loop
+12	loope
+38	loopne
+78888	mov
+164	movabs
+382	movaps
+4	movd
+3	movdqa
+42	movq
+21	movsb
+10	movsd
+1	movsq
+35	movsx
+2904	movsxd
+322	movups
+3068	movzx
+38	mul
+71	neg
+2672	nop
+17	not
+347	or
+58	out
+3	pause
+9267	pop
+11210	push
+150	pxor
+7	rcl
+11	rcr
+1	rdmsr
+1	rdrand
+2	rdtsc
+3509	ret
+9	rol
+9	ror
+31	sar
+311	sbb
+23	scasb
+11	scasd
+557	setcc
+1	sgdt
+517	shl
+305	shr
+23	std
+16	sti
+19	stosb
+18	stosd
+7236	sub
+3	sysretq
+3357	test
+1	tzcnt
+1	wrmsr
+16	xadd
+127	xchg
+9439	xor
+-- first 40 fail offsets --
+12
+8149b
+814a0
+814a5
+81c0a
+81c0b
+81c48
+81c78
+81c7d
+81c8d
+81d21
+8543a
+8543b
+85677
+8867d
+88680
+891c0
+891d4
+891d5
+8a973
+8a974
+8a975
+8a976
+8a977
+8a978
+8a981
+8a982
+8a983
+8a986
+8a993
+8a996
+8a9a4
+8a9a5
+8aa43
+8aa62
+8aa72
+8aa73
+8aa76
+8aa84
+8aa88
