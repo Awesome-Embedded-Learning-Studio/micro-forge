@@ -1,114 +1,60 @@
+# AELS 统一 .clang-format 基线 | clang-format >= 19
+# 模板来源:aels-standard 母仓。复制进新仓后就是本仓配置,可直接改;想追平上游再复制一次。
 ---
-# .clang-format 配置文件
-# 用于 clangd 格式化和代码检查
-# 生成日期: 2026-02-15
-
-# 基础风格: LLVM (简洁现代)
 BasedOnStyle: LLVM
-
-# 缩进设置
+Standard: c++20                # 只影响格式化判断;语言标准由 CMake 声明
+ColumnLimit: 100
 IndentWidth: 4
+TabWidth: 4
 UseTab: Never
-ColumnLimit: 80
+ContinuationIndentWidth: 4
 
-# 大括号风格: 附加式 { 在语句末尾
+# 大括号:K&R 附加式
 BreakBeforeBraces: Attach
 
-# 指针/引用星号位置: 左侧 (int* a)
+# 指针/引用:左贴(int* p)
 PointerAlignment: Left
 DerivePointerAlignment: false
 
-# 命名风格 (仅供参考，不影响已有代码)
-# 可以让 clangd 警告不符合命名规范的代码
-# 需要配合 clang-tidy 使用
+# 类内布局
+AccessModifierOffset: -4       # public: 落列 0
+NamespaceIndentation: None
+FixNamespaceComments: true
 
-# 函数声明: 返回类型和函数名在同一行
-AlwaysBreakAfterReturnType: None
-AlwaysBreakTemplateDeclarations: No
+# include:默认保序(教学仓依赖讲解顺序);产品仓可覆盖为 Regroup + 三级 Categories
+SortIncludes: CaseSensitive
+IncludeBlocks: Preserve
 
-# 结构体初始化: 按位置赋值
-# C++11UnifiedBraceList: false 使用传统风格
-
-# 预处理器缩进: 与代码对齐
-IndentPPDirectives: AfterHash
-
-# 其他实用设置
-
-# 在二元运算符后换行
-BreakBeforeBinaryOperators: None
-
-# 在三元运算符后换行
-BreakBeforeTernaryOperators: true
-
-# 连续赋值时的对齐
-AlignConsecutiveAssignments: false
-AlignConsecutiveDeclarations: false
-
-# 转换类型周围的空格
-SpaceAfterCStyleCast: false
-
-# 逻辑运算符周围的空格
-SpaceAfterLogicalNot: false
-
-# 模板列表中的空格
-SpaceAfterTemplateKeyword: true
-
-# 控制语句括号内的空格: if (x) 而非 if (x )
-SpaceBeforeParens: ControlStatements
-SpaceInEmptyParentheses: false
-
-# 圆括号内的空格
-SpacesInParentheses: false
-SpacesInSquareBrackets: false
-
-# 容器类型周围的空格
-SpacesInContainerLiterals: false
-
-# lambda 相关
-SpaceBeforeAssignmentOperators: true
-SpaceBeforeCpp11BracedList: false
-
-# 对齐
-AlignAfterOpenBracket: Align
-AlignEscapedNewlines: Left
-AlignOperands: true
-AlignTrailingComments: true
-
-# 允许函数参数在同一行
-AllowAllArgumentsOnNextLine: true
-AllowAllConstructorInitializersOnNextLine: true
-AllowAllParametersOfDeclarationOnNextLine: true
-
-# 允许短函数在一行
-AllowShortBlocksOnASingleLine: Never
-AllowShortCaseLabelsOnASingleLine: false
+# 短语句
 AllowShortFunctionsOnASingleLine: Inline
 AllowShortIfStatementsOnASingleLine: Never
 AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
 
-# 强制 if/else/for/while/do 加大括号
-InsertBraces: true
+# 对齐:赋值/声明不做连续对齐(朴素档);宏保留对齐(寄存器表收益大)
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignConsecutiveMacros: AcrossComments
+AlignTrailingComments: true
+AlignEscapedNewlines: Right
+AlignAfterOpenBracket: Align
+AlignOperands: true
 
-# 自动对齐注释
-ReflowComments: true
+# 空格
+SpaceBeforeParens: ControlStatements
+SpaceAfterCStyleCast: false
+SpaceAfterTemplateKeyword: true
+SpaceInEmptyParentheses: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
 
-# 最大连续空行数
+# 换行与文件
+IndentPPDirectives: AfterHash
+BreakBeforeBinaryOperators: None
+BreakBeforeTernaryOperators: true
+BreakTemplateDeclarations: Yes  # clang-format 19+ 键名(旧名 AlwaysBreakTemplateDeclarations 作废)
 MaxEmptyLinesToKeep: 1
-
-# 命名空间缩进
-NamespaceIndentation: None
-
-# 访问修饰符缩进
-IndentAccessModifiers: false
-IndentCaseLabels: true
-
-# 换行符设置
+InsertBraces: true              # 单语句强制大括号;教学示例仓可覆盖为 false
+InsertNewlineAtEOF: true
 LineEnding: LF
-
-# C/C++ 语言设置
-Language: Cpp
-Standard: Latest
-
-# 包含块排序
-SortIncludes: true
-IncludeBlocks: Preserve
+ReflowComments: true

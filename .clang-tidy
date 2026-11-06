@@ -1,0 +1,45 @@
+# AELS 统一 .clang-tidy 基线 | clang-tidy >= 19
+# 模板来源:aels-standard 母仓。复制进新仓后把 HeaderFilterRegex 里的
+# REPO_SRC_ROOT 换成本仓源码根(如 src/),其余可直接改。
+# 子目录差异化:子目录 .clang-tidy + InheritParentConfig: true。
+---
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  clang-analyzer-*,
+  concurrency-*,
+  misc-*,
+  -misc-non-private-member-variables-in-classes,
+  -misc-include-cleaner,
+  modernize-*,
+  -modernize-avoid-c-arrays,
+  -modernize-use-trailing-return-type,
+  performance-*,
+  portability-*,
+  readability-*,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-function-cognitive-complexity,
+  cppcoreguidelines-pro-type-member-init,
+  cppcoreguidelines-init-variables
+WarningsAsErrors: ''            # 门禁走 CI diff-only,本地不炸编辑
+FormatStyle: file
+HeaderFilterRegex: 'REPO_SRC_ROOT/.*\.(h|hpp)$'
+CheckOptions:
+  - readability-function-cognitive-complexity.Threshold: 25
+  - readability-identifier-naming.TypeCase: CamelCase
+  - readability-identifier-naming.ConceptCase: CamelCase
+  - readability-identifier-naming.TemplateParameterCase: CamelCase
+  - readability-identifier-naming.FunctionCase: lower_case
+  - readability-identifier-naming.MethodCase: lower_case
+  - readability-identifier-naming.VariableCase: lower_case
+  - readability-identifier-naming.ParameterCase: lower_case
+  - readability-identifier-naming.PrivateMemberSuffix: '_'
+  - readability-identifier-naming.ProtectedMemberSuffix: '_'
+  - readability-identifier-naming.ConstantPrefix: 'k'
+  - readability-identifier-naming.ClassConstantPrefix: 'k'
+  - readability-identifier-naming.ScopedEnumConstantPrefix: 'k'
+  - readability-identifier-naming.GlobalVariablePrefix: 'g_'
+  - readability-identifier-naming.MacroCase: UPPER_CASE
+  - readability-identifier-naming.NamespaceCase: lower_case

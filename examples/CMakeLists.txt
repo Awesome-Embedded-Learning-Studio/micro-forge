@@ -1,8 +1,0 @@
-add_subdirectory(hello_world)
-add_subdirectory(gpio_blink)
-add_subdirectory(systick)
-add_subdirectory(hal_blink)
-add_subdirectory(hal_uart)
-add_subdirectory(hook_demo)
-add_subdirectory(tamcpp_blink)
-add_subdirectory(wfi_blink)

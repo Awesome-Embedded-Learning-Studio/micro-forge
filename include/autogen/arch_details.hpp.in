@@ -1,9 +1,0 @@
-#pragma once
-#include <cstdint>
-// clang-format off
-namespace micro_forge {
-// @ARCH_BIT@-bit architecture
-using addr_t = uint@ARCH_BIT@_t;
-using data_t = uint@ARCH_BIT@_t;
-} // namespace micro_forge
-// clang-format on
