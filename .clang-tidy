@@ -1,7 +1,3 @@
-# AELS 统一 .clang-tidy 基线 | clang-tidy >= 19
-# 模板来源:aels-standard 母仓。复制进新仓后把 HeaderFilterRegex 里的
-# REPO_SRC_ROOT 换成本仓源码根(如 src/),其余可直接改。
-# 子目录差异化:子目录 .clang-tidy + InheritParentConfig: true。
 ---
 Checks: >
   -*,
@@ -17,6 +13,7 @@ Checks: >
   -modernize-use-trailing-return-type,
   performance-*,
   portability-*,
+  -portability-avoid-pragma-once,
   readability-*,
   -readability-identifier-length,
   -readability-magic-numbers,
@@ -25,21 +22,42 @@ Checks: >
   cppcoreguidelines-init-variables
 WarningsAsErrors: ''            # 门禁走 CI diff-only,本地不炸编辑
 FormatStyle: file
-HeaderFilterRegex: 'REPO_SRC_ROOT/.*\.(h|hpp)$'
+# Hand-written headers only; the generated version.hpp lives in the build dir.
+HeaderFilterRegex: 'include/micro_forge/.*\.hpp$'
 CheckOptions:
-  - readability-function-cognitive-complexity.Threshold: 25
-  - readability-identifier-naming.TypeCase: CamelCase
-  - readability-identifier-naming.ConceptCase: CamelCase
-  - readability-identifier-naming.TemplateParameterCase: CamelCase
-  - readability-identifier-naming.FunctionCase: lower_case
-  - readability-identifier-naming.MethodCase: lower_case
-  - readability-identifier-naming.VariableCase: lower_case
-  - readability-identifier-naming.ParameterCase: lower_case
-  - readability-identifier-naming.PrivateMemberSuffix: '_'
-  - readability-identifier-naming.ProtectedMemberSuffix: '_'
-  - readability-identifier-naming.ConstantPrefix: 'k'
-  - readability-identifier-naming.ClassConstantPrefix: 'k'
-  - readability-identifier-naming.ScopedEnumConstantPrefix: 'k'
-  - readability-identifier-naming.GlobalVariablePrefix: 'g_'
-  - readability-identifier-naming.MacroCase: UPPER_CASE
-  - readability-identifier-naming.NamespaceCase: lower_case
+  - key: readability-function-cognitive-complexity.Threshold
+    value: 25
+  - key: readability-identifier-naming.TypeCase
+    value: CamelCase
+  - key: readability-identifier-naming.ConceptCase
+    value: CamelCase
+  - key: readability-identifier-naming.TemplateParameterCase
+    value: CamelCase
+  - key: readability-identifier-naming.FunctionCase
+    value: lower_case
+  - key: readability-identifier-naming.MethodCase
+    value: lower_case
+  - key: readability-identifier-naming.VariableCase
+    value: lower_case
+  - key: readability-identifier-naming.ParameterCase
+    value: lower_case
+  - key: readability-identifier-naming.PrivateMemberSuffix
+    value: '_'
+  - key: readability-identifier-naming.ProtectedMemberSuffix
+    value: '_'
+  - key: readability-identifier-naming.ConstantPrefix
+    value: 'k'
+  - key: readability-identifier-naming.ClassConstantPrefix
+    value: 'k'
+  - key: readability-identifier-naming.ScopedEnumConstantPrefix
+    value: 'k'
+  - key: readability-identifier-naming.GlobalVariablePrefix
+    value: 'g_'
+  - key: readability-identifier-naming.MacroCase
+    value: UPPER_CASE
+  - key: readability-identifier-naming.NamespaceCase
+    value: lower_case
+  # Local const variables read as plain variables; the 'k' prefix is reserved
+  # for global and class constants.
+  - key: readability-identifier-naming.LocalConstantCase
+    value: lower_case

@@ -7,6 +7,9 @@ CLAUDE.md
 # AI dev infrastructure (internal — not exposed to the public repo).
 document/ai/
 
+# Decision log & process records (internal)
+private/
+
 # CMake generated files
 CMakeCache.txt
 CMakeFiles/
@@ -61,3 +64,5 @@ examples/F103/MDK-ARM/F103/*.htm
 examples/F103/MDK-ARM/F103/*.lnp
 examples/F103/MDK-ARM/F103/*.sct
 examples/F103/MDK-ARM/F103/*.build_log.htm
+
+reference/
