@@ -45,13 +45,23 @@ target_link_libraries(test_decode
 )
 gtest_discover_tests(test_decode)
 
+add_executable(test_cpu test_cpu.cpp)
+target_link_libraries(test_cpu
+    PRIVATE micro_forge GTest::gtest_main
+)
+gtest_discover_tests(test_cpu)
+
 # Batch-2 acceptance corpus: assemble the bare client with GNU as and
-# flatten it to a raw binary at build time.
+# flatten it to a raw binary at build time. -j .text matters: endbr64
+# makes as emit a .note.gnu.property section, and without the section
+# filter objcopy flattens the note ahead of _start, so the corpus starts
+# mid-program (found by the batch-3 executor, invisible to the decode
+# gate because note bytes also decode).
 add_custom_command(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/bare-client.bin
     COMMAND as --64 -o ${CMAKE_CURRENT_BINARY_DIR}/bare-client.o
             ${CMAKE_CURRENT_SOURCE_DIR}/data/bare-client.s
-    COMMAND objcopy -O binary ${CMAKE_CURRENT_BINARY_DIR}/bare-client.o
+    COMMAND objcopy -O binary -j .text ${CMAKE_CURRENT_BINARY_DIR}/bare-client.o
             ${CMAKE_CURRENT_BINARY_DIR}/bare-client.bin
     DEPENDS data/bare-client.s
     COMMENT "assembling bare client corpus"
@@ -68,6 +78,17 @@ target_compile_definitions(test_bare_client PRIVATE
 )
 add_dependencies(test_bare_client bare_client_bin)
 gtest_discover_tests(test_bare_client)
+
+# Batch-3 acceptance: the same corpus, executed end to end.
+add_executable(test_execute test_execute.cpp)
+target_link_libraries(test_execute
+    PRIVATE micro_forge GTest::gtest_main
+)
+target_compile_definitions(test_execute PRIVATE
+    BARE_CLIENT_BIN="${CMAKE_CURRENT_BINARY_DIR}/bare-client.bin"
+)
+add_dependencies(test_execute bare_client_bin)
+gtest_discover_tests(test_execute)
 
 # Style gate: per-file line limit (default 600, see scripts/style/).
 add_test(NAME style_line_limit

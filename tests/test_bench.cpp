@@ -88,12 +88,22 @@ public:
         return std::unexpected(BusError{.kind = BusError::Kind::kOutOfBounds, .address = offset});
     }
 
+    // 64-bit access is meaningless on a 32-bit register interface.
+    [[nodiscard]] std::expected<uint64_t, BusError> read_u64(uint64_t offset) override {
+        return std::unexpected(BusError{.kind = BusError::Kind::kOutOfBounds, .address = offset});
+    }
+
     [[nodiscard]] std::expected<void, BusError> write_u32(uint64_t offset,
                                                           uint32_t value) override {
         if (offset == kRegExpireAt) {
             scheduler_.schedule(value, [this, value] { fired_at_ = value; });
             return {};
         }
+        return std::unexpected(BusError{.kind = BusError::Kind::kOutOfBounds, .address = offset});
+    }
+
+    [[nodiscard]] std::expected<void, BusError> write_u64(uint64_t offset,
+                                                          uint64_t /*value*/) override {
         return std::unexpected(BusError{.kind = BusError::Kind::kOutOfBounds, .address = offset});
     }
 

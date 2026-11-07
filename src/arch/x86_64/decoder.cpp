@@ -6,6 +6,7 @@
 
 #include "micro_forge/arch/x86_64/decoder.hpp"
 
+#include "micro_forge/kernel/bit.hpp"
 #include "micro_forge/kernel/le_access.hpp"
 
 #include "arch/x86_64/internal.hpp"
@@ -111,8 +112,7 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
             // F3 90 = pause.
             ent = make_ent(Mnemonic::kPause);
             p.rep = Rep::kNone;
-        } else if (p.rep != Rep::kNone && !(op >= 0xA4 && op <= 0xA7) &&
-                   !(op >= 0xAA && op <= 0xAF)) {
+        } else if (p.rep != Rep::kNone && (op < 0xA4 || op > 0xAF)) {
             // rep only means something on the string families.
             p.rep = Rep::kNone;
         }
@@ -173,9 +173,9 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
         }
         modrm = st.next();
         have_modrm = true;
-        const uint8_t mod = static_cast<unsigned>(modrm) >> 6U;
-        const uint8_t reg = (static_cast<unsigned>(modrm) >> 3U) & 7U;
-        const uint8_t rm = static_cast<unsigned>(modrm) & 7U;
+        const auto mod = static_cast<uint8_t>(kernel::bit::extract(modrm, kModrmMod));
+        const auto reg = static_cast<uint8_t>(kernel::bit::extract(modrm, kModrmReg));
+        const auto rm = static_cast<uint8_t>(kernel::bit::extract(modrm, kModrmRm));
         const bool modreg = (mod == 3);
         const uint64_t bad = opcode_off;
 
@@ -274,7 +274,7 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
             ent.a = Slot::kRm; // register form via modrm r/m
             break;
         case kGrpPs: {
-            if ((modrm >> 6) != 3) {
+            if (kernel::bit::extract(modrm, kModrmMod) != 3) {
                 // Packed-shift immediate forms are register-only.
                 return std::unexpected(
                     DecodeError{.kind = DecodeError::Kind::kUnsupportedOpcode, .offset = bad});
@@ -333,95 +333,29 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
         ent.a = Slot::kNone; // operand was only there to consume ModRM
     }
 
-    // CR/DR whitelist (CR0/2/3/4, DR0-3/6/7): the register number lives in
-    // the reg field; reserved encodings are rejected, not aliased.
+    // CR/DR whitelist (CR0/2/3/4, DR0-3/6/7): the number lives in the
+    // reg field and requires the register form (mod == 3) for r/m.
     if (have_modrm &&
         (ent.a == Slot::kCr || ent.b == Slot::kCr || ent.a == Slot::kDr || ent.b == Slot::kDr)) {
-        const auto code = static_cast<uint8_t>(((static_cast<unsigned>(modrm) >> 3U) & 7U) |
+        const auto code = static_cast<uint8_t>(kernel::bit::extract(modrm, kModrmReg) |
                                                ((p.rex_r != 0U) ? 8U : 0U));
         const bool is_cr = ent.a == Slot::kCr || ent.b == Slot::kCr;
-        // CR/DR moves also require the register form (mod == 3) for r/m.
-        if (!cr_dr_ok(code, is_cr) || (modrm >> 6) != 3) {
+        if (!cr_dr_ok(code, is_cr) || kernel::bit::extract(modrm, kModrmMod) != 3) {
             return std::unexpected(
                 DecodeError{.kind = DecodeError::Kind::kUnsupportedOpcode, .offset = opcode_off});
         }
     }
 
     // lea rejects register-form ModRM.
-    if (out.mnemonic == Mnemonic::kLea && have_modrm && (static_cast<unsigned>(modrm) >> 6U) == 3) {
+    if (out.mnemonic == Mnemonic::kLea && have_modrm &&
+        kernel::bit::extract(modrm, kModrmMod) == 3) {
         return std::unexpected(
             DecodeError{.kind = DecodeError::Kind::kBadModrm, .offset = st.pos - 1});
     }
 
     // --- operand assembly ---
-    const uint8_t regf = have_modrm
-                             ? static_cast<uint8_t>((static_cast<unsigned>(modrm) >> 3U) & 7U)
-                             : static_cast<uint8_t>(static_cast<unsigned>(op) & 7U);
-
-    // Memory/rm resolver; fills dst from modrm/sib/disp and consumes bytes.
-    const auto make_rm = [&](Slot s, Operand& dst) -> bool {
-        const uint8_t mod = static_cast<unsigned>(modrm) >> 6U;
-        const uint8_t rm = static_cast<unsigned>(modrm) & 7U;
-        dst.size = slot_width(s, opsize);
-        if (mod == 3) {
-            dst.kind = Operand::Kind::kReg;
-            if (s == Slot::kXRm || s == Slot::kXRm64 || s == Slot::kXRm32) {
-                dst.reg = xmm_at(rm, p.rex_b);
-            } else if (s == Slot::kCr) {
-                dst.reg = cr_at(rm);
-            } else if (s == Slot::kDr) {
-                dst.reg = dr_at(rm);
-            } else {
-                dst.reg = gpr_at(rm, p.rex_b);
-            }
-            return true;
-        }
-        dst.kind = Operand::Kind::kMem;
-        bool want_disp32 = false;
-        if (rm == 4) {
-            if (!st.has(1)) {
-                return false;
-            }
-            const uint8_t sib = st.next();
-            dst.scale = static_cast<uint8_t>(1U << (static_cast<unsigned>(sib) >> 6U));
-            const uint8_t idx = (static_cast<unsigned>(sib) >> 3U) & 7U;
-            const uint8_t base = static_cast<unsigned>(sib) & 7U;
-            if (idx != 4 || p.rex_x != 0) {
-                dst.has_index = true;
-                dst.index = gpr_at(idx, p.rex_x);
-            } else {
-                dst.scale = 1;
-            }
-            if (mod == 0 && base == 5) {
-                want_disp32 = true;
-            } else {
-                dst.has_base = true;
-                dst.base = gpr_at(base, p.rex_b);
-            }
-        } else if (mod == 0 && rm == 5) {
-            dst.rip_relative = true;
-            want_disp32 = true;
-        } else {
-            dst.has_base = true;
-            dst.base = gpr_at(rm, p.rex_b);
-        }
-        if (mod == 1) {
-            if (!st.has(1)) {
-                return false;
-            }
-            const unsigned d8 = st.next();
-            dst.disp = (d8 < 0x80U) ? static_cast<int64_t>(d8) : -static_cast<int64_t>(0x100U - d8);
-            dst.has_disp = true;
-        } else if (mod == 2 || want_disp32) {
-            if (!st.has(4)) {
-                return false;
-            }
-            dst.disp = static_cast<int32_t>(kernel::get_le32(st.bytes.data() + st.pos));
-            st.pos += 4;
-            dst.has_disp = true;
-        }
-        return true;
-    };
+    const uint8_t regf = have_modrm ? static_cast<uint8_t>(kernel::bit::extract(modrm, kModrmReg))
+                                    : static_cast<uint8_t>(static_cast<unsigned>(op) & 7U);
 
     const Slot slots[3] = {ent.a, ent.b, ent.c};
     for (unsigned i = 0; i < 3; ++i) {
@@ -441,7 +375,7 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
         case Slot::kXRm:
         case Slot::kXRm32:
         case Slot::kXRm64:
-            if (!make_rm(s, dst)) {
+            if (!resolve_rm(st, modrm, opsize, p, s, dst)) {
                 return std::unexpected(
                     DecodeError{.kind = DecodeError::Kind::kTruncated, .offset = st.pos});
             }
@@ -456,7 +390,7 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
             break;
         case Slot::kMem:
             if (have_modrm) {
-                if (!make_rm(Slot::kRm, dst)) {
+                if (!resolve_rm(st, modrm, opsize, p, Slot::kRm, dst)) {
                     return std::unexpected(
                         DecodeError{.kind = DecodeError::Kind::kTruncated, .offset = st.pos});
                 }
@@ -464,8 +398,12 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
                     return std::unexpected(
                         DecodeError{.kind = DecodeError::Kind::kBadModrm, .offset = st.pos - 1});
                 }
+            } else {
+                // A0-A3 moffs: kMem whose address arrives as the trailing
+                // immediate (a plain immediate would skip the bus).
+                dst.kind = Operand::Kind::kMem;
             }
-            break; // A0-A3 moffs: disp from the trailing immediate
+            break;
         case Slot::kReg:
         case Slot::kReg8:
             dst.kind = Operand::Kind::kReg;
@@ -513,8 +451,7 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
         }
     }
 
-    // mov sreg forms: memory operands render WORD PTR, GPRs render with
-    // 32-bit names ("mov ds,eax") per binutils.
+    // mov sreg: memory renders WORD PTR, GPRs render 32-bit names.
     if (out.mnemonic == Mnemonic::kMov && (ent.a == Slot::kSreg || ent.b == Slot::kSreg)) {
         for (Operand& o : out.ops) {
             if (o.kind == Operand::Kind::kReg && static_cast<unsigned>(o.reg) < 16) {
@@ -556,6 +493,12 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
                 }
             } else {
                 isz = opsize < 4 ? opsize : 4;
+                // A 32-bit immediate sign-extends into 64-bit operand
+                // size (81/C7/69/68 families); only mov r32, imm32
+                // zero-extends, and that path keeps opsize at 4.
+                if (isz == 4 && opsize == 8) {
+                    sext = true;
+                }
             }
             break;
         default:

@@ -6,6 +6,8 @@
 
 #include "arch/x86_64/internal.hpp"
 
+#include "micro_forge/kernel/le_access.hpp"
+
 namespace micro_forge::arch::x86_64::detail {
 namespace {
 
@@ -201,10 +203,12 @@ constexpr std::array<Ent, 256> build_esc0() {
     t[0xA2] = make_ent(Mnemonic::kCpuid);
     t[0xA3] = make_ent(Mnemonic::kBt, Slot::kRm, Slot::kReg, Slot::kNone, SizeR::kD);
     t[0xA4] = make_ent(Mnemonic::kShld, Slot::kRm, Slot::kReg, Slot::kNone, SizeR::kD, ImmK::k8, 2);
+    t[0xA5] = make_ent(Mnemonic::kShld, Slot::kRm, Slot::kReg, Slot::kCl, SizeR::kD);
     t[0xA8] = make_ent(Mnemonic::kPush, Slot::kNone, Slot::kNone, Slot::kNone, SizeR::kQ);
     t[0xA9] = make_ent(Mnemonic::kPop, Slot::kNone, Slot::kNone, Slot::kNone, SizeR::kQ);
     t[0xAB] = make_ent(Mnemonic::kBts, Slot::kRm, Slot::kReg, Slot::kNone, SizeR::kD);
-    t[0xAC] = make_ent(Mnemonic::kShld, Slot::kRm, Slot::kReg, Slot::kCl, SizeR::kD);
+    t[0xAC] = make_ent(Mnemonic::kShrd, Slot::kRm, Slot::kReg, Slot::kNone, SizeR::kD, ImmK::k8, 2);
+    t[0xAD] = make_ent(Mnemonic::kShrd, Slot::kRm, Slot::kReg, Slot::kCl, SizeR::kD);
     t[0xAF] = make_ent(Mnemonic::kImul, Slot::kReg, Slot::kRm, Slot::kNone, SizeR::kD);
     t[0xB0] = make_ent(Mnemonic::kCmpxchg, Slot::kRm8, Slot::kReg8, Slot::kNone, SizeR::kB);
     t[0xB1] = make_ent(Mnemonic::kCmpxchg, Slot::kRm, Slot::kReg, Slot::kNone, SizeR::kD);
@@ -383,6 +387,74 @@ Mnemonic grp4_mn(uint8_t reg) {
     default:
         return Mnemonic::kNop;
     }
+}
+
+/// Resolves a ModRM r/m operand (register or memory with SIB/disp) into
+/// @p dst, consuming stream bytes. Returns false when the stream ends
+/// mid-operand (the caller reports kTruncated).
+[[nodiscard]] bool resolve_rm(Stream& st, uint8_t modrm, uint8_t opsize, const Pfx& p, Slot s,
+                              Operand& dst) {
+    const auto mod = static_cast<uint8_t>(kernel::bit::extract(modrm, kModrmMod));
+    const auto rm = static_cast<uint8_t>(kernel::bit::extract(modrm, kModrmRm));
+    dst.size = slot_width(s, opsize);
+    if (mod == 3) {
+        dst.kind = Operand::Kind::kReg;
+        if (s == Slot::kXRm || s == Slot::kXRm64 || s == Slot::kXRm32) {
+            dst.reg = xmm_at(rm, p.rex_b);
+        } else if (s == Slot::kCr) {
+            dst.reg = cr_at(rm);
+        } else if (s == Slot::kDr) {
+            dst.reg = dr_at(rm);
+        } else {
+            dst.reg = gpr_at(rm, p.rex_b);
+        }
+        return true;
+    }
+    dst.kind = Operand::Kind::kMem;
+    bool want_disp32 = false;
+    if (rm == 4) {
+        if (!st.has(1)) {
+            return false;
+        }
+        const uint8_t sib = st.next();
+        dst.scale = static_cast<uint8_t>(1U << kernel::bit::extract(sib, kSibScale));
+        const auto idx = static_cast<uint8_t>(kernel::bit::extract(sib, kSibIndex));
+        const auto base = static_cast<uint8_t>(kernel::bit::extract(sib, kSibBase));
+        if (idx != 4 || p.rex_x != 0) {
+            dst.has_index = true;
+            dst.index = gpr_at(idx, p.rex_x);
+        } else {
+            dst.scale = 1;
+        }
+        if (mod == 0 && base == 5) {
+            want_disp32 = true;
+        } else {
+            dst.has_base = true;
+            dst.base = gpr_at(base, p.rex_b);
+        }
+    } else if (mod == 0 && rm == 5) {
+        dst.rip_relative = true;
+        want_disp32 = true;
+    } else {
+        dst.has_base = true;
+        dst.base = gpr_at(rm, p.rex_b);
+    }
+    if (mod == 1) {
+        if (!st.has(1)) {
+            return false;
+        }
+        const unsigned d8 = st.next();
+        dst.disp = (d8 < 0x80U) ? static_cast<int64_t>(d8) : -static_cast<int64_t>(0x100U - d8);
+        dst.has_disp = true;
+    } else if (mod == 2 || want_disp32) {
+        if (!st.has(4)) {
+            return false;
+        }
+        dst.disp = static_cast<int32_t>(kernel::get_le32(st.bytes.data() + st.pos));
+        st.pos += 4;
+        dst.has_disp = true;
+    }
+    return true;
 }
 
 } // namespace micro_forge::arch::x86_64::detail

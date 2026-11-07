@@ -73,6 +73,14 @@ std::expected<uint32_t, BusError> Bus::read_u32(uint64_t address) {
     return rebase(r->region->read_u32(r->offset), r->base);
 }
 
+std::expected<uint64_t, BusError> Bus::read_u64(uint64_t address) {
+    const auto r = resolve(address);
+    if (!r) {
+        return std::unexpected(BusError{.kind = BusError::Kind::kUnmappedRead, .address = address});
+    }
+    return rebase(r->region->read_u64(r->offset), r->base);
+}
+
 std::expected<void, BusError> Bus::write_u8(uint64_t address, uint8_t value) {
     const auto r = resolve(address);
     if (!r) {
@@ -98,6 +106,15 @@ std::expected<void, BusError> Bus::write_u32(uint64_t address, uint32_t value) {
             BusError{.kind = BusError::Kind::kUnmappedWrite, .address = address});
     }
     return rebase(r->region->write_u32(r->offset, value), r->base);
+}
+
+std::expected<void, BusError> Bus::write_u64(uint64_t address, uint64_t value) {
+    const auto r = resolve(address);
+    if (!r) {
+        return std::unexpected(
+            BusError{.kind = BusError::Kind::kUnmappedWrite, .address = address});
+    }
+    return rebase(r->region->write_u64(r->offset, value), r->base);
 }
 
 } // namespace micro_forge::kernel

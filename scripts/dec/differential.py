@@ -117,6 +117,20 @@ def normalize(text: str) -> str:
     # objdump appends comments ("# 3c2") and symbol notes ("<foo>").
     t = re.sub(r"\s+#.*$", "", t)
     t = re.sub(r"\s+<[^>]*>$", "", t)
+    # A0-A3 moffs: objdump leaves the width implicit when the bare
+    # address faces a register ("mov al,ds:0x.."); ours prints the
+    # truthful "BYTE PTR 0x..". Drop the width in exactly that shape.
+    parts = t.split(",")
+    if len(parts) == 2:
+        for i in (0, 1):
+            m_w = re.fullmatch(
+                r"(?:([a-z0-9]+) )?(?:BYTE|WORD|DWORD|QWORD) PTR (0x[0-9a-f]+)",
+                parts[i].strip())
+            other = re.fullmatch(r"(?:[a-z0-9]+ )?([a-z][a-z0-9]{1,7})", parts[1 - i].strip())
+            if m_w and other:
+                head = f"{m_w.group(1)} " if m_w.group(1) else ""
+                parts[i] = head + m_w.group(2)
+        t = ",".join(parts)
     return re.sub(r"\s+", " ", t)
 
 

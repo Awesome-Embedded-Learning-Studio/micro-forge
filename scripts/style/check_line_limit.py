@@ -12,7 +12,9 @@ import argparse
 import sys
 from pathlib import Path
 
-ROOTS = ("include", "src", "tools", "tests", "scripts")
+# micro-forge local: "bench" joined at batch 3 (guest loops + harness are
+# tracked sources); the rest stays verbatim from the parent repo.
+ROOTS = ("include", "src", "tools", "tests", "scripts", "bench")
 EXTS = (".cpp", ".hpp", ".py")
 # Inherited verbatim from the parent repo (batch 1): splitting it here would
 # fork away from upstream. Revisit if the parent repo splits it.

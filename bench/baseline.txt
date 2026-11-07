@@ -1,0 +1,23 @@
+# micro-forge ips baseline — batch 3, first record (naive interpreter)
+#
+# Method (inherited from the v1 bench/baseline.txt discipline): build
+# RelWithDebInfo, pin cores (taskset -c 2-5), warmup=800000 measure=8000000
+# reps=11, value = median * 0.85, tolerance 15% (regression when
+# now/baseline < 1 - tolerance). Advisory gate: the tool never hard-fails;
+# re-run to separate noise from a real regression, bump after intentional
+# wins.
+#
+# Recorded 2026-11-07 on the batch-3 executor (fetch-decode-execute per
+# instruction, one Bus byte-read per fetch byte). Known lever for later
+# batches: bulk fetch (one region call per instruction instead of 16) —
+# do NOT bump these numbers down when touching unrelated code.
+#
+# Usage:
+#   cmake --build build-rel --target mf-bench -j$(nproc)
+#   taskset -c 2-5 ./build-rel/bench/mf-bench int-alu \
+#       build-rel/bench/guest-int-alu.bin --baseline bench/baseline.txt
+#   taskset -c 2-5 ./build-rel/bench/mf-bench mem-mix \
+#       build-rel/bench/guest-mem-mix.bin --baseline bench/baseline.txt
+tolerance: 0.15
+int-alu 3189759
+mem-mix 3130552

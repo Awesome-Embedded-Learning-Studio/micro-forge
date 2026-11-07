@@ -33,6 +33,10 @@ add_library(micro_forge
     src/arch/x86_64/decoder.cpp
     src/arch/x86_64/tables.cpp
     src/arch/x86_64/render.cpp
+    src/arch/x86_64/cpu.cpp
+    src/arch/x86_64/execute.cpp
+    src/arch/x86_64/dispatch.cpp
+    src/arch/x86_64/grp3.cpp
 )
 target_include_directories(micro_forge PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -45,6 +49,9 @@ target_include_directories(micro_forge PRIVATE
 
 enable_testing()
 add_subdirectory(tests)
+
+# ips bench (batch 3 onward): advisory perf baselines, see bench/.
+add_subdirectory(bench)
 
 # Decode-dump tool for the objdump differential harness (batch 2).
 add_executable(mf-decode-dump tools/dec_dump.cpp)

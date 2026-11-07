@@ -14,8 +14,18 @@
 
 #include "micro_forge/arch/x86_64/decode_error.hpp"
 #include "micro_forge/arch/x86_64/decoded.hpp"
+#include "micro_forge/kernel/bit.hpp"
 
 namespace micro_forge::arch::x86_64::detail {
+
+/// ModRM/SIB field locations (SDM names): the positions are written once
+/// here, extraction sites read by name (bit.hpp discipline).
+constexpr kernel::bit::BitRange kModrmMod{.low = 6, .width = 2}; ///< mod
+constexpr kernel::bit::BitRange kModrmReg{.low = 3, .width = 3}; ///< reg
+constexpr kernel::bit::BitRange kModrmRm{.low = 0, .width = 3};  ///< r/m
+constexpr kernel::bit::BitRange kSibScale{.low = 6, .width = 2}; ///< scale
+constexpr kernel::bit::BitRange kSibIndex{.low = 3, .width = 3}; ///< index
+constexpr kernel::bit::BitRange kSibBase{.low = 0, .width = 3};  ///< base
 
 /// @brief Operand slot template: how one operand is sourced.
 enum class Slot : uint8_t {
@@ -84,15 +94,17 @@ struct Ent {
 [[nodiscard]] constexpr Ent make_ent(Mnemonic mn, Slot a = Slot::kNone, Slot b = Slot::kNone,
                                      Slot c = Slot::kNone, SizeR sz = SizeR::kD,
                                      ImmK imm = ImmK::k0, uint8_t islot = kNoImm, uint8_t grp = 0) {
-    return Ent{.mn = mn,
-               .a = a,
-               .b = b,
-               .c = c,
-               .imm_slot = islot,
-               .sz = sz,
-               .imm = imm,
-               .grp = grp,
-               .valid = true};
+    return Ent{
+        .mn = mn,
+        .a = a,
+        .b = b,
+        .c = c,
+        .imm_slot = islot,
+        .sz = sz,
+        .imm = imm,
+        .grp = grp,
+        .valid = true,
+    };
 }
 
 /// @brief Group-opcode ids dispatched on the ModRM reg field.
@@ -209,6 +221,12 @@ struct Pfx {
     return static_cast<Reg>((static_cast<unsigned>(code) & 7U) | (ext != 0U ? 8U : 0U));
 }
 
+/// Resolves a ModRM r/m operand (register or memory with SIB/disp) into
+/// @p dst, consuming stream bytes (defined in tables.cpp).
+/// @return false when the stream ends mid-operand (kTruncated territory).
+[[nodiscard]] bool resolve_rm(Stream& st, uint8_t modrm, uint8_t opsize, const Pfx& p, Slot s,
+                              Operand& dst);
+
 [[nodiscard]] inline Reg xmm_at(uint8_t code, uint8_t ext) {
     return static_cast<Reg>(16 + ((static_cast<unsigned>(code) & 7U) | (ext != 0U ? 8U : 0U)));
 }
@@ -262,7 +280,9 @@ struct Pfx {
 
 /// @brief Strict endbr64 tail check: F3 0F 1E FA is /7, mod=3, rm=2.
 [[nodiscard]] inline bool is_endbr64_tail(uint8_t modrm) {
-    return (modrm >> 6) == 3 && ((modrm >> 3) & 7U) == 7 && (modrm & 7U) == 2;
+    return kernel::bit::extract(modrm, kModrmMod) == 3 &&
+           kernel::bit::extract(modrm, kModrmReg) == 7 &&
+           kernel::bit::extract(modrm, kModrmRm) == 2;
 }
 
 /// @brief CR/DR whitelist: CR0/2/3/4 and DR0-3/6/7 only. Reserved

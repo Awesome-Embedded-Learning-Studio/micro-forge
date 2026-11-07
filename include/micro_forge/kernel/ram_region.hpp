@@ -55,6 +55,14 @@ public:
     [[nodiscard]] std::expected<uint32_t, BusError> read_u32(uint64_t offset) override;
 
     /**
+     * @brief Reads a little-endian 64-bit value at @p offset.
+     *
+     * @param[in] offset Byte offset relative to the mapping base.
+     * @return The value, or kOutOfBounds when the access crosses the end.
+     */
+    [[nodiscard]] std::expected<uint64_t, BusError> read_u64(uint64_t offset) override;
+
+    /**
      * @brief Writes one byte at @p offset.
      *
      * @param[in] offset Byte offset relative to the mapping base.
@@ -80,6 +88,15 @@ public:
      * @return Success, or kOutOfBounds when the access crosses the end.
      */
     [[nodiscard]] std::expected<void, BusError> write_u32(uint64_t offset, uint32_t value) override;
+
+    /**
+     * @brief Writes a little-endian 64-bit value at @p offset.
+     *
+     * @param[in] offset Byte offset relative to the mapping base.
+     * @param[in] value Value to store.
+     * @return Success, or kOutOfBounds when the access crosses the end.
+     */
+    [[nodiscard]] std::expected<void, BusError> write_u64(uint64_t offset, uint64_t value) override;
 
     /// @brief Region size in bytes.
     [[nodiscard]] uint64_t size() const { return bytes_.size(); }

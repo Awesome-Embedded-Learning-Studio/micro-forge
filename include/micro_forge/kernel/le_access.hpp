@@ -52,4 +52,39 @@ namespace micro_forge::kernel {
     return v;
 }
 
+/**
+ * @brief Stores a little-endian 16-bit value at @p p.
+ *
+ * @param[out] p Byte address; two writable bytes required.
+ * @param[in]  value Value to store.
+ */
+inline void put_le16(uint8_t* p, uint16_t value) {
+    p[0] = static_cast<uint8_t>(value);
+    p[1] = static_cast<uint8_t>(value >> 8U);
+}
+
+/**
+ * @brief Stores a little-endian 32-bit value at @p p.
+ *
+ * @param[out] p Byte address; four writable bytes required.
+ * @param[in]  value Value to store.
+ */
+inline void put_le32(uint8_t* p, uint32_t value) {
+    for (unsigned i = 0; i < 4; ++i) {
+        p[i] = static_cast<uint8_t>(value >> (8U * i));
+    }
+}
+
+/**
+ * @brief Stores a little-endian 64-bit value at @p p.
+ *
+ * @param[out] p Byte address; eight writable bytes required.
+ * @param[in]  value Value to store.
+ */
+inline void put_le64(uint8_t* p, uint64_t value) {
+    for (unsigned i = 0; i < 8; ++i) {
+        p[i] = static_cast<uint8_t>(value >> (8U * i));
+    }
+}
+
 } // namespace micro_forge::kernel

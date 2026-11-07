@@ -53,6 +53,14 @@ public:
     [[nodiscard]] virtual std::expected<uint32_t, BusError> read_u32(uint64_t offset) = 0;
 
     /**
+     * @brief Reads a little-endian 64-bit value at @p offset.
+     *
+     * @param[in] offset Byte offset relative to the mapping base.
+     * @return The value, or a BusError whose address is region-local.
+     */
+    [[nodiscard]] virtual std::expected<uint64_t, BusError> read_u64(uint64_t offset) = 0;
+
+    /**
      * @brief Writes one byte at @p offset.
      *
      * @param[in] offset Byte offset relative to the mapping base.
@@ -81,6 +89,16 @@ public:
      */
     [[nodiscard]] virtual std::expected<void, BusError> write_u32(uint64_t offset,
                                                                   uint32_t value) = 0;
+
+    /**
+     * @brief Writes a little-endian 64-bit value at @p offset.
+     *
+     * @param[in] offset Byte offset relative to the mapping base.
+     * @param[in] value Value to store.
+     * @return Success, or a BusError whose address is region-local.
+     */
+    [[nodiscard]] virtual std::expected<void, BusError> write_u64(uint64_t offset,
+                                                                  uint64_t value) = 0;
 };
 
 } // namespace micro_forge::kernel

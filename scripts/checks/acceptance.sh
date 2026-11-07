@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # micro-forge acceptance gate: one command, all thresholds.
 # Borrowed shape from CinuxOS scripts/checks/acceptance.sh (segments,
-# per-segment logs, final verdict). Sanitizer cells join when batch 3
-# brings the executor and perf baselines.
+# per-segment logs, final verdict). Sanitizer joined with batch 3 (the
+# executor brought pointer-rich guest state worth keeping under ASan/UBSan).
 set -uo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
@@ -37,19 +37,39 @@ run_segment test bash -c 'ctest --test-dir build --output-on-failure' || failed=
 # Format: clang-format over tracked C++ (Doxygen banner style intact).
 segments+=(format)
 run_segment format bash -c \
-    'clang-format --dry-run --Werror $(find include src tools tests -name "*.cpp" -o -name "*.hpp")' \
+    'clang-format --dry-run --Werror $(find include src tools tests bench -name "*.cpp" -o -name "*.hpp")' \
     || failed=1
 
 # Doxygen: header comment discipline (batch-1 gate, restored per CR).
 segments+=(doxygen)
 run_segment doxygen python3 scripts/doxygen/lint.py || failed=1
 
-# Tidy: clang-tidy over the tracked sources (src + tests + tools, the
-# batch-1 zero-warning bar). --quiet reports warnings only.
+# Tidy: clang-tidy over the tracked sources (src + tests + tools + bench,
+# the batch-1 zero-warning bar). clang-tidy exits 0 even with warnings
+# unless WarningsAsErrors is set, and this repo keeps that field empty for
+# editor friendliness -- so the gate has to look at the output itself:
+# any "warning:" line fails the segment (hole found during the batch-3
+# review, 79 warnings had walked through a green gate).
 segments+=(tidy)
-run_segment tidy bash -c \
-    'clang-tidy -p build --quiet $(find src tools tests -name "*.cpp" -o -name "*.hpp")' \
-    || failed=1
+run_segment tidy bash -c '
+    set -o pipefail
+    clang-tidy -p build --quiet $(find src tools tests bench -name "*.cpp" -o -name "*.hpp") 2>&1 |
+        tee /tmp/mf-acceptance-tidy.log | grep -c "warning:" > /tmp/mf-acceptance-tidy-count
+    count=$(cat /tmp/mf-acceptance-tidy-count)
+    if [ "${count}" != "0" ]; then
+        echo "tidy: ${count} warnings (gate: zero)"
+        exit 1
+    fi' || failed=1
+
+# Sanitizer: separate ASan+UBSan tree, full ctest. -fno-sanitize-recover
+# makes UBSan abort like ASan so the gate actually fails on the first
+# undefined behavior instead of printing past it.
+segments+=(sanitizer)
+run_segment sanitizer bash -c \
+    'cmake -S . -B build-san -DCMAKE_BUILD_TYPE=Debug \
+        -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer" >/dev/null && \
+     cmake --build build-san -j"$(nproc)" >/dev/null && \
+     ctest --test-dir build-san --output-on-failure' || failed=1
 
 # Differential vs objdump: the authority gate. Two tiers: the full guest
 # kernel image when MF_KERNEL_BIN points at one (a sibling project's build
@@ -86,4 +106,4 @@ if [[ -z "${MF_CHECK_LOG_DIR:-}" ]]; then
 else
     echo "[acceptance] logs kept in ${logs}"
 fi
-echo "[acceptance] verdict: build, tests, format, doxygen, tidy, differential green"
+echo "[acceptance] verdict: build, tests, format, doxygen, tidy, sanitizer, differential green"

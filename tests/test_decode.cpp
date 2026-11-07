@@ -327,7 +327,7 @@ TEST(DecodeTest, PackedShiftImmRequiresRegisterForm) {
     EXPECT_EQ(text_of({0x66, 0x0F, 0x71, 0xD1, 0x02}), "psrlw xmm1, 0x2");
     // /0 and /1 in the 0F 71-73 imm groups are undefined on hardware.
     const std::vector<uint8_t> bad_reg = {0x66, 0x0F, 0x71, 0xC0, 0x03};
-    auto r2 = mf::decode_one(bad_reg);
+    const auto r2 = mf::decode_one(bad_reg);
     ASSERT_FALSE(r2.has_value());
 }
 

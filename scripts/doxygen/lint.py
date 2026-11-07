@@ -81,6 +81,10 @@ EXCLUDED_DIRS: Tuple[str, ...] = (
     # micro-forge: GoogleTest suites are C++ sources, not published headers.
     "tests",  # micro-forge: GoogleTest suites
     "reference",  # local: read-only checkouts (legacy worktree, QEMU)
+    # micro-forge: out-of-tree build dirs (default tree, bench -O2 tree,
+    # sanitizer tree) hold FetchContent copies of googletest sources.
+    "build-rel",
+    "build-san",
 )
 
 # File extensions to scan

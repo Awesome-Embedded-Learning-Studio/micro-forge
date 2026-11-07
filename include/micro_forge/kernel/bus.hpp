@@ -64,6 +64,14 @@ public:
     [[nodiscard]] std::expected<uint32_t, BusError> read_u32(uint64_t address);
 
     /**
+     * @brief Reads a little-endian 64-bit value of guest memory.
+     *
+     * @param[in] address Absolute guest address.
+     * @return The value, or a BusError carrying the faulting address.
+     */
+    [[nodiscard]] std::expected<uint64_t, BusError> read_u64(uint64_t address);
+
+    /**
      * @brief Writes one byte of guest memory.
      *
      * @param[in] address Absolute guest address.
@@ -89,6 +97,15 @@ public:
      * @return Success, or a BusError carrying the faulting address.
      */
     [[nodiscard]] std::expected<void, BusError> write_u32(uint64_t address, uint32_t value);
+
+    /**
+     * @brief Writes a little-endian 64-bit value of guest memory.
+     *
+     * @param[in] address Absolute guest address.
+     * @param[in] value Value to store.
+     * @return Success, or a BusError carrying the faulting address.
+     */
+    [[nodiscard]] std::expected<void, BusError> write_u64(uint64_t address, uint64_t value);
 
 private:
     struct Mapping {

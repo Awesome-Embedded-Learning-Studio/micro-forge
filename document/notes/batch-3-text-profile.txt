@@ -1,0 +1,99 @@
+# micro-forge .text profile (batch 3)
+# source: kernel.bin (975728 bytes), load_paddr 0x200000, header 0x28
+# .text: lma 0x200030 size 0x8a6e0 -> file [0x30, 0x8a710), decoded 146129, fail sites 18
+decoded_insn_count 146129
+fail_site_count 18
+fail_kind_0 15
+fail_kind_3 3
+-- histogram --
+78259	mov
+13012	call
+6516	jcc
+6054	lea
+5114	sub
+4967	push
+3549	jmp
+3474	ret
+3305	add
+3224	test
+3214	leave
+3068	movzx
+2883	cmp
+2634	nop
+2019	xor
+1108	pop
+557	setcc
+525	and
+466	shl
+382	movaps
+322	movups
+270	shr
+164	movabs
+159	or
+150	pxor
+144	imul
+82	movsxd
+67	neg
+61	iret
+60	cld
+42	movq
+35	movsx
+33	mul
+30	cdqe
+27	div
+24	sar
+17	xchg
+16	xadd
+15	not
+10	cmovcc
+9	cli
+5	cmpxchg
+5	sti
+4	hlt
+4	movd
+3	inc
+3	movdqa
+3	out
+3	pause
+3	sysretq
+2	cpuid
+2	fxrstor64
+2	fxsave64
+2	in
+2	lgdt
+2	movsb
+2	rdtsc
+1	adc
+1	bsr
+1	idiv
+1	invlpg
+1	jrcxz
+1	lidt
+1	rdmsr
+1	rdrand
+1	rol
+1	ror
+1	sbb
+1	scasd
+1	sgdt
+1	tzcnt
+1	wrmsr
+-- fail offsets (first 40, kernel.bin file offsets) --
+0x8149b
+0x814a0
+0x814a5
+0x81c0a
+0x81c0b
+0x81c48
+0x81c78
+0x81c7d
+0x81c8d
+0x81d21
+0x8543a
+0x8543b
+0x85677
+0x8867d
+0x88680
+0x891c0
+0x891d4
+0x891d5
