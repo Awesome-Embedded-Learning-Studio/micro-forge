@@ -2,7 +2,9 @@
 
 #include <micro_forge/kernel/bus.hpp>
 #include <micro_forge/kernel/ram_region.hpp>
+#include <micro_forge/kernel/register_region.hpp>
 
+#include <array>
 #include <cstdint>
 
 namespace {
@@ -147,6 +149,62 @@ TEST(BusTest, RegionErrorAddressIsAbsolute) {
     ASSERT_FALSE(read.has_value());
     EXPECT_EQ(BusError::Kind::kOutOfBounds, read.error().kind);
     EXPECT_EQ(0x20000100, read.error().address);
+}
+
+TEST(BusTest, DirectRamChecksBothMappingAndBackingBounds) {
+    Bus bus;
+    RamRegion ram(0x100);
+    ASSERT_TRUE(bus.map_ram(0x1000, 0x80, ram).has_value());
+    uintptr_t host = 0;
+    ASSERT_TRUE(bus.direct_ram(0x1078, 8, host));
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(ram.data() + 0x78), host);
+    EXPECT_FALSE(bus.direct_ram(0x1079, 8, host));
+    EXPECT_FALSE(bus.direct_ram(0x1080, 1, host));
+    EXPECT_FALSE(bus.direct_ram(0xFFF, 8, host));
+    EXPECT_FALSE(bus.direct_ram(UINT64_MAX - 1, 8, host));
+
+    // An oversized bus mapping does not extend the region's storage.
+    ASSERT_TRUE(bus.map_ram(0x2000, 0x200, ram).has_value());
+    EXPECT_TRUE(bus.direct_ram(0x20F8, 8, host));
+    EXPECT_FALSE(bus.direct_ram(0x20F9, 8, host));
+}
+
+TEST(BusTest, DirectRamSupportsLinearAddressZeroAndExcludesMmio) {
+    Bus bus;
+    RamRegion ram(RamRegion::WindowBase{0}, 0x100);
+    ASSERT_TRUE(bus.map_ram(0, 0x100, ram).has_value());
+    uintptr_t host = 123;
+    ASSERT_TRUE(bus.direct_ram(0, 8, host));
+    EXPECT_EQ(0U, host); // valid wasm offset; never dereference it in a native test
+
+    std::array<uint8_t, 8> registers{};
+    micro_forge::kernel::RegisterRegionBase mmio(registers.data(), registers.size());
+    ASSERT_TRUE(bus.map(0x1000, registers.size(), mmio).has_value());
+    EXPECT_FALSE(bus.direct_ram(0x1000, 8, host));
+    ASSERT_TRUE(bus.write_u64(0x1000, 42).has_value());
+    EXPECT_EQ(42U, bus.read_u64(0x1000).value());
+    EXPECT_TRUE(bus.direct_ram(0, 8, host)); // MMIO does not evict the RAM window
+}
+
+class WatchedRam : public RamRegion {
+public:
+    using RamRegion::RamRegion;
+    unsigned reads = 0;
+
+    std::expected<uint64_t, BusError> read_u64(uint64_t offset) override {
+        ++reads;
+        return RamRegion::read_u64(offset);
+    }
+};
+
+TEST(BusTest, OrdinaryMappingPreservesRamSubclassCallbacks) {
+    Bus bus;
+    WatchedRam ram(0x100);
+    ASSERT_TRUE(bus.map(0, ram.size(), ram).has_value());
+    uintptr_t host = 0;
+    EXPECT_FALSE(bus.direct_ram(0, 8, host)); // only map_ram() opts into bypassing hooks
+    ASSERT_TRUE(bus.read_u64(0).has_value());
+    EXPECT_EQ(1U, ram.reads);
 }
 
 } // namespace

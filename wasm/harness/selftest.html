@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>micro-forge engine self-test (browser)</title>
+    <style>
+      body { font-family: monospace; margin: 2rem; }
+      #log { white-space: pre-wrap; }
+      .ok { color: #080; } .bad { color: #c00; font-weight: bold; }
+    </style>
+  </head>
+  <body>
+    <h1>micro-forge engine self-test (batch 5)</h1>
+    <p>
+      纯引擎自验（非壳）：fetch engine.wasm 与裸客体，走与 Node harness
+      完全相同的断言链。把这个页面放在能同时取到
+      <code>../../build-wasm/engine.wasm</code> 与
+      <code>../../build/tests/bare-client.bin</code> 的 HTTP 服务下打开。
+    </p>
+    <pre id="log">loading…</pre>
+    <script type="module">
+      const log = (msg, cls) => {
+        const pre = document.getElementById("log");
+        pre.textContent += `\n${msg}`;
+        if (cls) pre.classList.add(cls);
+      };
+      const fail = (msg) => {
+        log(`FAIL: ${msg}`, "bad");
+        throw new Error(msg);
+      };
+
+      const CODE_BASE = 0x100000;
+      const STACK_TOP = 0x90000;
+
+      const [wasm, client] = await Promise.all([
+        fetch("../../build-wasm/engine.wasm").then((r) => r.arrayBuffer()),
+        fetch("../../build/tests/bare-client.bin").then((r) => r.arrayBuffer()),
+      ]);
+      const { instance } = await WebAssembly.instantiate(wasm, {
+  env: { emscripten_notify_memory_growth: () => {} },
+  // Minimal WASI stubs: the reactor runtime declares them; the engine
+  // never performs console IO through them (returns "success").
+  wasi_snapshot_preview1: {
+    fd_close: () => 0, fd_seek: () => 0, fd_write: () => 0,
+  },
+});
+      const e = instance.exports;
+// Reactor contract: global constructors run on _initialize, which the
+// embedder invokes once after instantiation (before any export call).
+if (typeof e._initialize === "function") e._initialize();
+
+      log(`abi=${e.mf_abi_version()} engine=${e.mf_engine_version().toString(16)} fmt=${e.mf_snapshot_format_version()}`);
+      new Uint8Array(e.memory.buffer, CODE_BASE, client.byteLength).set(new Uint8Array(client));
+      e.mf_reset(CODE_BASE, STACK_TOP);
+      const packed = e.mf_run(BigInt(1 << 20));
+      const kind = Number(packed & 0xffn);
+      const code = Number(packed >> 8n);
+      log(`exit kind=${kind} code=0x${code.toString(16)} icount=${e.mf_icount()}`);
+      if (kind !== 2 || code !== 0xaa) fail("unexpected exit");
+
+      // Blob length queryable; full round-trip placement is a batch-6
+      // design item (see selftest.mjs note).
+      const needed = e.mf_snapshot(0, 0);
+      if (needed < BigInt(516 * 1024 * 1024)) fail(`snapshot length ${needed}`);
+      log(`snapshot blob length = ${needed} bytes`);
+
+      log("PASS: bare client ran in the browser, blob length queryable", "ok");
+    </script>
+  </body>
+</html>

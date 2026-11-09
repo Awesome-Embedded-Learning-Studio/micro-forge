@@ -1,0 +1,111 @@
+{
+  "date": "2026-11-09",
+  "base_commit": "89033325389c9ab13d0298721daf58bf8c519c4d",
+  "cpu": "AMD Ryzen 7 9700X",
+  "logical_cpu": 2,
+  "node": "v26.12.0",
+  "emscripten": "7.0.0",
+  "guest_ram_mib": 256,
+  "instructions": 400000000,
+  "chunk": 2000000,
+  "repetitions": 5,
+  "order": "forward on odd rounds, reverse on even rounds",
+  "artifacts": {
+    "build-wasm/engine-before-opt.wasm": {
+      "sha256": "d2a1b216310c046a82f78d8dba21aa3dc30ab28ab0e3fb033df88ffbf31c2b03",
+      "bytes": 452283,
+      "median_seconds": 11.02197046,
+      "min_seconds": 10.384922549,
+      "max_seconds": 14.169043706,
+      "median_mips": 36.29115151883649,
+      "speedup": 1.0
+    },
+    "build-wasm/engine.wasm": {
+      "sha256": "9d3c8277fc03058ef3908ee687b3003625087067b9b7341bd65941994df4b961",
+      "bytes": 470627,
+      "median_seconds": 7.483994743,
+      "min_seconds": 7.370361925,
+      "max_seconds": 7.626119827,
+      "median_mips": 53.447391899109995,
+      "speedup": 1.4727389366900843,
+      "archived_artifact": "build-wasm/engine-after-round1.wasm"
+    }
+  },
+  "images": {
+    "kernel.bin": "65122f2df30756d30bcc0b17a58c8dfc2c4be91cfeee5f98709a3682fda6d57a",
+    "ext2.img": "96121df1de782c8e2d7ef9e99057d448b6041b4ab8fc0fa53168fbea67010224"
+  },
+  "matching_guest_state": {
+    "icount": "400000000",
+    "exit": {
+      "kind": 0,
+      "code": 0
+    },
+    "rip": "ffffffff802032ff",
+    "serial": "1238",
+    "consoleHash": "e60d1d9bd61688561fdee44be81eec6037be1763f4fbe962ca19bc453a3ebfb1",
+    "ramHash": "95fd63c774c3552266cb339bab7cb8649ece659c225a157d857d8eaa71a59eac"
+  },
+  "samples": [
+    {
+      "rep": 1,
+      "artifact": "build-wasm/engine-before-opt.wasm",
+      "seconds": 10.433803349,
+      "mips": 38.33693109026604
+    },
+    {
+      "rep": 1,
+      "artifact": "build-wasm/engine.wasm",
+      "seconds": 7.626119827,
+      "mips": 52.45131325943956
+    },
+    {
+      "rep": 2,
+      "artifact": "build-wasm/engine.wasm",
+      "seconds": 7.370361925,
+      "mips": 54.27141897105684
+    },
+    {
+      "rep": 2,
+      "artifact": "build-wasm/engine-before-opt.wasm",
+      "seconds": 11.02197046,
+      "mips": 36.2911515188365
+    },
+    {
+      "rep": 3,
+      "artifact": "build-wasm/engine-before-opt.wasm",
+      "seconds": 10.384922549,
+      "mips": 38.51737922094733
+    },
+    {
+      "rep": 3,
+      "artifact": "build-wasm/engine.wasm",
+      "seconds": 7.483994743,
+      "mips": 53.447391899109995
+    },
+    {
+      "rep": 4,
+      "artifact": "build-wasm/engine.wasm",
+      "seconds": 7.464175649,
+      "mips": 53.589306952280694
+    },
+    {
+      "rep": 4,
+      "artifact": "build-wasm/engine-before-opt.wasm",
+      "seconds": 14.169043706,
+      "mips": 28.230557283877715
+    },
+    {
+      "rep": 5,
+      "artifact": "build-wasm/engine-before-opt.wasm",
+      "seconds": 11.536941374,
+      "mips": 34.67123451814119
+    },
+    {
+      "rep": 5,
+      "artifact": "build-wasm/engine.wasm",
+      "seconds": 7.598663094,
+      "mips": 52.64083892808
+    }
+  ]
+}

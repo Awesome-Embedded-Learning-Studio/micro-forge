@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <span>
 
 #include "micro_forge/kernel/bus_error.hpp"
 
@@ -34,6 +35,20 @@ public:
      * @param[in] offset Byte offset relative to the mapping base.
      * @return The byte, or a BusError whose address is region-local.
      */
+    /// @brief Contiguous byte view for fast paths (instruction fetch).
+    ///
+    /// Default: not offered (devices, register windows). RamRegion
+    /// overrides this with its storage pointer.
+    ///
+    /// @param[in] offset Byte offset relative to the mapping base.
+    /// @param[in] len Number of bytes wanted.
+    /// @return The view, or an empty span when unavailable.
+    [[nodiscard]] virtual std::span<const uint8_t> peek(uint64_t offset, std::size_t len) const {
+        (void)offset;
+        (void)len;
+        return {};
+    }
+
     [[nodiscard]] virtual std::expected<uint8_t, BusError> read_u8(uint64_t offset) = 0;
 
     /**

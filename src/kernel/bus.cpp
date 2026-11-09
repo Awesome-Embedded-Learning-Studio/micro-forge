@@ -1,10 +1,12 @@
 #include "micro_forge/kernel/bus.hpp"
+#include "micro_forge/kernel/ram_region.hpp"
 
 #include <algorithm>
 
 namespace micro_forge::kernel {
 
 std::expected<void, BusError> Bus::map(uint64_t base, uint64_t size, Region& region) {
+    cached_region_ = nullptr; // the table is about to change
     if (size == 0 || base + size < base) {
         return std::unexpected(BusError{.kind = BusError::Kind::kInvalidMapping, .address = base});
     }
@@ -23,7 +25,36 @@ std::expected<void, BusError> Bus::map(uint64_t base, uint64_t size, Region& reg
     return {};
 }
 
+std::expected<void, BusError> Bus::map_ram(uint64_t base, uint64_t size, RamRegion& ram) {
+    const auto mapped = map(base, size, ram);
+    if (mapped) {
+        direct_base_ = base;
+        direct_size_ = std::min(size, ram.size());
+        direct_host_ = ram.backing_base();
+    }
+    return mapped;
+}
+
+std::span<const uint8_t> Bus::peek(uint64_t address, std::size_t len) const {
+    auto it = std::ranges::upper_bound(mappings_, address, {}, &Mapping::base);
+    if (it == mappings_.begin()) {
+        return {};
+    }
+    --it;
+    if (address >= it->end || address + len > it->end) {
+        return {};
+    }
+    return it->region->peek(address - it->base, len);
+}
+
 std::optional<Bus::Resolved> Bus::resolve(uint64_t address) const {
+    if (cached_region_ != nullptr && address >= cached_base_ && address < cached_end_) {
+        return Resolved{
+            .region = cached_region_,
+            .base = cached_base_,
+            .offset = address - cached_base_,
+        };
+    }
     auto it = std::ranges::upper_bound(mappings_, address, {}, &Mapping::base);
     if (it == mappings_.begin()) {
         return std::nullopt;
@@ -32,6 +63,9 @@ std::optional<Bus::Resolved> Bus::resolve(uint64_t address) const {
     if (address >= it->end) {
         return std::nullopt;
     }
+    cached_base_ = it->base;
+    cached_end_ = it->end;
+    cached_region_ = it->region;
     return Resolved{.region = it->region, .base = it->base, .offset = address - it->base};
 }
 

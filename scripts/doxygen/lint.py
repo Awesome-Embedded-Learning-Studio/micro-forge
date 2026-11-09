@@ -85,6 +85,9 @@ EXCLUDED_DIRS: Tuple[str, ...] = (
     # sanitizer tree) hold FetchContent copies of googletest sources.
     "build-rel",
     "build-san",
+    "build-emb",
+    # micro-forge: the emsdk toolchain clone (gitignored tooling).
+    "emsdk",
 )
 
 # File extensions to scan

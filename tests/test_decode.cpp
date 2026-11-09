@@ -187,9 +187,44 @@ TEST(DecodeTest, XchgXaddCmpxchg) {
 }
 
 TEST(DecodeTest, BtFamily) {
-    EXPECT_EQ(text_of({0x48, 0x0F, 0xBA, 0xE7, 0x3F}), "bts rdi, 0x3f");
-    EXPECT_EQ(text_of({0x0F, 0xBA, 0xE7, 0x3F}), "bts edi, 0x3f");
+    // 0F BA reg-field map per SDM and objdump 2.47 (batch-4 review: the
+    // map was off by one, a real bt executed as a writing bts):
+    // /4=bt /5=bts /6=btr /7=btc, /0-/3 undefined.
+    EXPECT_EQ(text_of({0x48, 0x0F, 0xBA, 0xE7, 0x3F}), "bt rdi, 0x3f");
+    EXPECT_EQ(text_of({0x0F, 0xBA, 0xE7, 0x3F}), "bt edi, 0x3f");
+    EXPECT_EQ(text_of({0x0F, 0xBA, 0xEF, 0x3F}), "bts edi, 0x3f");
+    EXPECT_EQ(text_of({0x0F, 0xBA, 0xF7, 0x3F}), "btr edi, 0x3f");
+    EXPECT_EQ(text_of({0x0F, 0xBA, 0xFF, 0x3F}), "btc edi, 0x3f");
     EXPECT_EQ(text_of({0x48, 0x0F, 0xA3, 0xD8}), "bt rax, rbx");
+    // /3 (and below) is an undefined encoding: refused, not aliased.
+    const auto bad = mf::decode_one(std::vector<unsigned char>{0x0F, 0xBA, 0x1F, 0x3F});
+    ASSERT_FALSE(bad.has_value());
+}
+
+TEST(DecodeTest, MandatoryPrefixMissIsRefused) {
+    // F2/F3 before 0F select different instructions (SSE); the whitelist
+    // carries none of them, so these must refuse instead of decoding as
+    // the plain 16-byte movups (batch-4 review, objdump: movsd/movss).
+    const std::vector<unsigned char> f2 = {0xF2, 0x0F, 0x10, 0xC0};
+    EXPECT_FALSE(mf::decode_one(f2).has_value());
+    const std::vector<unsigned char> f3 = {0xF3, 0x0F, 0x10, 0xC0};
+    EXPECT_FALSE(mf::decode_one(f3).has_value());
+}
+
+TEST(DecodeTest, FFGroupHonorsOperandSizePrefix) {
+    // 66 FF /2 = call ax, 66 FF /6 = push ax (objdump-verified; the
+    // group used to pin everything at 64 bits).
+    EXPECT_EQ(text_of({0x66, 0xFF, 0xD0}), "call ax");
+    EXPECT_EQ(text_of({0x66, 0xFF, 0xF0}), "push ax");
+    EXPECT_EQ(text_of({0xFF, 0xD0}), "call rax");
+}
+
+TEST(DecodeTest, PopGroupRejectsUndefinedForms) {
+    // 8F /0 is pop; /1 and beyond are undefined encodings (objdump
+    // refuses 8F C8).
+    EXPECT_EQ(text_of({0x8F, 0xC0}), "pop rax");
+    const std::vector<unsigned char> bad = {0x8F, 0xC8};
+    EXPECT_FALSE(mf::decode_one(bad).has_value());
 }
 
 TEST(DecodeTest, InOut) {
@@ -291,18 +326,26 @@ TEST(DecodeTest, PrefixSemanticsDirect) {
     EXPECT_EQ(r->rep, mf::Rep::kNone);
 }
 
-TEST(DecodeTest, RexAfterLegacyPrefixWins) {
-    // binutils (our differential authority) drops the 66 and keeps the
-    // REX bits; SDM 2.2.1.2 words the precedence the other way. Recorded
-    // divergence: real toolchains never emit REX before 66.
-    EXPECT_EQ(text_of({0x48, 0x66, 0x89, 0xC8}), "mov rax, rcx");
+TEST(DecodeTest, LegacyPrefixAfterRexVoidsRex) {
+    // SDM 2.2.1.2: a legacy prefix after a REX voids the REX. With the
+    // REX gone the 66 still applies, so 48 66 89 C8 is the 16-bit mov.
+    // (binutils renders this corner as a 32-bit mov with folded prefix
+    // rows; real toolchains never emit REX-before-66, so the corpus
+    // never exercises it and the differential stays blind here by
+    // construction.)
+    EXPECT_EQ(text_of({0x48, 0x66, 0x89, 0xC8}), "mov ax, cx");
+    // The healthy order (legacy first, REX last before the opcode) keeps
+    // the REX: data16 folds away under REX.W.
+    EXPECT_EQ(text_of({0x66, 0x48, 0x89, 0xC0}), "mov rax, rax");
 }
 
-TEST(DecodeTest, BadAddrSizePrefixRejected) {
+TEST(DecodeTest, AddrSizePrefixAccepted) {
+    // 67 is the address-size override: v0 decodes the 64-bit form and
+    // records the prefix (glibc emits `addr32 call` padding).
     const std::vector<uint8_t> p67 = {0x67, 0x89, 0xC8};
     auto r = mf::decode_one(p67);
-    ASSERT_FALSE(r.has_value());
-    EXPECT_EQ(r.error().kind, mf::DecodeError::Kind::kBadPrefix);
+    ASSERT_TRUE(r.has_value());
+    EXPECT_EQ(mf::Mnemonic::kMov, r->mnemonic);
 }
 
 TEST(DecodeTest, ReservedCrDrRejected) {

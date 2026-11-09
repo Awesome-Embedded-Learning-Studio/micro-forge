@@ -1,0 +1,4 @@
+node_modules/
+dist/
+# 根目录的旧副本（wasm 只保留 public/engine.wasm）
+/engine.wasm

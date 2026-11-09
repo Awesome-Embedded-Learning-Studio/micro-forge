@@ -15,6 +15,10 @@ from pathlib import Path
 # micro-forge local: "bench" joined at batch 3 (guest loops + harness are
 # tracked sources); the rest stays verbatim from the parent repo.
 ROOTS = ("include", "src", "tools", "tests", "scripts", "bench")
+# micro-forge local: path prefixes the gate never scans. The emsdk
+# toolchain clone under tools/ is gitignored third-party tooling, not
+# our sources (batch 5).
+SKIPPED_PREFIXES = ("tools/emsdk/",)
 EXTS = (".cpp", ".hpp", ".py")
 # Inherited verbatim from the parent repo (batch 1): splitting it here would
 # fork away from upstream. Revisit if the parent repo splits it.
@@ -37,7 +41,7 @@ def main() -> int:
             if path.suffix not in EXTS or not path.is_file():
                 continue
             rel = path.relative_to(repo).as_posix()
-            if rel in EXEMPT:
+            if rel in EXEMPT or rel.startswith(SKIPPED_PREFIXES):
                 continue
             scanned += 1
             n = len(path.read_text(encoding="utf-8", errors="replace").splitlines())

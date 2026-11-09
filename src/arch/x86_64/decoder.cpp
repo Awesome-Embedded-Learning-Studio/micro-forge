@@ -73,6 +73,9 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
             case 1:
                 direct = &kEsc.p66[esc_op];
                 break;
+            case 2:
+                direct = &kEsc.p2[esc_op];
+                break;
             case 3:
                 direct = &kEsc.p3[esc_op];
                 break;
@@ -80,7 +83,20 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
                 break;
             }
             const Ent& plain = kEsc.none[esc_op];
-            if (direct != nullptr && direct->valid) {
+            const bool mandatory_hit = direct != nullptr && direct->valid;
+            if (!mandatory_hit && (pmod == 2 || pmod == 3)) {
+                // F2/F3 before 0F select a different instruction (the SSE
+                // families); falling back to the plain entry would guess.
+                // The v0 whitelist carries its F2/F3 forms in the p3
+                // table; the p2 table is empty on purpose. Everything
+                // else is refused (batch-4 review: F2 0F 10 used to
+                // decode as 16-byte movups).
+                return std::unexpected(DecodeError{
+                    .kind = DecodeError::Kind::kUnsupportedOpcode,
+                    .offset = opcode_off,
+                });
+            }
+            if (mandatory_hit) {
                 ent = *direct;
                 // Mandatory prefix consumed by the opcode loses its
                 // prefix meaning.
@@ -117,7 +133,6 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
             p.rep = Rep::kNone;
         }
     }
-
     // --- effective operand size ---
     uint8_t opsize = 4;
     switch (ent.sz) {
@@ -147,11 +162,10 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
     default:
         break;
     }
-
     DecodedInsn out;
     out.mnemonic = ent.mn;
     out.opsize = opsize;
-    out.addr_size = 8;
+    out.addr_size = p.addr67 ? 4 : 8;
     out.has_lock = p.lock;
     out.rep = p.rep;
     out.seg = p.seg;
@@ -178,6 +192,16 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
         const auto rm = static_cast<uint8_t>(kernel::bit::extract(modrm, kModrmRm));
         const bool modreg = (mod == 3);
         const uint64_t bad = opcode_off;
+        if (esc && esc_op == 0x1E &&
+            !detail::remap_cet(modrm, static_cast<uint8_t>(reg), modreg, out.mnemonic, ent.a)) {
+            return std::unexpected(
+                DecodeError{.kind = DecodeError::Kind::kUnsupportedOpcode, .offset = bad});
+        }
+        // 0F 12/16 with mod=3 are the register-half moves (the memory
+        // forms are movlps/movhps).
+        if (modreg && esc && (esc_op == 0x12 || esc_op == 0x16) && !p.opsz66) {
+            out.mnemonic = esc_op == 0x16 ? Mnemonic::kMovlhps : Mnemonic::kMovhlps;
+        }
 
         switch (ent.grp) {
         case kGrp1:
@@ -216,10 +240,12 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
                 return std::unexpected(
                     DecodeError{.kind = DecodeError::Kind::kUnsupportedOpcode, .offset = bad});
             }
-            // inc/dec default to 32-bit operands; call/jmp/push stay 64.
-            ent.sz = (reg <= 1) ? SizeR::kD : SizeR::kQ;
+            // inc/dec default to 32-bit operands; call/jmp/push follow
+            // the push rule (REX.W or default 8, 66 selects 16) -- 66 FF
+            // /2 is call ax, not call rax (batch-4 review).
+            ent.sz = (reg <= 1) ? SizeR::kD : SizeR::kP;
             if (reg > 1) {
-                opsize = 8;
+                opsize = (p.opsz66 && p.rex_w == 0U) ? 2 : 8;
             }
             out.opsize = opsize;
             break;
@@ -250,19 +276,50 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
                 }
             }
             break;
-        case kGrp8:
-            if (reg < 3) {
+        case kGrp7:
+            // SDM 0F 00: /0=sldt /1=str /2=lldt /3=ltr /4=verr /5=verw.
+            switch (reg) {
+            case 0:
+                out.mnemonic = Mnemonic::kSldt;
+                break;
+            case 1:
+                out.mnemonic = Mnemonic::kStr;
+                break;
+            case 2:
+                out.mnemonic = Mnemonic::kLldt;
+                break;
+            case 3:
+                out.mnemonic = Mnemonic::kLtr;
+                break;
+            default:
                 return std::unexpected(
                     DecodeError{.kind = DecodeError::Kind::kUnsupportedOpcode, .offset = bad});
             }
-            if (reg == 3) {
+            break;
+        case kGrp8:
+            // SDM 0F BA: /4=bt /5=bts /6=btr /7=btc; /0-/3 undefined.
+            // (Batch-4 review: the map was off by one, executing every
+            // real bt as a writing bts.)
+            if (reg < 4) {
+                return std::unexpected(
+                    DecodeError{.kind = DecodeError::Kind::kUnsupportedOpcode, .offset = bad});
+            }
+            if (reg == 4) {
                 out.mnemonic = Mnemonic::kBt;
-            } else if (reg == 4) {
-                out.mnemonic = Mnemonic::kBts;
             } else if (reg == 5) {
+                out.mnemonic = Mnemonic::kBts;
+            } else if (reg == 6) {
                 out.mnemonic = Mnemonic::kBtr;
             } else {
                 out.mnemonic = Mnemonic::kBtc;
+            }
+            break;
+        case kGrpPop:
+            if (reg != 0) {
+                // 8F /1-/7 are undefined encodings, not alias pop
+                // (objdump refuses 8F C8; batch-4 review).
+                return std::unexpected(
+                    DecodeError{.kind = DecodeError::Kind::kUnsupportedOpcode, .offset = bad});
             }
             break;
         case kGrp9:
@@ -282,6 +339,12 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
             const auto base = static_cast<uint8_t>(esc_op - 0x71);
             const bool is_ll = reg == 6;
             const bool is_rl = reg == 2;
+            // 0F 73 also carries the byte shifts: /3 psrldq, /7 pslldq.
+            if (base == 2 && (reg == 3 || reg == 7)) {
+                out.mnemonic = reg == 7 ? Mnemonic::kPslldq : Mnemonic::kPsrldq;
+                ent.a = Slot::kXRm;
+                break;
+            }
             if (!is_ll && !is_rl) {
                 return std::unexpected(
                     DecodeError{.kind = DecodeError::Kind::kUnsupportedOpcode, .offset = bad});
@@ -521,12 +584,7 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
         }
         st.pos += isz;
         if (sext) {
-            if (isz == 1 && (v & 0x80U) != 0U) {
-                v |= 0xFFFFFFFFFFFFFF00ULL;
-            }
-            if (isz == 4 && (v & 0x80000000ULL) != 0) {
-                v |= 0xFFFFFFFF00000000ULL;
-            }
+            v = kernel::bit::sign_extend(v, 8U * isz);
         }
         Operand& dst = out.ops[ent.imm_slot];
         dst.disp = static_cast<int64_t>(v);
@@ -539,5 +597,4 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
     out.length = static_cast<uint8_t>(st.pos);
     return out;
 }
-
 } // namespace micro_forge::arch::x86_64

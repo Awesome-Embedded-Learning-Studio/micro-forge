@@ -70,3 +70,7 @@ examples/F103/MDK-ARM/F103/*.build_log.htm
 
 # Reference checkouts (read-only: legacy code, QEMU sources)
 reference/
+
+# Emscripten toolchain clone (browsable, never committed; the pinned
+# version lives in tools/use-emsdk.sh)
+tools/emsdk/

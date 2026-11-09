@@ -51,6 +51,28 @@ target_link_libraries(test_cpu
 )
 gtest_discover_tests(test_cpu)
 
+add_executable(test_fast_dispatch test_fast_dispatch.cpp)
+target_link_libraries(test_fast_dispatch PRIVATE micro_forge GTest::gtest_main)
+gtest_discover_tests(test_fast_dispatch)
+
+add_executable(test_system test_system.cpp)
+target_link_libraries(test_system
+    PRIVATE micro_forge GTest::gtest_main
+)
+gtest_discover_tests(test_system)
+
+add_executable(test_interrupt test_interrupt.cpp)
+target_link_libraries(test_interrupt
+    PRIVATE micro_forge GTest::gtest_main
+)
+gtest_discover_tests(test_interrupt)
+
+add_executable(test_mmu test_mmu.cpp)
+target_link_libraries(test_mmu
+    PRIVATE micro_forge GTest::gtest_main
+)
+gtest_discover_tests(test_mmu)
+
 # Batch-2 acceptance corpus: assemble the bare client with GNU as and
 # flatten it to a raw binary at build time. -j .text matters: endbr64
 # makes as emit a .note.gnu.property section, and without the section
@@ -89,6 +111,60 @@ target_compile_definitions(test_execute PRIVATE
 )
 add_dependencies(test_execute bare_client_bin)
 gtest_discover_tests(test_execute)
+
+# Batch-5 acceptance (native side): the Machine assembly.
+add_executable(test_engine test_engine.cpp)
+target_link_libraries(test_engine PRIVATE micro_forge GTest::gtest_main)
+gtest_discover_tests(test_engine)
+
+add_executable(test_wasm_block test_wasm_block.cpp)
+target_link_libraries(test_wasm_block PRIVATE micro_forge GTest::gtest_main)
+gtest_discover_tests(test_wasm_block)
+
+add_executable(test_wasm_emit test_wasm_emit.cpp)
+target_link_libraries(test_wasm_emit PRIVATE micro_forge GTest::gtest_main)
+gtest_discover_tests(test_wasm_emit)
+
+add_executable(test_jit test_jit.cpp)
+target_link_libraries(test_jit PRIVATE micro_forge GTest::gtest_main)
+gtest_discover_tests(test_jit)
+
+add_executable(test_jit_diff test_jit_diff.cpp)
+target_link_libraries(test_jit_diff PRIVATE micro_forge GTest::gtest_main)
+# Keep the native differential baseline non-PIE; PIE also supports helpers.
+target_link_options(test_jit_diff PRIVATE -no-pie)
+gtest_discover_tests(test_jit_diff)
+
+add_executable(test_cache test_cache.cpp)
+target_link_libraries(test_cache PRIVATE micro_forge GTest::gtest_main)
+gtest_discover_tests(test_cache)
+
+add_executable(test_machine test_machine.cpp)
+target_link_libraries(test_machine
+    PRIVATE micro_forge GTest::gtest_main
+)
+target_compile_definitions(test_machine PRIVATE
+    BARE_CLIENT_BIN="${CMAKE_CURRENT_BINARY_DIR}/bare-client.bin"
+)
+add_dependencies(test_machine bare_client_bin)
+gtest_discover_tests(test_machine)
+
+# Batch-4 acceptance: interrupt line and snapshot round-trip.
+add_executable(test_irq test_irq.cpp)
+target_link_libraries(test_irq
+    PRIVATE micro_forge GTest::gtest_main
+)
+gtest_discover_tests(test_irq)
+
+add_executable(test_snapshot test_snapshot.cpp)
+target_link_libraries(test_snapshot
+    PRIVATE micro_forge GTest::gtest_main
+)
+target_compile_definitions(test_snapshot PRIVATE
+    BARE_CLIENT_BIN="${CMAKE_CURRENT_BINARY_DIR}/bare-client.bin"
+)
+add_dependencies(test_snapshot bare_client_bin)
+gtest_discover_tests(test_snapshot)
 
 # Style gate: per-file line limit (default 600, see scripts/style/).
 add_test(NAME style_line_limit

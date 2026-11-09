@@ -66,11 +66,14 @@ constexpr std::array<Ent, 256> build_primary() {
     t[0x8C] = make_ent(Mnemonic::kMov, Slot::kRm, Slot::kSreg, Slot::kNone, SizeR::kD);
     t[0x8D] = make_ent(Mnemonic::kLea, Slot::kReg, Slot::kMem, Slot::kNone, SizeR::kD);
     t[0x8E] = make_ent(Mnemonic::kMov, Slot::kSreg, Slot::kRm, Slot::kNone, SizeR::kD);
-    t[0x8F] = make_ent(Mnemonic::kPop, Slot::kRm, Slot::kNone, Slot::kNone, SizeR::kP);
+    t[0x8F] = make_ent(Mnemonic::kPop, Slot::kRm, Slot::kNone, Slot::kNone, SizeR::kP, ImmK::k0,
+                       kNoImm, kGrpPop); // /0 only (review)
     t[0x90] = make_ent(Mnemonic::kNop);
     for (uint8_t r = 1; r < 8; ++r) {
         t[0x90 + r] = make_ent(Mnemonic::kXchg, Slot::kOpr, Slot::kAcc, Slot::kNone, SizeR::kD);
     }
+    t[0x9C] = make_ent(Mnemonic::kPushfq, Slot::kNone, Slot::kNone, Slot::kNone, SizeR::kP);
+    t[0x9D] = make_ent(Mnemonic::kPopfq, Slot::kNone, Slot::kNone, Slot::kNone, SizeR::kP);
     t[0x98] = make_ent(Mnemonic::kCwde);
     t[0x99] = make_ent(Mnemonic::kCdq);
     t[0xA0] =
@@ -113,6 +116,9 @@ constexpr std::array<Ent, 256> build_primary() {
     t[0xC7] =
         make_ent(Mnemonic::kMov, Slot::kRm, Slot::kNone, Slot::kNone, SizeR::kD, ImmK::kSz4, 1);
     t[0xC9] = make_ent(Mnemonic::kLeave);
+    t[0xCA] =
+        make_ent(Mnemonic::kLretq, Slot::kNone, Slot::kNone, Slot::kNone, SizeR::kQ, ImmK::k16, 0);
+    t[0xCB] = make_ent(Mnemonic::kLretq, Slot::kNone, Slot::kNone, Slot::kNone, SizeR::kQ);
     t[0xCF] = make_ent(Mnemonic::kIretq, Slot::kNone, Slot::kNone, Slot::kNone, SizeR::kQ);
     t[0xD0] = make_ent(Mnemonic::kNop, Slot::kRm8, Slot::kOne, Slot::kNone, SizeR::kB, ImmK::k0,
                        kNoImm, kGrp2);
@@ -172,10 +178,20 @@ constexpr std::array<Ent, 256> build_esc0() {
     std::array<Ent, 256> t{};
     t[0x05] = make_ent(Mnemonic::kSyscall);
     t[0x07] = make_ent(Mnemonic::kSysret);
+    t[0x00] = make_ent(Mnemonic::kNop, Slot::kRm, Slot::kNone, Slot::kNone, SizeR::kD, ImmK::k0,
+                       kNoImm, kGrp7);
+    t[0xC6] =
+        make_ent(Mnemonic::kShufps, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV, ImmK::k8, 2);
+    t[0xC7] = make_ent(Mnemonic::kNop, Slot::kRm, Slot::kNone, Slot::kNone, SizeR::kQ, ImmK::k0,
+                       kNoImm, kGrp9);
     t[0x01] = make_ent(Mnemonic::kNop, Slot::kMem, Slot::kNone, Slot::kNone, SizeR::kQ, ImmK::k0,
                        kNoImm, kGrp6);
     t[0x10] = make_ent(Mnemonic::kMovups, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
     t[0x11] = make_ent(Mnemonic::kMovups, Slot::kXRm, Slot::kXReg, Slot::kNone, SizeR::kV);
+    t[0x12] = make_ent(Mnemonic::kMovlps, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
+    t[0x13] = make_ent(Mnemonic::kMovlps, Slot::kXRm, Slot::kXReg, Slot::kNone, SizeR::kV);
+    t[0x16] = make_ent(Mnemonic::kMovhps, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
+    t[0x17] = make_ent(Mnemonic::kMovhps, Slot::kXRm, Slot::kXReg, Slot::kNone, SizeR::kV);
     for (uint8_t op = 0x18; op <= 0x1F; ++op) {
         t[op] = make_ent(Mnemonic::kNop, Slot::kRm, Slot::kNone, Slot::kNone, SizeR::kD);
     }
@@ -236,6 +252,16 @@ constexpr std::array<Ent, 256> build_esc0() {
 
 constexpr std::array<Ent, 256> build_esc66() {
     std::array<Ent, 256> t{};
+    t[0xD7] = make_ent(Mnemonic::kPmovmskb, Slot::kReg, Slot::kXRm, Slot::kNone, SizeR::kD);
+    t[0xFC] = make_ent(Mnemonic::kPaddb, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
+    t[0xFD] = make_ent(Mnemonic::kPaddw, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
+    t[0xF8] = make_ent(Mnemonic::kPsubb, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
+    t[0xF9] = make_ent(Mnemonic::kPsubw, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
+    t[0xFB] = make_ent(Mnemonic::kPsubq, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
+    t[0xDA] = make_ent(Mnemonic::kPminub, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
+    t[0xDE] = make_ent(Mnemonic::kPmaxub, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
+    t[0xEA] = make_ent(Mnemonic::kPminsw, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
+    t[0xEE] = make_ent(Mnemonic::kPmaxsw, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
     t[0x60] = make_ent(Mnemonic::kPunpcklbw, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
     t[0x61] = make_ent(Mnemonic::kPunpcklwd, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
     t[0x62] = make_ent(Mnemonic::kPunpckldq, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
@@ -257,7 +283,7 @@ constexpr std::array<Ent, 256> build_esc66() {
                        1, kGrpPs);
     t[0x74] = make_ent(Mnemonic::kPcmpeqb, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
     t[0x76] = make_ent(Mnemonic::kPcmpeqd, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
-    t[0x7E] = make_ent(Mnemonic::kMovd_xmm, Slot::kXRm32, Slot::kXReg, Slot::kNone, SizeR::kV);
+    t[0x7E] = make_ent(Mnemonic::kMovd_xmm, Slot::kRm32, Slot::kXReg, Slot::kNone, SizeR::kV);
     t[0x7F] = make_ent(Mnemonic::kMovdqa, Slot::kXRm, Slot::kXReg, Slot::kNone, SizeR::kV);
     t[0xD1] = make_ent(Mnemonic::kPsrlw, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
     t[0xD2] = make_ent(Mnemonic::kPsrld, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
@@ -277,8 +303,17 @@ constexpr std::array<Ent, 256> build_esc66() {
     return t;
 }
 
+/// 0F table under F2: glibc emits F2-prefixed pshufd (prefix ignored).
+constexpr std::array<Ent, 256> build_esc_f2() {
+    std::array<Ent, 256> t{};
+    t[0x70] =
+        make_ent(Mnemonic::kPshufd, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV, ImmK::k8, 2);
+    return t;
+}
+
 constexpr std::array<Ent, 256> build_esc_f3() {
     std::array<Ent, 256> t{};
+    t[0x1E] = make_ent(Mnemonic::kEndbr64, Slot::kNone, Slot::kNone, Slot::kNone, SizeR::kV);
     t[0x6F] = make_ent(Mnemonic::kMovdqu, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
     t[0x7E] = make_ent(Mnemonic::kMovq_xmm, Slot::kXReg, Slot::kXRm64, Slot::kNone, SizeR::kV);
     t[0x7F] = make_ent(Mnemonic::kMovdqu, Slot::kXRm, Slot::kXReg, Slot::kNone, SizeR::kV);
@@ -307,7 +342,7 @@ const std::array<Ent, 256> kPrimary = build_primary();
 const EscTables kEsc = {
     .none = build_esc0(),
     .p66 = build_esc66(),
-    .p2 = {}, // NOLINT(readability-trailing-comma)
+    .p2 = build_esc_f2(),
     .p3 = build_esc_f3(),
 };
 // NOLINTNEXTLINE(bugprone-throwing-static-initialization)
@@ -444,7 +479,7 @@ Mnemonic grp4_mn(uint8_t reg) {
             return false;
         }
         const unsigned d8 = st.next();
-        dst.disp = (d8 < 0x80U) ? static_cast<int64_t>(d8) : -static_cast<int64_t>(0x100U - d8);
+        dst.disp = static_cast<int64_t>(kernel::bit::sign_extend(d8, 8U));
         dst.has_disp = true;
     } else if (mod == 2 || want_disp32) {
         if (!st.has(4)) {

@@ -19,9 +19,45 @@ ExitStatus Cpu::execute(const DecodedInsn& insn, uint64_t rip_after) {
     uint64_t va = 0;
     uint64_t vb = 0;
 
+    // SSE/SSE2 subset routes to its own executor (43 mnemonics); the
+    // switch below owns everything else.
+    if (is_sse_mnemonic(insn.mnemonic)) {
+        return execute_sse(insn, rip_after);
+    }
+
     switch (insn.mnemonic) {
     // --- data movement ---
     case Mnemonic::kMov:
+        // Control/debug register moves: the operand bank is outside the
+        // GPR storage, so they bypass read_operand/write_operand.
+        if (a.kind == Operand::Kind::kReg && static_cast<unsigned>(a.reg) >= 32U) {
+            if (!read_operand(insn, b, rip_after, vb)) {
+                return exit_;
+            }
+            const auto bank = static_cast<unsigned>(a.reg);
+            if (bank >= 32U && bank <= 35U) { // CR0/2/3/4
+                cr_[bank - 32U] = vb;
+                if (bank == 34U) { // CR3 write flushes the TLB
+                    flush_tlb();
+                }
+            } else if (bank >= 36U && bank <= 41U) { // DR0-3/6/7
+                dr_[bank - 36U] = vb;
+            }
+            break;
+        }
+        if (b.kind == Operand::Kind::kReg && static_cast<unsigned>(b.reg) >= 32U) {
+            const auto bank = static_cast<unsigned>(b.reg);
+            if (bank >= 32U && bank <= 35U) {
+                vb = cr_[bank - 32U];
+            } else if (bank >= 36U && bank <= 41U) {
+                vb = dr_[bank - 36U];
+            }
+            if (!write_operand(insn, a, vb)) {
+                return exit_;
+            }
+            break;
+        }
+        [[fallthrough]];
     case Mnemonic::kMovabs:
     case Mnemonic::kMovzx: // the source read is already zero-extended
         if (!read_operand(insn, b, rip_after, vb) || !write_operand(insn, a, vb)) {
@@ -103,7 +139,6 @@ ExitStatus Cpu::execute(const DecodedInsn& insn, uint64_t rip_after) {
             return exit_;
         }
         break;
-
     // --- integer ALU ---
     case Mnemonic::kAdd:
     case Mnemonic::kOr:
@@ -195,7 +230,7 @@ ExitStatus Cpu::execute(const DecodedInsn& insn, uint64_t rip_after) {
         if (!read_operand(insn, a, rip_after, va) || !read_operand(insn, b, rip_after, vb)) {
             return exit_;
         }
-        const uint64_t eff = vb & ((osz == 8U) ? 0x3FULL : 0x1FULL);
+        const uint64_t eff = vb & shift_count_mask(osz);
         if (eff != 0 &&
             (!alu_shift(insn.mnemonic, va, a.size, vb) || !write_operand(insn, a, va))) {
             return exit_;
@@ -210,17 +245,22 @@ ExitStatus Cpu::execute(const DecodedInsn& insn, uint64_t rip_after) {
             return exit_;
         }
         const unsigned bits = 8U * osz;
-        const uint64_t eff = count & ((osz == 8U) ? 0x3FULL : 0x1FULL);
-        if (eff != 0) {
+        const uint64_t eff = count & shift_count_mask(osz);
+        // Counts at or above the operand width leave the result
+        // architecturally undefined; hardware shifts by width-1 and we
+        // clamp the same way so `bits - eff` cannot underflow (the
+        // batch-4 review found the 16-bit form reaching here with 17-31).
+        const auto eff_c = static_cast<unsigned>(eff < bits ? eff : bits - 1U);
+        if (eff_c != 0) {
             const uint64_t mask = width_mask(osz);
             uint64_t result = 0;
             if (insn.mnemonic == Mnemonic::kShld) {
-                result = ((va << eff) | (vb >> (bits - eff))) & mask;
-                cf_ = ((va >> (bits - eff)) & 0x1ULL) != 0;
+                result = ((va << eff_c) | (vb >> (bits - eff_c))) & mask;
+                cf_ = ((va >> (bits - eff_c)) & kernel::bit::mask_bit(0)) != 0;
                 of_ = cf_ != ((result & sign_bit(osz)) != 0);
             } else {
-                result = ((va >> eff) | (vb << (bits - eff))) & mask;
-                cf_ = ((va >> (eff - 1U)) & 0x1ULL) != 0;
+                result = ((va >> eff_c) | (vb << (bits - eff_c))) & mask;
+                cf_ = ((va >> (eff_c - 1U)) & kernel::bit::mask_bit(0)) != 0;
                 of_ = (va & sign_bit(osz)) != 0;
             }
             set_zsp(result, osz);
@@ -243,42 +283,50 @@ ExitStatus Cpu::execute(const DecodedInsn& insn, uint64_t rip_after) {
             }
             const unsigned bits = 8U * a.size;
             const uint64_t pos = vb % bits;
-            const uint64_t bit = (va >> pos) & 0x1ULL;
+            const uint64_t bit = (va >> pos) & kernel::bit::mask_bit(0);
             cf_ = bit != 0;
             uint64_t result = va;
             if (insn.mnemonic == Mnemonic::kBts) {
-                result |= 1ULL << pos;
+                result |= kernel::bit::mask_bit(pos);
             } else if (insn.mnemonic == Mnemonic::kBtr) {
-                result &= ~(1ULL << pos);
+                result &= ~kernel::bit::mask_bit(pos);
             } else if (insn.mnemonic == Mnemonic::kBtc) {
-                result ^= 1ULL << pos;
+                result ^= kernel::bit::mask_bit(pos);
             }
             if (insn.mnemonic != Mnemonic::kBt && !write_operand(insn, a, result)) {
                 return exit_;
             }
         } else {
-            // Memory form: the (sign-extended for <64) index addresses a
-            // byte outside the loaded cell; the bit is index & 7.
-            uint64_t index = vb;
-            if (osz < 8U) {
-                index = sign_extend(vb, osz);
+            // Memory form: the index addresses a byte outside the loaded
+            // cell and the bit is index & 7. Source width matters (the
+            // batch-4 review): the imm8 form sign-extends from ONE byte,
+            // the register form from the operand width.
+            unsigned index_width = 8U;
+            if (b.kind == Operand::Kind::kImm) {
+                index_width = 1U;
+            } else if (osz < 8U) {
+                index_width = osz;
             }
-            // Shifting the sign-extended word as unsigned is bit-identical
-            // to the arithmetic shift, so no signed operand is needed.
-            const uint64_t addr = effective_address(a, rip_after) + (index >> 3U);
+            // The byte offset is the index arithmetic-shifted right by 3;
+            // shifting the sign-extended word as UNSIGNED is NOT the same
+            // (zero fill vs one fill), so the signed shift is spelled out.
+            const auto index = static_cast<int64_t>(sign_extend(vb, index_width));
+            const uint64_t addr =
+                effective_address(a, rip_after) +
+                static_cast<uint64_t>(index >> 3); // NOLINT(bugprone-signed-bitwise)
             const auto pos = static_cast<unsigned>(vb & 0x7ULL);
             uint64_t byte = 0;
             if (!load(addr, 1, byte)) {
                 return exit_;
             }
-            cf_ = ((byte >> pos) & 0x1ULL) != 0;
+            cf_ = ((byte >> pos) & kernel::bit::mask_bit(0)) != 0;
             if (insn.mnemonic != Mnemonic::kBt) {
                 if (insn.mnemonic == Mnemonic::kBts) {
-                    byte |= 1ULL << pos;
+                    byte |= kernel::bit::mask_bit(pos);
                 } else if (insn.mnemonic == Mnemonic::kBtr) {
-                    byte &= ~(1ULL << pos);
+                    byte &= ~kernel::bit::mask_bit(pos);
                 } else { // kBtc
-                    byte ^= 1ULL << pos;
+                    byte ^= kernel::bit::mask_bit(pos);
                 }
                 if (!store(addr, 1, byte)) {
                     return exit_;
@@ -380,7 +428,6 @@ ExitStatus Cpu::execute(const DecodedInsn& insn, uint64_t rip_after) {
             return exit_;
         }
         break;
-
     // --- control flow ---
     case Mnemonic::kJmp:
         if (a.kind == Operand::Kind::kImm) {
@@ -447,16 +494,52 @@ ExitStatus Cpu::execute(const DecodedInsn& insn, uint64_t rip_after) {
             rip_ = rip_after + static_cast<uint64_t>(a.disp);
         }
         break;
-
+    // --- port I/O (batch 6b: see io.cpp) ---
+    case Mnemonic::kIn:
+    case Mnemonic::kOut:
+        if (execute_ports(insn, rip_after).kind != ExitStatus::Kind::kRunning) {
+            return exit_;
+        }
+        break;
+    // --- system instructions (batch 6a: see sysregs.cpp) ---
+    case Mnemonic::kPushfq:
+    case Mnemonic::kPopfq:
+    case Mnemonic::kCli:
+    case Mnemonic::kSti:
+    case Mnemonic::kCpuid:
+    case Mnemonic::kRdtsc:
+    case Mnemonic::kRdmsr:
+    case Mnemonic::kWrmsr:
+    case Mnemonic::kSwapgs:
+    case Mnemonic::kLgdt:
+    case Mnemonic::kLidt:
+    case Mnemonic::kSgdt:
+    case Mnemonic::kSidt:
+    case Mnemonic::kRdrand:
+    case Mnemonic::kRdsspq:
+    case Mnemonic::kSldt:
+    case Mnemonic::kStr:
+    case Mnemonic::kLldt:
+    case Mnemonic::kLtr:
+    case Mnemonic::kInvlpg:
+        if (execute_system(insn, rip_after).kind != ExitStatus::Kind::kRunning) {
+            return exit_;
+        }
+        break;
     // --- no-ops and flag-only ---
+    case Mnemonic::kIretq:
+    case Mnemonic::kLretq:
+    case Mnemonic::kSysret:
+        if (execute_return(insn).kind != ExitStatus::Kind::kRunning) {
+            return exit_;
+        }
+        break;
     case Mnemonic::kNop:
     case Mnemonic::kEndbr64:
     case Mnemonic::kPause:
     case Mnemonic::kLfence:
     case Mnemonic::kMfence:
     case Mnemonic::kSfence:
-    case Mnemonic::kCli: // no interrupt model yet (batch 4/6)
-    case Mnemonic::kSti:
         break;
     case Mnemonic::kCld:
         df_ = false;
@@ -471,9 +554,37 @@ ExitStatus Cpu::execute(const DecodedInsn& insn, uint64_t rip_after) {
     default:
         return unsupported(insn);
     }
-
     retire(1);
     return exit_;
+}
+ExitStatus Cpu::execute_insn(const DecodedInsn& insn, uint64_t rip_after) {
+    switch (insn.mnemonic) {
+    case Mnemonic::kMovsb:
+    case Mnemonic::kMovsw:
+    case Mnemonic::kMovsd:
+    case Mnemonic::kMovsq:
+    case Mnemonic::kStosb:
+    case Mnemonic::kStosw:
+    case Mnemonic::kStosd:
+    case Mnemonic::kStosq:
+    case Mnemonic::kLodsb:
+    case Mnemonic::kLodsw:
+    case Mnemonic::kLodsd:
+    case Mnemonic::kLodsq:
+    case Mnemonic::kScasb:
+    case Mnemonic::kScasw:
+    case Mnemonic::kScasd:
+    case Mnemonic::kScasq:
+    case Mnemonic::kCmpsb:
+    case Mnemonic::kCmpsw:
+    case Mnemonic::kCmpsd:
+    case Mnemonic::kCmpsq:
+        return execute_string(insn, rip_after);
+    case Mnemonic::kSyscall:
+        return execute_syscall(rip_after);
+    default:
+        return execute(insn, rip_after);
+    }
 }
 
 } // namespace micro_forge::arch::x86_64

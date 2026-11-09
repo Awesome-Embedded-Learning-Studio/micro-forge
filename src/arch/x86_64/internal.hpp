@@ -110,16 +110,18 @@ struct Ent {
 /// @brief Group-opcode ids dispatched on the ModRM reg field.
 enum Groups : uint8_t {
     kGrpNone = 0,
-    kGrp1,  // 80/81/83: ALU + imm
-    kGrp2,  // C0/C1/D0-D3: shifts
-    kGrp3,  // F6/F7: test/not/neg/mul/imul/div/idiv
-    kGrp4,  // FE: inc/dec rm8
-    kGrp5,  // FF: inc/dec/call/jmp/push r/m
-    kGrp6,  // 0F 01: descriptor tables / invlpg / swapgs
-    kGrp8,  // 0F BA: bt/bts/btr/btc + imm8
-    kGrp9,  // 0F C7: rdrand
-    kGrpPs, // 0F 71-73 (66): packed shifts + imm8
-    kGrpAe, // 0F AE: fxsave/fxrstor/fences
+    kGrp1,   // 80/81/83: ALU + imm
+    kGrp2,   // C0/C1/D0-D3: shifts
+    kGrp3,   // F6/F7: test/not/neg/mul/imul/div/idiv
+    kGrp4,   // FE: inc/dec rm8
+    kGrp5,   // FF: inc/dec/call/jmp/push r/m
+    kGrp6,   // 0F 01: descriptor tables / invlpg / swapgs
+    kGrp8,   // 0F BA: bt/bts/btr/btc + imm8
+    kGrp7,   // 0F 00: sldt/str/lldt/ltr/verr/verw
+    kGrp9,   // 0F C7: rdrand/rdseed
+    kGrpPs,  // 0F 71-73 (66): packed shifts + imm8
+    kGrpAe,  // 0F AE: fxsave/fxrstor/fences
+    kGrpPop, // 8F: pop r/m, /0 only (/1-/7 undefined)
 };
 
 /// @brief Byte-stream cursor with bounds-checked consumption.
@@ -296,13 +298,6 @@ struct Pfx {
     return code <= 3 || code == 6 || code == 7;
 }
 
-/// @brief Whether an entry needs a ModRM byte (any r/m or reg-field slot,
-///        or group dispatch).
-[[nodiscard]] inline bool wants_modrm(const Ent& ent) {
-    return ent.grp != 0 || slot_is_rm(ent.a) || slot_is_rm(ent.b) || slot_is_rm(ent.c) ||
-           slot_is_regfield(ent.a) || slot_is_regfield(ent.b) || slot_is_regfield(ent.c);
-}
-
 /// @brief Picks the operand-size variant of a string mnemonic family.
 [[nodiscard]] inline Mnemonic string_mnemonic(Mnemonic b8, Mnemonic b16, Mnemonic b32, Mnemonic b64,
                                               uint8_t opsize) {
@@ -415,10 +410,26 @@ extern const std::array<Ent, 256> kEsc38;
             return false;
         }
         const uint8_t b = st.peek();
+        // A legacy prefix arriving AFTER a REX voids the REX (SDM: a REX
+        // is ignored when another prefix follows it). 48 66 89 C8 is
+        // mov eax, ecx, not mov rax, rcx (objdump-verified, review).
+        // Checked before classification so the arms below can take over.
+        if (p.rex && (b == 0x66 || b == 0xF0 || b == 0xF2 || b == 0xF3 || b == 0x26 || b == 0x2E ||
+                      b == 0x36 || b == 0x3E || b == 0x64 || b == 0x65)) {
+            p.rex = false;
+            p.rex_w = 0;
+            p.rex_r = 0;
+            p.rex_x = 0;
+            p.rex_b = 0;
+        }
         if (b == 0x67) {
-            // 16-bit addressing is outside the v0 whitelist; leave pos on
-            // the offending byte.
-            return false;
+            // Address-size override. v0 executes the 64-bit forms; the
+            // prefix only narrows effective-address arithmetic, which the
+            // decoder keeps at 64-bit. Accepted and recorded (glibc emits
+            // `addr32 call` padding in its startup code).
+            p.addr67 = true;
+            st.next();
+            continue;
         }
         if (b == 0x66) {
             p.opsz66 = true;
@@ -460,6 +471,22 @@ extern const std::array<Ent, 256> kEsc38;
         }
         st.next();
     }
+}
+
+/// CET group (F3 0F 1E): FA/FB endbr, mod=3 /1 rdsspq, else unsupported.
+[[nodiscard]] inline bool remap_cet(uint8_t modrm_byte, uint8_t reg_field, bool mod_reg,
+                                    Mnemonic& mnemonic, Slot& slot_a) {
+    (void)modrm_byte;
+    if (mod_reg && reg_field == 1) {
+        mnemonic = Mnemonic::kRdsspq;
+        slot_a = Slot::kRm;
+        return true;
+    }
+    if (modrm_byte == 0xFA || modrm_byte == 0xFB) {
+        mnemonic = Mnemonic::kEndbr64;
+        return true;
+    }
+    return false;
 }
 
 } // namespace micro_forge::arch::x86_64::detail

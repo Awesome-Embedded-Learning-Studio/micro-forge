@@ -4,10 +4,13 @@
  * @version 0.1.0
  */
 
-#include <cassert>
+#include <algorithm>
+#include <array>
+#include <cstdlib>
 #include <string>
 
 #include "micro_forge/arch/x86_64/decoder.hpp"
+#include "micro_forge/kernel/bit.hpp"
 
 namespace micro_forge::arch::x86_64 {
 namespace {
@@ -158,7 +161,7 @@ void append_seg(std::string& s, Seg seg) {
     }
 }
 
-void append_mem(std::string& s, const Operand& m, bool with_width) {
+void append_mem(std::string& s, const Operand& m, bool with_width, unsigned addr_size) {
     if (with_width) {
         switch (m.size) {
         case 1:
@@ -187,14 +190,14 @@ void append_mem(std::string& s, const Operand& m, bool with_width) {
         first = false;
     }
     if (m.has_base) {
-        s += kGpr64[static_cast<unsigned>(m.base) & 15U];
+        s += (addr_size == 4 ? kGpr32 : kGpr64)[static_cast<unsigned>(m.base) & 15U];
         first = false;
     }
     if (m.has_index) {
         if (!first) {
             s += '+';
         }
-        s += kGpr64[static_cast<unsigned>(m.index) & 15U];
+        s += (addr_size == 4 ? kGpr32 : kGpr64)[static_cast<unsigned>(m.index) & 15U];
         s += '*';
         s += std::to_string(m.scale); // objdump prints decimal, "*1" kept
         first = false;
@@ -242,34 +245,40 @@ std::string_view gpr_name(Reg reg, uint8_t size, bool rex_present) {
 }
 
 /// @brief Mnemonic text indexed by Mnemonic value (order = enum order).
-constexpr std::array<std::string_view, 144> kMnemonicNames = {
-    "mov",        "movsx",     "movzx",     "movsxd",     "xchg",      "lea",       "push",
-    "pop",        "cmovcc",    "movabs",    "add",        "adc",       "sub",       "sbb",
-    "inc",        "dec",       "neg",       "cmp",        "mul",       "imul",      "div",
-    "idiv",       "and",       "or",        "xor",        "not",       "test",      "shl",
-    "shr",        "sar",       "rol",       "ror",        "rcl",       "rcr",       "shld",
-    "shrd",       "bt",        "bts",       "btr",        "btc",       "bsf",       "bsr",
-    "xadd",       "cmpxchg",   "jmp",       "jcc",        "call",      "ret",       "leave",
-    "loop",       "loope",     "loopne",    "jrcxz",      "setcc",     "cwde",      "cdqe",
-    "cdq",        "cqo",       "nop",       "endbr64",    "pause",     "lfence",    "mfence",
-    "sfence",     "movsb",     "movsw",     "movsd",      "movsq",     "stosb",     "stosw",
-    "stosd",      "stosq",     "lodsb",     "lodsw",      "lodsd",     "lodsq",     "scasb",
-    "scasw",      "scasd",     "scasq",     "cmpsb",      "cmpsw",     "cmpsd",     "cmpsq",
-    "cpuid",      "rdtsc",     "rdmsr",     "wrmsr",      "rdrand",    "syscall",   "sysretq",
-    "iret",       "swapgs",    "invlpg",    "lgdt",       "lidt",      "sgdt",      "sidt",
-    "hlt",        "cli",       "sti",       "in",         "out",       "cld",       "std",
-    "bswap",      "tzcnt",     "lzcnt",     "fxsave",     "fxrstor",   "fxsave64",  "fxrstor64",
-    "movaps",     "movups",    "movdqa",    "movdqu",     "movq",      "movd",      "pshufd",
-    "punpcklbw",  "punpcklwd", "punpckldq", "punpcklqdq", "punpckhbw", "punpckhwd", "punpckhdq",
-    "punpckhqdq", "packuswb",  "pxor",      "pand",       "pandn",     "por",       "psrlw",
-    "psrld",      "psrlq",     "psllw",     "pslld",      "psllq",     "paddd",     "paddq",
-    "psubd",      "pcmpeqb",   "pcmpeqd",   "pcmpeqq",
+constexpr std::array<std::string_view, 169> kMnemonicNames = {
+    "mov",       "movsx",      "movzx",     "movsxd",    "xchg",       "lea",       "push",
+    "pop",       "cmovcc",     "movabs",    "add",       "adc",        "sub",       "sbb",
+    "inc",       "dec",        "neg",       "cmp",       "mul",        "imul",      "div",
+    "idiv",      "and",        "or",        "xor",       "not",        "test",      "shl",
+    "shr",       "sar",        "rol",       "ror",       "rcl",        "rcr",       "shld",
+    "shrd",      "bt",         "bts",       "btr",       "btc",        "bsf",       "bsr",
+    "xadd",      "cmpxchg",    "jmp",       "jcc",       "call",       "ret",       "leave",
+    "loop",      "loope",      "loopne",    "jrcxz",     "setcc",      "cwde",      "cdqe",
+    "cdq",       "cqo",        "nop",       "endbr64",   "pause",      "lfence",    "mfence",
+    "sfence",    "movsb",      "movsw",     "movsd",     "movsq",      "stosb",     "stosw",
+    "stosd",     "stosq",      "lodsb",     "lodsw",     "lodsd",      "lodsq",     "scasb",
+    "scasw",     "scasd",      "scasq",     "cmpsb",     "cmpsw",      "cmpsd",     "cmpsq",
+    "cpuid",     "rdtsc",      "rdmsr",     "wrmsr",     "rdrand",     "psrldq",    "pslldq",
+    "shufps",    "movlps",     "movhps",    "movlhps",   "movhlps",    "pmovmskb",  "syscall",
+    "sysretq",   "iret",       "lret",      "sldt",      "str",        "lldt",      "ltr",
+    "swapgs",    "invlpg",     "lgdt",      "lidt",      "sgdt",       "sidt",      "hlt",
+    "pushf",     "popf",       "cli",       "sti",       "in",         "out",       "cld",
+    "std",       "bswap",      "tzcnt",     "lzcnt",     "fxsave",     "fxrstor",   "fxsave64",
+    "fxrstor64", "movaps",     "movups",    "movdqa",    "movdqu",     "movq",      "movd",
+    "pshufd",    "punpcklbw",  "punpcklwd", "punpckldq", "punpcklqdq", "punpckhbw", "punpckhwd",
+    "punpckhdq", "punpckhqdq", "packuswb",  "pxor",      "pand",       "pandn",     "por",
+    "psrlw",     "psrld",      "psrlq",     "psllw",     "pslld",      "psllq",     "paddd",
+    "paddq",     "psubd",      "paddb",     "psubb",     "paddw",      "psubw",     "psubq",
+    "pminub",    "pmaxub",     "pminsw",    "pmaxsw",    "rdsspq",     "pcmpeqb",   "pcmpeqd",
+    "pcmpeqq",
 };
-static_assert(kMnemonicNames.size() == 144, "keep in sync with Mnemonic in decoded.hpp");
+static_assert(kMnemonicNames.size() == 169, "keep in sync with Mnemonic in decoded.hpp");
 
 std::string_view mnemonic_name(Mnemonic mn) {
     const auto idx = static_cast<size_t>(mn);
-    assert(idx < kMnemonicNames.size());
+    if (idx >= kMnemonicNames.size()) {
+        std::abort(); // unreachable: table is generated from the enum
+    }
     return kMnemonicNames[idx];
 }
 
@@ -312,11 +321,28 @@ std::string to_text(const DecodedInsn& insn, uint64_t rip) {
     if (insn.has_lock) {
         s += "lock ";
     }
+    // objdump spells the 67 prefix explicitly on instructions it cannot
+    // change (no memory operand); operands with addressing render the
+    // 32-bit registers instead.
+    const bool has_mem_operand = std::ranges::any_of(
+        insn.ops, [](const Operand& op) { return op.kind == Operand::Kind::kMem; });
+    if (insn.addr_size == 4 && !has_mem_operand) {
+        s += "addr32 ";
+    }
 
     std::string_view const base = mnemonic_name(insn.mnemonic);
     char buf[12];
     if (insn.mnemonic == Mnemonic::kIretq) {
         s += insn.rex_present ? "iretq" : "iret";
+        return s;
+    }
+    if (insn.mnemonic == Mnemonic::kLretq) {
+        s += insn.rex_present ? "retfq" : "retf";
+        // The imm16 form (0xCA) prints its stack adjustment.
+        if (insn.ops[0].kind == Operand::Kind::kImm) {
+            s += ' ';
+            append_hex(s, static_cast<uint64_t>(insn.ops[0].disp));
+        }
         return s;
     }
     if (insn.mnemonic == Mnemonic::kSysret) {
@@ -392,7 +418,8 @@ std::string to_text(const DecodedInsn& insn, uint64_t rip) {
                            insn.mnemonic != Mnemonic::kSidt && insn.mnemonic != Mnemonic::kFxsave &&
                            insn.mnemonic != Mnemonic::kFxrstor &&
                            insn.mnemonic != Mnemonic::kFxsave64 &&
-                           insn.mnemonic != Mnemonic::kFxrstor64);
+                           insn.mnemonic != Mnemonic::kFxrstor64,
+                       insn.addr_size);
             break;
         case Operand::Kind::kImm: {
             const bool shift_implicit_one =
@@ -413,7 +440,7 @@ std::string to_text(const DecodedInsn& insn, uint64_t rip) {
                 auto v = static_cast<uint64_t>(op.disp);
                 if (insn.opsize == 8 && op.size == 4 && (v & 0x80000000ULL) != 0) {
                     // Sign-extended imm32 rendered as 64-bit.
-                    v |= 0xFFFFFFFF00000000ULL;
+                    v = kernel::bit::sign_extend(v, 32U);
                 }
                 if (op.size != 8) { // moffs64/imm64 render full-width
                     if (insn.opsize == 4) {

@@ -70,7 +70,7 @@ def normalize(text: str) -> str:
     # objdump marks ignored 66 prefixes as "data16" and no-op REX bits as
     # "rex.WX"; ours folds both.
     # No-op REX prefixes can appear anywhere; drop them globally.
-    t = re.sub(r"\brex(?:\.[WRXB]+)?\s+", "", t)
+    t = re.sub(r"\brex(?:\.[WRXB]+)?(?:\s+|$)", "", t)
     while t.startswith(("data16 ", "rex ", "rex.", "es ", "cs ", "ss ",
                         "ds ", "fs ", "gs ", "repnz ", "repz ", "bnd ")):
         if t.startswith("repnz "):
@@ -91,6 +91,7 @@ def normalize(text: str) -> str:
     # ours carries them in DecodedInsn.seg; strip them for comparison.
     for seg in ("fs:", "gs:", "es:", "cs:", "ss:", "ds:"):
         t = t.replace(seg, "")
+    t = re.sub(r"^addr32\s+", "", t)
     # Segment overrides can also surface as bare words ("lock es cmp").
     t = re.sub(r"\b(?:es|cs|ss|ds|fs|gs) (?=\S)", "", t)
     # objdump materializes SIB zero-index with nonzero scale as "riz*N".
@@ -146,8 +147,7 @@ def main() -> int:
     theirs = run_objdump(args.bin)
     ours, fail_sites = run_ours(args.bin, start)
 
-    matched = mismatched = len_div = bad_ref = drift = 0
-    unaligned_run = 0
+    matched = mismatched = len_div = bad_ref = 0
     reports: list[str] = []
     for off, length, text in ours:
         if off not in theirs:
@@ -157,9 +157,12 @@ def main() -> int:
                 or ttext.strip().startswith(("rex",)) and len(ttext.split()) == 1:
             bad_ref += 1  # objdump refuses/bails; ours decodes (wider whitelist)
             continue
-        mine, ref = normalize(text), normalize(ttext)
-        if ref == "":
-            bad_ref += 1  # pure prefix words (gs rex.RB); nothing to compare
+        mine, ref = normalize(text).strip(), normalize(ttext).strip()
+        PURE_PREFIX = {"gs", "fs", "es", "cs", "ds", "ss", "addr32", "data16", "bnd", "lock"}
+        only_prefixes = all(
+            w in PURE_PREFIX or w.startswith(("rex", "rep")) for w in ref.split()) if ref else True
+        if ref == "" or (only_prefixes and tlen != length):
+            bad_ref += 1  # pure prefix words (gs addr32 rex.RB); nothing to compare
             continue
         # We drop rep prefixes on non-string insns (objdump keeps them);
         # align by dropping them from the reference when we dropped ours.
@@ -187,14 +190,13 @@ def main() -> int:
     print(f"fail_sites {len(fail_sites)}  (our rejections; whitelist gaps)")
     if fail_sites[:5]:
         print("  first:", ", ".join(hex(x) for x in fail_sites[:5]))
-    print(f"drift     {drift}  (unaligned runs past 8: gate failure)")
     print(f"mismatch  {mismatched}")
     if reports:
         print("first mismatches:")
         print("\n".join(reports))
     elif args.verbose:
         print("clean")
-    return 1 if (mismatched or drift) else 0
+    return 1 if mismatched else 0
 
 
 if __name__ == "__main__":

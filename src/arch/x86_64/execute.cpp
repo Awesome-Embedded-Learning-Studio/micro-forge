@@ -101,13 +101,9 @@ bool Cpu::read_operand(const DecodedInsn& insn, const Operand& op, uint64_t rip_
         out = read_gpr(op.reg, op.size, insn.rex_present);
         return true;
     case Operand::Kind::kMem:
-        if (insn.seg == Seg::kFs || insn.seg == Seg::kGs) {
-            // fs/gs bases are not modeled (batch 6+); refuse instead of
-            // silently addressing with base zero.
-            unsupported(insn);
-            return false;
-        }
-        return load(effective_address(op, rip_after), op.size, out);
+        // FS/GS addressing adds the segment base (the per-CPU block the
+        // syscall entry reaches through gs:0/gs:8).
+        return load(segment_address(insn, effective_address(op, rip_after)), op.size, out);
     default:
         out = 0;
         return true;
@@ -116,12 +112,9 @@ bool Cpu::read_operand(const DecodedInsn& insn, const Operand& op, uint64_t rip_
 
 bool Cpu::write_operand(const DecodedInsn& insn, const Operand& op, uint64_t value) {
     if (op.kind == Operand::Kind::kMem) {
-        if (insn.seg == Seg::kFs || insn.seg == Seg::kGs) {
-            unsupported(insn);
-            return false;
-        }
         // Writes resolve rip-relative against the next instruction too.
-        return store(effective_address(op, insn_rip_ + cur_length_), op.size, value);
+        const uint64_t ea = segment_address(insn, effective_address(op, insn_rip_ + cur_length_));
+        return store(ea, op.size, value);
     }
     if (op.kind == Operand::Kind::kReg || op.kind == Operand::Kind::kImplicit) {
         if (static_cast<unsigned>(op.reg) >= 16U) {
@@ -194,7 +187,7 @@ uint64_t Cpu::alu_add(uint64_t a, uint64_t b, unsigned width, bool carry_in) {
     // Below width 8 the carry-out of the operand field is a shift; at
     // width 8 the addition itself wraps the uint64 domain.
     cf_ = (width < 8U) ? ((sum2 >> (8U * width)) != 0) : (carry1 || carry2);
-    af_ = (((a ^ b ^ sum2) >> 3U) & 1ULL) != 0;
+    af_ = ((a ^ b ^ sum2) & 0x10ULL) != 0; // carry from bit 3 into bit 4
     of_ = ((~(a ^ b)) & (a ^ sum2) & sign_bit(width)) != 0;
     set_zsp(result, width);
     return result;

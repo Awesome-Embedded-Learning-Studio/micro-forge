@@ -1,0 +1,260 @@
+{
+  "date": "2026-11-09",
+  "cpu": "AMD Ryzen 7 9700X",
+  "logical_cpu": 2,
+  "node": "v26.12.0",
+  "emscripten": "7.0.0",
+  "guest_ram_mib": 256,
+  "instructions": 400000000,
+  "chunk": 2000000,
+  "repetitions": 5,
+  "order": "forward on odd rounds, reverse on even rounds",
+  "before_source_snapshot_sha256": "697939e6048ce27bd775fa8ba7fa55f27183128f35a33251ba800fe779e602ff",
+  "artifacts": {
+    "build-wasm/engine-before-hotpaths.wasm": {
+      "sha256": "f698ee0ff4a0161ee256a78c93828ffb9d3962ed906f2b6eedc607293d66ec96",
+      "bytes": 471910,
+      "median_seconds": 7.442110291,
+      "min_seconds": 7.35614222,
+      "max_seconds": 8.915854529,
+      "median_mips": 53.748195654092065,
+      "speedup": 1.0
+    },
+    "build-wasm/engine.wasm": {
+      "sha256": "4c519e525009bfd98d0419d1235768e78b60dfb6ad94029e2f830f7a0758ccc8",
+      "bytes": 475722,
+      "median_seconds": 5.213281586,
+      "min_seconds": 5.017138558,
+      "max_seconds": 5.490496393,
+      "median_mips": 76.72710430109501,
+      "speedup": 1.4275289312945239
+    }
+  },
+  "images": {
+    "kernel.bin": "65122f2df30756d30bcc0b17a58c8dfc2c4be91cfeee5f98709a3682fda6d57a",
+    "ext2.img": "96121df1de782c8e2d7ef9e99057d448b6041b4ab8fc0fa53168fbea67010224"
+  },
+  "matching_guest_state": {
+    "icount": "400000000",
+    "exit": {
+      "kind": 0,
+      "code": 0
+    },
+    "rip": "ffffffff802032ff",
+    "serial": "1238",
+    "consoleHash": "e60d1d9bd61688561fdee44be81eec6037be1763f4fbe962ca19bc453a3ebfb1",
+    "ramHash": "95fd63c774c3552266cb339bab7cb8649ece659c225a157d857d8eaa71a59eac"
+  },
+  "samples": [
+    {
+      "rep": 1,
+      "artifact": "build-wasm/engine-before-hotpaths.wasm",
+      "seconds": 7.35614222,
+      "mips": 54.37632770509431
+    },
+    {
+      "rep": 1,
+      "artifact": "build-wasm/engine.wasm",
+      "seconds": 5.25945528,
+      "mips": 76.05350339626807
+    },
+    {
+      "rep": 2,
+      "artifact": "build-wasm/engine.wasm",
+      "seconds": 5.213281586,
+      "mips": 76.72710430109501
+    },
+    {
+      "rep": 2,
+      "artifact": "build-wasm/engine-before-hotpaths.wasm",
+      "seconds": 7.442110291,
+      "mips": 53.748195654092065
+    },
+    {
+      "rep": 3,
+      "artifact": "build-wasm/engine-before-hotpaths.wasm",
+      "seconds": 7.444175148,
+      "mips": 53.73328703952735
+    },
+    {
+      "rep": 3,
+      "artifact": "build-wasm/engine.wasm",
+      "seconds": 5.490496393,
+      "mips": 72.85315777822423
+    },
+    {
+      "rep": 4,
+      "artifact": "build-wasm/engine.wasm",
+      "seconds": 5.024319028,
+      "mips": 79.61277892005707
+    },
+    {
+      "rep": 4,
+      "artifact": "build-wasm/engine-before-hotpaths.wasm",
+      "seconds": 8.915854529,
+      "mips": 44.86389932663739
+    },
+    {
+      "rep": 5,
+      "artifact": "build-wasm/engine-before-hotpaths.wasm",
+      "seconds": 7.433016979,
+      "mips": 53.813949454184346
+    },
+    {
+      "rep": 5,
+      "artifact": "build-wasm/engine.wasm",
+      "seconds": 5.017138558,
+      "mips": 79.7267197977194
+    }
+  ],
+  "microbench": {
+    "int-alu": {
+      "trips": 4000000,
+      "warmups": 1,
+      "repetitions": 11,
+      "before_ips": 101668956,
+      "after_ips": 177086156,
+      "speedup": 1.74179182089762
+    },
+    "mem-mix": {
+      "trips": 4000000,
+      "warmups": 1,
+      "repetitions": 11,
+      "before_ips": 81110341,
+      "after_ips": 171332281,
+      "speedup": 2.112335848766805
+    }
+  },
+  "profiles": {
+    "before": {
+      "samples": 8061,
+      "top_functions": [
+        {
+          "name": "micro_forge::arch::x86_64::Cpu::execute_insn(micro_forge::arch::x86_64::DecodedInsn const&, unsigned long long)",
+          "self_percent": 27.378737129388412
+        },
+        {
+          "name": "mf_run",
+          "self_percent": 22.93760079394616
+        },
+        {
+          "name": "micro_forge::arch::x86_64::Cpu::load(unsigned long long, unsigned int, unsigned long long&)",
+          "self_percent": 9.043542984741347
+        },
+        {
+          "name": "micro_forge::arch::x86_64::Cpu::store(unsigned long long, unsigned int, unsigned long long)",
+          "self_percent": 7.889839970227019
+        },
+        {
+          "name": "micro_forge::arch::x86_64::Mmu::translate(unsigned long long, bool, bool, bool, unsigned long long, unsigned long long, unsigned long long)",
+          "self_percent": 7.4928668899640245
+        },
+        {
+          "name": "micro_forge::arch::x86_64::decode_one(std::__2::span<unsigned char const, 4294967295ul>)",
+          "self_percent": 6.426001736757226
+        },
+        {
+          "name": "micro_forge::arch::x86_64::Cpu::fetch(unsigned int&)",
+          "self_percent": 5.656866393747674
+        },
+        {
+          "name": "micro_forge::kernel::Scheduler::dispatch(unsigned long long)",
+          "self_percent": 4.478352561716909
+        },
+        {
+          "name": "update",
+          "self_percent": 1.5878923210519786
+        },
+        {
+          "name": "micro_forge::kernel::RamRegion::read_u8(unsigned long long)",
+          "self_percent": 1.190919240788984
+        },
+        {
+          "name": "micro_forge::arch::x86_64::Cpu::read_operand(micro_forge::arch::x86_64::DecodedInsn const&, micro_forge::arch::x86_64::Operand const&, unsigned long long, unsigned long long&)",
+          "self_percent": 1.0172435181739239
+        },
+        {
+          "name": "runSample",
+          "self_percent": 0.9552164743828309
+        },
+        {
+          "name": "mf_boot_cinux",
+          "self_percent": 0.8807840218335194
+        },
+        {
+          "name": "micro_forge::arch::x86_64::Cpu::write_operand(micro_forge::arch::x86_64::DecodedInsn const&, micro_forge::arch::x86_64::Operand const&, unsigned long long)",
+          "self_percent": 0.7567299342513336
+        },
+        {
+          "name": "micro_forge::arch::x86_64::detail::resolve_rm(micro_forge::arch::x86_64::detail::Stream&, unsigned char, unsigned char, micro_forge::arch::x86_64::detail::Pfx const&, micro_forge::arch::x86_64::detail::Slot, micro_forge::arch::x86_64::Operand&)",
+          "self_percent": 0.5830542116362735
+        }
+      ]
+    },
+    "after": {
+      "samples": 5334,
+      "top_functions": [
+        {
+          "name": "mf_run",
+          "self_percent": 43.40082489688789
+        },
+        {
+          "name": "micro_forge::arch::x86_64::decode_one(std::__2::span<unsigned char const, 4294967295ul>)",
+          "self_percent": 8.642669666291713
+        },
+        {
+          "name": "micro_forge::arch::x86_64::Cpu::execute_insn(micro_forge::arch::x86_64::DecodedInsn const&, unsigned long long)",
+          "self_percent": 8.305211848518935
+        },
+        {
+          "name": "micro_forge::arch::x86_64::Cpu::store(unsigned long long, unsigned int, unsigned long long)",
+          "self_percent": 8.26771653543307
+        },
+        {
+          "name": "micro_forge::arch::x86_64::Cpu::load(unsigned long long, unsigned int, unsigned long long&)",
+          "self_percent": 7.705286839145107
+        },
+        {
+          "name": "micro_forge::arch::x86_64::Cpu::fetch(unsigned int&)",
+          "self_percent": 7.2928383952006
+        },
+        {
+          "name": "micro_forge::kernel::Scheduler::dispatch(unsigned long long)",
+          "self_percent": 4.949381327334083
+        },
+        {
+          "name": "update",
+          "self_percent": 2.4559430071241093
+        },
+        {
+          "name": "micro_forge::arch::x86_64::Mmu::translate(unsigned long long, bool, bool, bool, unsigned long long, unsigned long long, unsigned long long)",
+          "self_percent": 1.7622797150356206
+        },
+        {
+          "name": "runSample",
+          "self_percent": 1.2935883014623173
+        },
+        {
+          "name": "mf_boot_cinux",
+          "self_percent": 1.2373453318335208
+        },
+        {
+          "name": "js-to-wasm",
+          "self_percent": 1.1623547056617922
+        },
+        {
+          "name": "micro_forge::arch::x86_64::detail::resolve_rm(micro_forge::arch::x86_64::detail::Stream&, unsigned char, unsigned char, micro_forge::arch::x86_64::detail::Pfx const&, micro_forge::arch::x86_64::detail::Slot, micro_forge::arch::x86_64::Operand&)",
+          "self_percent": 1.0686164229471316
+        },
+        {
+          "name": "micro_forge::arch::x86_64::Cpu::read_operand(micro_forge::arch::x86_64::DecodedInsn const&, micro_forge::arch::x86_64::Operand const&, unsigned long long, unsigned long long&)",
+          "self_percent": 0.6749156355455568
+        },
+        {
+          "name": "micro_forge::arch::x86_64::Cpu::write_operand(micro_forge::arch::x86_64::DecodedInsn const&, micro_forge::arch::x86_64::Operand const&, unsigned long long)",
+          "self_percent": 0.3749531308586427
+        }
+      ]
+    }
+  }
+}

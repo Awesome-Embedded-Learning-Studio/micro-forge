@@ -69,4 +69,20 @@ struct BitRange {
     return (word & ~placed) | ((value << range.low) & placed);
 }
 
+/**
+ * @brief Sign-extends @p value from @p bits bits to 64 bits.
+ *
+ * @param[in] value Raw bits; bits above @p bits are ignored.
+ * @param[in] bits  Source width; 64 and above return @p value as-is.
+ * @return The two's-complement extended value.
+ */
+[[nodiscard]] constexpr uint64_t sign_extend(uint64_t value, unsigned bits) {
+    if (bits >= 64U) {
+        return value;
+    }
+    const uint64_t sign = mask_bit(bits - 1U);
+    const uint64_t masked = value & ones(bits);
+    return (masked ^ sign) - sign; // branchless two's-complement extend
+}
+
 } // namespace micro_forge::kernel::bit
