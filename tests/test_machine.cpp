@@ -206,4 +206,25 @@ TEST(MachineTest, ConflictingPortWindowsRefuseConstruction) {
                  "");
 }
 
+TEST(MachineTest, ConfigSwitchCompilesBlocksWithoutEnv) {
+    // A config-level switch must turn block compilation on without the
+    // MICRO_FORGE_JIT environment variable (unset in this process).
+    MachineConfig config;
+    config.ram_size = 0x1000000;
+    config.jit = true;
+    Machine machine(config);
+    const std::vector<uint8_t> code = {
+        0x48, 0xC7, 0xC0, 0x2A, 0x00, 0x00, 0x00, 0x48, 0xC7, 0xC1, 0x2B, 0x00, 0x00, 0x00,
+    };
+    ASSERT_TRUE(machine.load_image(kCodeBase, code));
+    machine.boot(kCodeBase, kStackTop);
+    // First pass compiles the block, the loop re-enters and runs it.
+    for (int i = 0; i < 4; ++i) {
+        machine.boot(kCodeBase, kStackTop);
+        (void)machine.run(8);
+    }
+    EXPECT_GT(machine.cpu().jit_block_count(), 0U);
+    EXPECT_GT(machine.cpu().jit_insn_count(), 0U);
+}
+
 } // namespace

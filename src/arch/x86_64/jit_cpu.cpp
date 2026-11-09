@@ -26,12 +26,11 @@ extern "C" std::uint64_t mf_jit_add(void* cpu, std::uint64_t slot, std::uint64_t
 extern "C" void mf_jit_add_mem(void* cpu, std::uint64_t vaddr, std::uint64_t value);
 
 std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
-    auto page = base::JitPage::create();
-    if (!page.has_value()) {
-        return std::nullopt;
-    }
     constexpr std::size_t max_insns = 64;
-    std::optional<std::size_t> entry;
+    // Pass 1 lowers everything first so the page budget is known before
+    // any byte is emitted: a shared page must not run out mid-block.
+    std::vector<base::TranslatedInsn> items;
+    std::size_t budget = 1; // trailing ret for unterminated blocks
     uint64_t covered = 0;
     unsigned count = 0;
     uint64_t pc = rip;
@@ -46,7 +45,6 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
         jit_failed_.insert(rip);
         return std::nullopt;
     };
-    bool terminated = false;
     while (count < max_insns) {
         rip_ = pc;
         unsigned got = 0;
@@ -57,7 +55,7 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
         if (!decoded) {
             break;
         }
-        const auto lowered = base::translate_insn(*decoded, pc);
+        auto lowered = base::translate_insn(*decoded, pc);
         if (!lowered) {
             break; // unsupported: end the block here, interpreter takes over
         }
@@ -68,57 +66,72 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
             std::println(stderr, "jit: invalid template at rip=0x{:x} (block=0x{:x})", pc, rip);
             return fail_compile();
         }
-        const auto offset = page->emit_multi(lowered->code, lowered->patches);
-        if (!offset.has_value()) {
-            break;
-        }
-        if (lowered->call_offset.has_value() && lowered->cpu_offset.has_value()) {
-            const auto cpu_arg = reinterpret_cast<std::uint64_t>(this);
-            std::uint64_t helper = 0;
-            if (lowered->helper == base::JitHelper::kAdd) {
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_add);
-            } else if (lowered->helper == base::JitHelper::kAddMem) {
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_add_mem);
-            } else if (lowered->helper == base::JitHelper::kStore) {
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_store);
-            } else {
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_load);
-            }
-            if (!page->patch(*offset + *lowered->cpu_offset, 8, cpu_arg) ||
-                !page->patch(*offset + *lowered->call_offset, 8, helper)) {
-                // A half-patched template must never become a block: give
-                // up on the whole compile; the interpreter takes this rip.
-                return fail_compile();
-            }
-        }
-        if (!entry.has_value()) {
-            entry = offset;
-        }
+        budget += lowered->code.size();
+        items.push_back(std::move(*lowered));
         covered += decoded->length;
         ++count;
         pc += decoded->length;
         if (decoded->mnemonic == Mnemonic::kRet) {
-            terminated = true;
+            --budget; // a terminated block needs no trailing ret
             break;
         }
     }
     rip_ = saved_rip;
     exception_injected_ = saved_exception;
-    if (!entry.has_value() || count == 0) {
+    if (count == 0) {
         return std::nullopt;
     }
-    if (!terminated) {
-        const std::array<std::uint8_t, 1> ret = {0xC3};
-        if (!page->emit_multi(ret, {}).has_value()) {
-            return std::nullopt;
+    // Pass 2: keep filling the current page while the block fits, else
+    // start a fresh one; blocks average ~1.3 KiB so a 4 KiB page holds a
+    // few. The unseal/seal round trip is per compile, not per instruction.
+    if (!jit_page_ || jit_page_->available() < budget) {
+        auto fresh = base::JitPage::create();
+        if (!fresh.has_value()) {
+            return fail_compile();
+        }
+        jit_page_ = std::make_shared<base::JitPage>(std::move(*fresh));
+    } else if (!jit_page_->unseal()) {
+        return fail_compile();
+    }
+    auto& page = *jit_page_;
+    const std::size_t entry = page.used();
+    for (const base::TranslatedInsn& lowered : items) {
+        const auto offset = page.emit_multi(lowered.code, lowered.patches);
+        if (!offset.has_value()) {
+            return fail_compile();
+        }
+        if (lowered.call_offset.has_value() && lowered.cpu_offset.has_value()) {
+            const auto cpu_arg = reinterpret_cast<std::uint64_t>(this);
+            std::uint64_t helper = 0;
+            if (lowered.helper == base::JitHelper::kAdd) {
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_add);
+            } else if (lowered.helper == base::JitHelper::kAddMem) {
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_add_mem);
+            } else if (lowered.helper == base::JitHelper::kStore) {
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_store);
+            } else {
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_load);
+            }
+            // A half-patched template must never become a block: give up
+            // on the whole compile; the interpreter takes this rip.
+            if (!page.patch(*offset + *lowered.cpu_offset, 8, cpu_arg) ||
+                !page.patch(*offset + *lowered.call_offset, 8, helper)) {
+                return fail_compile();
+            }
         }
     }
-    if (!page->seal()) {
+    if (budget > 1) { // unterminated block: append the shared ret
+        const std::array<std::uint8_t, 1> ret = {0xC3};
+        if (!page.emit_multi(ret, {}).has_value()) {
+            return fail_compile();
+        }
+    }
+    if (!page.seal()) {
         return std::nullopt;
     }
     return JitBlock{
-        .page = std::move(*page),
-        .entry = *entry,
+        .page = jit_page_,
+        .entry = entry,
         .length = covered,
         .insn_count = count,
     };
@@ -223,12 +236,12 @@ void Cpu::jit_store(uint64_t vaddr, unsigned width, uint64_t value) {
 
 void Cpu::maybe_compile_block(uint64_t rip) {
     // NOLINTNEXTLINE(concurrency-mt-unsafe) -- single-threaded CPU
-    static const bool jit_enabled = std::getenv("MICRO_FORGE_JIT") != nullptr;
+    static const bool env_jit = std::getenv("MICRO_FORGE_JIT") != nullptr;
     // Each block owns a 4 KiB page; 32,768 blocks cost ~128 MiB of the
     // 2 GiB MAP_32BIT window. Raising the cap from 4,096 lifted the
     // kernel-boot coverage from 25.9% to 33% (codex measurement).
     constexpr std::size_t max_blocks = 32768;
-    if (!jit_enabled || jit_blocks_.contains(rip) || jit_failed_.contains(rip) ||
+    if ((!jit_requested_ && !env_jit) || jit_blocks_.contains(rip) || jit_failed_.contains(rip) ||
         jit_blocks_.size() >= max_blocks) {
         return;
     }
@@ -259,7 +272,7 @@ bool Cpu::run_jit_block() {
     if (trace) {
         std::println(stderr, "jit: run rip=0x{:x} insns={}", rip_, it->second.insn_count);
     }
-    it->second.page.invoke(it->second.entry, regs_.data());
+    it->second.page->invoke(it->second.entry, regs_.data());
     rip_ += it->second.length;
     jit_insn_count_ += it->second.insn_count;
     retire(it->second.insn_count);

@@ -30,9 +30,7 @@ async function loadImages(): Promise<{ kernel: Uint8Array; disk: Uint8Array } | 
 }
 
 describe('cinux wasm engine', () => {
-  // Proven by a direct node probe (rax = 12); the vitest runner stalls on
-  // the boot path here, so the case stays skipped in CI.
-  it.skip('compiles a translatable guest block and runs it', async () => {
+  it('compiles a translatable guest block and runs it', async () => {
     const wasm = await readFile(new URL('../public/engine.wasm', import.meta.url));
     const engine = await loadEngine({ bytes: wasm.buffer.slice(0) as ArrayBuffer });
     // Guest program: mov rax,5 ; add rax,7 ; ret -- written into guest RAM

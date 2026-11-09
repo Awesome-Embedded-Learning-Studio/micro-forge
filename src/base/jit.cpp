@@ -119,6 +119,17 @@ bool JitPage::patch(std::size_t offset, std::size_t size, std::uint64_t value) {
     return true;
 }
 
+bool JitPage::unseal() {
+    if (data_ == nullptr || !executable_) {
+        return false;
+    }
+    if (mprotect(data_, kSize, PROT_READ | PROT_WRITE) != 0) {
+        return false;
+    }
+    executable_ = false;
+    return true;
+}
+
 bool JitPage::seal() {
     if (data_ == nullptr || executable_) {
         return false;

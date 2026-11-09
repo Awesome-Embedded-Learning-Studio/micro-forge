@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, shallowRef } from 'vue';
+import TermConsole from './TermConsole.vue';
 import {
   bootCinux,
+  compileBlock,
   ExitKind,
   icount,
   injectSerial,
@@ -18,13 +20,41 @@ const BOOT_BUDGET = 400_000_000;
 const TURN_BUDGET = 500_000n;
 const STALL_TURNS = 40;
 
-const screen = ref<HTMLDivElement | null>(null);
+const term = ref<InstanceType<typeof TermConsole> | null>(null);
 const status = ref('选择镜像后引导');
 const booting = ref(false);
 const running = ref(false);
-const command = ref('');
 const kernelFile = ref<File | null>(null);
 const diskFile = ref<File | null>(null);
+// Plan-B prototype: compile the block at the current RIP into a wasm
+// module and run it in its own linear memory. It proves the C++ -> V8
+// pipeline end to end; it is NOT guest acceleration (the block's memory
+// is separate from the machine's registers until a bridge exists).
+const jitInfo = ref('');
+const jitRipLo = ref(0x300000);
+const jitRipHi = ref(0);
+
+const tryJitBlock = async (): Promise<void> => {
+  const e = engine.value;
+  if (!e) return;
+  const program = new Uint8Array([
+    0x48, 0xc7, 0xc0, 0x05, 0x00, 0x00, 0x00, // mov rax,5
+    0x48, 0x83, 0xc0, 0x07,                   // add rax,7
+    0xc3,                                     // ret
+  ]);
+  const src = e.malloc(program.length);
+  new Uint8Array(e.memory.buffer, src, program.length).set(program);
+  e.mf_write_guest(jitRipLo.value, src, program.length);
+  e.free(src);
+  const block = await compileBlock(e, jitRipLo.value, jitRipHi.value, 8);
+  if (!block) {
+    jitInfo.value = '该地址的指令不在模板集内，翻译不了（原型只覆盖纯寄存器块）';
+    return;
+  }
+  block.run();
+  const rax = new DataView(block.memory.buffer).getBigInt64(0, true);
+  jitInfo.value = `方案乙原型: guest 块 → wasm 模块 → V8 编译执行, rax = ${rax} (期望 12)`;
+};
 
 const engine = shallowRef<EngineExports | null>(null);
 let printed = 0;
@@ -34,13 +64,15 @@ let stallTurns = 0;
 
 const engineReady = computed(() => Boolean(kernelFile.value && diskFile.value));
 
-const append = (text: string): void => {
-  if (text === '') return;
-  const el = screen.value;
-  if (!el) return;
-  const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
-  el.append(text);
-  if (atBottom) el.scrollTop = el.scrollHeight;
+/** Terminal input lands here: bytes go straight to the serial line. */
+const sendByte = (byte: number): void => {
+  const active = engine.value;
+  if (active && running.value) injectSerial(active, String.fromCharCode(byte));
+};
+
+const sendText = (text: string): void => {
+  const active = engine.value;
+  if (active && running.value) injectSerial(active, text.replace(/\r?\n/g, '\r'));
 };
 
 const readFileBytes = (file: File): Promise<Uint8Array> =>
@@ -72,7 +104,7 @@ const pump = (): void => {
     const exit = run(active, TURN_BUDGET);
     const drained = readConsole(active, printed);
     printed = drained.printed;
-    append(drained.text);
+    term.value?.push(drained.text);
     if (exit.kind !== ExitKind.Running) {
       running.value = false;
       status.value = `guest stopped (kind=${exit.kind}, code=${exit.code})`;
@@ -113,6 +145,7 @@ const boot = async (): Promise<void> => {
     bootCinux(engine.value, { kernel, disk });
     running.value = true;
     status.value = `引导中 · ${(icount(engine.value) / 1e6).toFixed(1)}M 条指令`;
+    term.value?.focus(); // terminal takes keystrokes from here on
     pump();
   } catch (error) {
     status.value = `失败：${error instanceof Error ? error.message : String(error)}`;
@@ -120,13 +153,6 @@ const boot = async (): Promise<void> => {
   } finally {
     booting.value = false;
   }
-};
-
-const send = (): void => {
-  const active = engine.value;
-  if (!active || !running.value) return;
-  injectSerial(active, command.value, true);
-  command.value = '';
 };
 
 onBeforeUnmount(() => {
@@ -147,17 +173,15 @@ onBeforeUnmount(() => {
       <input type="file" @change="pickDisk" />
     </label>
     <button :disabled="!engineReady || running || booting" @click="boot">引导</button>
+    <button
+      :disabled="!engineReady"
+      @click="tryJitBlock"
+      title="方案乙原型：把一段 guest 指令（mov rax,5; add rax,7）翻译成 WebAssembly 模块，交给 V8 编译后执行，验证 C++ 生成器 → 浏览器执行的整条链路。它不是模拟器的加速开关：块的内存和机器寄存器还没打通。"
+    >
+      试试 wasm 块
+    </button>
     <span id="status">{{ status }}</span>
+    <span v-if="jitInfo" id="jit-info">{{ jitInfo }}</span>
   </header>
-  <div ref="screen" id="screen"></div>
-  <div id="prompt">
-    <span>&gt;</span>
-    <input
-      v-model="command"
-      :disabled="!running"
-      type="text"
-      placeholder="引导完成后在这里输入命令，回车发送"
-      @keydown.enter.prevent="send"
-    />
-  </div>
+  <TermConsole ref="term" :on-byte="sendByte" :on-text="sendText" />
 </template>

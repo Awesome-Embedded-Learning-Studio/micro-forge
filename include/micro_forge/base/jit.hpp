@@ -96,6 +96,15 @@ public:
     [[nodiscard]] bool patch(std::size_t offset, std::size_t size, std::uint64_t value);
 
     /**
+     * @brief Flips the page back to RW so more blocks can be appended.
+     *
+     * Shared pages flip between emit and execution; each compile does one
+     * unseal/seal round trip, which is cheap next to the emit itself.
+     * @return False when the page is not sealed.
+     */
+    [[nodiscard]] bool unseal();
+
+    /**
      * @brief Flips the page to RX so the emitted code can run.
      * @return False when mprotect refuses.
      */

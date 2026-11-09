@@ -9,6 +9,7 @@
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
@@ -208,12 +209,12 @@ public:
     /// @return The physical address (0 when it faults).
     uint64_t fetch_paddr(uint64_t vaddr);
 
-    /// @brief JIT load helper; returns 0 on translation failure.
+    /// @brief JIT load helper.
     /// @param[in] vaddr Guest virtual address.
     /// @param[in] width Access width in bytes.
-    /// @return Loaded value, or 0 on translation failure.
+    /// @return Loaded value, or 0 when translation fails.
     uint64_t jit_load(uint64_t vaddr, unsigned width);
-    /// @brief JIT helper: GPR[slot] += imm, returning the sum with ADD flags.
+    /// @brief JIT helper: GPR[slot] += imm, sum with ADD flags.
     /// @param[in] slot Register slot offset (reg * 8).
     /// @param[in] imm Immediate value.
     /// @return Updated register value.
@@ -227,9 +228,10 @@ public:
         code_lo_ = lo;
         code_hi_ = hi;
     }
-    /// @brief Instructions run through compiled blocks (coverage meter).
+    /// @brief Turns block compilation on without the env variable.
+    void set_jit_enabled(bool enabled) { jit_requested_ = enabled; }
+    /// @brief JIT counters: coverage meter plus block/failed-rip counts.
     [[nodiscard]] std::uint64_t jit_insn_count() const { return jit_insn_count_; }
-    /// @brief Compiled block and failed-rip counts (debug).
     [[nodiscard]] std::size_t jit_block_count() const { return jit_blocks_.size(); }
     [[nodiscard]] std::size_t jit_failed_count() const { return jit_failed_.size(); }
 
@@ -522,7 +524,9 @@ private:
 
     /// Compiled block: executable page, entry and guest coverage.
     struct JitBlock {
-        base::JitPage page;      ///< Executable page holding the templates.
+        /// Blocks share 4 KiB pages (~1.3 KiB each); the shared_ptr keeps
+        /// a page alive while any of its blocks lives in the table.
+        std::shared_ptr<base::JitPage> page;
         std::size_t entry = 0;   ///< Block entry offset inside the page.
         uint64_t length = 0;     ///< Guest bytes covered by the block.
         unsigned insn_count = 0; ///< Guest instructions covered.
@@ -535,10 +539,12 @@ private:
     [[nodiscard]] bool run_jit_block();     // true when a block ran
 
     std::unordered_map<uint64_t, JitBlock> jit_blocks_; // compiled by rip
+    std::shared_ptr<base::JitPage> jit_page_;           // page being filled
     std::unordered_set<uint64_t> jit_failed_;           // rips that do not lower
     std::uint64_t jit_insn_count_ = 0;                  // coverage meter
     std::uint64_t code_lo_ = 0;                         // JIT range, 0 = no filter
     std::uint64_t code_hi_ = 0;
+    bool jit_requested_ = false; // config switch (env bypasses)
     /// Invalidates the decode cache when @p paddr lands on a code page.
     void note_store(uint64_t paddr);
     std::array<uint8_t, 16> last_fault_bytes_{};

@@ -117,6 +117,8 @@ Machine::Machine(const MachineConfig& config)
     // Size the decode cache and the code-page bitmap to this machine:
     // 512x2 decode entries is the default, RAM pages drive the bitmap.
     cpu_.configure_caches(config.ram_size);
+    // Config switch for block compilation; the env var stays as a bypass.
+    cpu_.set_jit_enabled(config.jit);
     // The LAPIC timer counts down on the machine's virtual clock.
     lapic_.set_clock([this] { return cpu_.icount(); });
 }
