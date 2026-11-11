@@ -244,6 +244,11 @@ public:
     void jit_load_xmm(uint64_t vaddr, uint64_t slot);
     /// @brief movups-family helper: 16 bytes from xmm_[slot/16] to memory.
     void jit_store_xmm(uint64_t vaddr, uint64_t slot);
+    /// @brief ret helper: pops the target, records the block exit.
+    /// @param[in] sp rsp before the pop; @p my_rip the ret's own rip.
+    void jit_ret(uint64_t sp, uint64_t my_rip);
+    /// @brief leave helper: rsp=rbp, then pop rbp (faults latch).
+    void jit_leave();
     /// @brief JIT OR: combine GPR[slot/8] with value, updating flags.
     void jit_or(uint64_t slot, uint64_t value, unsigned width);
     /// @brief JIT XOR: xor GPR[slot/8] with value, updating flags.
@@ -567,31 +572,26 @@ private:
 
     uint8_t pending_vector_ = 0;
     bool interrupt_pending_ = false;
-    bool sti_shadow_ = false; // STI blocks delivery past the next retire
-    /// Delivers the queued vector if IF is set and the machine runs.
-    void deliver_interrupt();
-    /// CR2 and the last #PF error code (read by the interrupt path).
-    uint64_t cr2_ = 0, pf_error_ = 0;
-    Mmu mmu_{bus_}; // software MMU; pass-through until paging
-    /// SSE2 register file: 16 XMM regs, two 64-bit halves each.
-    std::array<std::array<uint64_t, 2>, 16> xmm_{};
-    /// MXCSR control/status word (FXSAVE carries it across switches).
-    uint32_t mxcsr_ = 0x1F80U;
-    /// RNG state (splitmix64; batch 8 derives it).
-    uint64_t rng_state_ = 0x9E3779B97F4A7C15ULL;
-    /// Task/ldt selectors (0F 00 group; no descriptors in v0).
-    uint16_t tss_selector_ = 0, ldt_selector_ = 0;
-    /// Segment bases (FS/GS models; addressing arrives with the MMU).
+    bool sti_shadow_ = false;                       // STI blocks delivery past the next retire
+    void deliver_interrupt();                       // queued vector; needs IF && running
+    uint64_t cr2_ = 0, pf_error_ = 0;               // #PF address + error code
+    Mmu mmu_{bus_};                                 // software MMU; pass-through until paging
+    std::array<std::array<uint64_t, 2>, 16> xmm_{}; // SSE2: 16 XMM regs
+    uint32_t mxcsr_ = 0x1F80U;                      // MXCSR (FXSAVE carries it)
+    uint64_t rng_state_ = 0x9E3779B97F4A7C15ULL;    // splitmix64 seed
+    uint16_t tss_selector_ = 0, ldt_selector_ = 0;  // 0F 00 group; v0: none
+    /// FS/GS segment bases (models; full addressing with the MMU).
     uint64_t fs_base_ = 0, gs_base_ = 0, kernel_gs_base_ = 0;
-    kernel::Tick icount_ = 0;
+    kernel::Tick icount_ = 0;   // virtual time
     std::vector<char> console_; // serial bytes (diagnostics)
     std::function<void(uint64_t)> trace_;
-    /// Interrupt line (wiring only; snapshots re-attach) + high hook.
-    kernel::IrqLine* irq_line_ = nullptr;
-    std::function<void()> irq_hook_;
-    /// RIP and byte length of the executing instruction (traces).
-    uint64_t insn_rip_ = 0;
-    uint8_t cur_length_ = 0;
+    kernel::IrqLine* irq_line_ = nullptr; // wiring; snapshots re-attach
+    std::function<void()> irq_hook_;      // fired while the line is high
+    uint64_t insn_rip_ = 0;               // executing rip (traces)
+    uint8_t cur_length_ = 0;              // executing instruction length
+    /// Block exit target (jit_ret); suspend routes faults to interpreter.
+    uint64_t jit_next_rip_ = 0;
+    bool jit_next_set_ = false, jit_suspend_ = false;
     ExitStatus exit_{};
     std::array<uint8_t, 16> fetch_buf_{}; // GPR array index of a register enum:
     [[nodiscard]] static unsigned index_of(Reg reg) { return static_cast<unsigned>(reg) & 0xFU; }

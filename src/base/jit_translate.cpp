@@ -74,10 +74,36 @@ std::optional<std::size_t> reg_slot_offset(Reg reg) {
 }
 
 std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& insn, uint64_t rip) {
-    // ret stays interpreter-only: a guest ret pops [rsp] into rip, so the
-    // block ends just before it and the dispatcher handles the real ret.
-    if (insn.mnemonic == Mnemonic::kRet) {
+    // ret C3: the helper pops [rsp] into the block exit target; the host
+    // ret terminates the block. imm16 cleanup (C2) stays interpreter-only.
+    if (insn.mnemonic == Mnemonic::kRet && insn.addr_size == 8 && !insn.has_lock &&
+        insn.ops[0].kind != Operand::Kind::kImm) {
+        const auto rsp_slot = reg_slot_offset(Reg::kRsp);
+        if (rsp_slot.has_value()) {
+            return TranslatedInsn{
+                .code = jit_templates::kRetHelper,
+                .patches =
+                    {
+                        JitPage::Patch{.offset = 5, .size = 4, .value = *rsp_slot},
+                        JitPage::Patch{.offset = 11, .size = 8, .value = rip},
+                    },
+                .call_offset = 31,
+                .cpu_offset = 21,
+                .helper = JitHelper::kRet,
+            };
+        }
         return std::nullopt;
+    }
+    // leave: rsp=rbp then pop rbp; helper-faulted reads latch like stores.
+    if (insn.mnemonic == Mnemonic::kLeave && insn.addr_size == 8 && !insn.has_lock &&
+        insn.ops[0].kind != Operand::Kind::kImm) {
+        return TranslatedInsn{
+            .code = jit_templates::kLeaveHelper,
+            .patches = {},
+            .call_offset = 13,
+            .cpu_offset = 3,
+            .helper = JitHelper::kLeave,
+        };
     }
     // Only the qword, unsegmented base+disp form fits this helper ABI.
     if (insn.mnemonic == Mnemonic::kAdd && insn.ops[0].kind == Operand::Kind::kMem &&

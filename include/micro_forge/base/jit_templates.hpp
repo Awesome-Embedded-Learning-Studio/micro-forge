@@ -240,10 +240,30 @@ constexpr std::array<std::uint8_t, 45> kMovxStoreSlot = {
     0x5F,                                     // @44: pop rdi (1)
 };
 // Holes: base32@5, disp32@12, slot32@17, cpu64@23, helper64@33.
-// ret
-constexpr std::array<std::uint8_t, 1> kRet = {
-    0xC3,
+// ret C3 via helper (ABI: rdi=cpu, rsi=rsp value, rdx=ret's own rip).
+// The helper pops [rsp] into the block exit target; the host ret terminates
+// the block, so no trailing template ret is appended.
+constexpr std::array<std::uint8_t, 44> kRetHelper = {
+    0x57,                                     // @0: push rdi (1)
+    0x48, 0x8B, 0xB4, 0x27, 0, 0, 0, 0,       // @1: mov rsi,[rdi+rsp32] (8)
+    0x48, 0xBA, 0,    0,    0, 0, 0, 0, 0, 0, // @9: movabs rdx,my_rip64 (10)
+    0x48, 0xBF, 0,    0,    0, 0, 0, 0, 0, 0, // @19: mov rdi,cpu64 (10)
+    0x49, 0xBB, 0,    0,    0, 0, 0, 0, 0, 0, // @29: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                         // @39: call r11 (3)
+    0x5F,                                     // @42: pop rdi (1)
+    0xC3,                                     // @43: ret (1)
 };
+// Holes: rsp32@5, my_rip64@11; relocations cpu64@21, helper64@31.
+// leave via helper (rsp=rbp; rbp=pop) -- mid-block, no control flow:
+//   push rdi ; mov rdi,<cpu64> ; movabs r11,jit_leave ; call r11 ; pop rdi
+constexpr std::array<std::uint8_t, 25> kLeaveHelper = {
+    0x57,                                  // @0: push rdi (1)
+    0x48, 0xBF, 0,    0, 0, 0, 0, 0, 0, 0, // @1: mov rdi,cpu64 (10)
+    0x49, 0xBB, 0,    0, 0, 0, 0, 0, 0, 0, // @11: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                      // @21: call r11 (3)
+    0x5F,                                  // @24: pop rdi (1)
+};
+// Relocations: cpu64@3, helper64@13.
 
 // ALU reg,imm: rdi=cpu, esi=slot, rdx=decoded immediate, ecx=width.
 // movabs preserves the decoder's sign extension (imm8/imm32 for qwords).

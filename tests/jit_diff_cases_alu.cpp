@@ -348,6 +348,29 @@ std::vector<DiffCase> alu_cases() {
     movx_load_xmm5.vec_reg = Reg::kXmm5;
     movx_load_xmm5.vec = {0, 0};
     cases.push_back(movx_load_xmm5);
+    // ret: push target; ret pops it and the hlt after proves the jump.
+    DiffCase ret_push{
+        .name = "push_target_ret",
+        .code = {0x68, 0x06, 0x10, 0x00, 0x00, 0xC3, 0xF4}, // push 0x1006; ret; hlt
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = kFlags,
+    };
+    ret_push.jit_insns = 2; // push + ret (block ends at the ret)
+    cases.push_back(ret_push);
+    // leave: rsp=rbp then pop rbp; rbp ends as [rbp] and rsp walks 8.
+    DiffCase leave_rbp{
+        .name = "leave_rbp",
+        .code = {0x48, 0xC9, 0xF4}, // leave; hlt
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = kFlags,
+        .memory_initial = kStored,
+        .memory_expected = kStored,
+    };
+    leave_rbp.base_reg = Reg::kRbp;
+    leave_rbp.base = kData;
+    cases.push_back(leave_rbp);
     return cases;
 }
 } // namespace jit_diff_cases

@@ -42,6 +42,8 @@ extern "C" void mf_jit_push_val(void* cpu, uint64_t value);
 extern "C" void mf_jit_push_imm(void* cpu, uint64_t value);
 extern "C" void mf_jit_load_xmm(void* cpu, uint64_t vaddr, uint64_t slot);
 extern "C" void mf_jit_store_xmm(void* cpu, uint64_t vaddr, uint64_t slot);
+extern "C" void mf_jit_ret(void* cpu, uint64_t sp, uint64_t my_rip);
+extern "C" void mf_jit_leave(void* cpu);
 extern "C" void mf_jit_pop_reg(void* cpu, uint64_t slot);
 
 std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
@@ -180,6 +182,12 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
             case base::JitHelper::kStoreXmm:
                 helper = reinterpret_cast<std::uint64_t>(&mf_jit_store_xmm);
                 break;
+            case base::JitHelper::kRet:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_ret);
+                break;
+            case base::JitHelper::kLeave:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_leave);
+                break;
             default:
                 return fail_compile();
             }
@@ -267,6 +275,14 @@ extern "C" void mf_jit_load_xmm(void* cpu, uint64_t vaddr, uint64_t slot) {
 
 extern "C" void mf_jit_store_xmm(void* cpu, uint64_t vaddr, uint64_t slot) {
     static_cast<Cpu*>(cpu)->jit_store_xmm(vaddr, slot);
+}
+
+extern "C" void mf_jit_ret(void* cpu, uint64_t sp, uint64_t my_rip) {
+    static_cast<Cpu*>(cpu)->jit_ret(sp, my_rip);
+}
+
+extern "C" void mf_jit_leave(void* cpu) {
+    static_cast<Cpu*>(cpu)->jit_leave();
 }
 
 extern "C" void mf_jit_pop_reg(void* cpu, uint64_t slot) {
@@ -377,6 +393,28 @@ void Cpu::jit_store_xmm(uint64_t vaddr, uint64_t slot) {
     if (!exception_injected_) {
         jit_store(vaddr + 8U, 8, xmm_[idx][1]);
     }
+}
+
+void Cpu::jit_ret(uint64_t sp, uint64_t my_rip) {
+    const uint64_t target = jit_load(sp, 8);
+    if (exception_injected_) {
+        // Redo the ret in the interpreter so the fault is delivered
+        // exactly as the slow path would; rsp is still untouched.
+        jit_suspend_ = true;
+        jit_next_rip_ = my_rip;
+        jit_next_set_ = true;
+        return;
+    }
+    regs_[index_of(Reg::kRsp)] = sp + 8U;
+    jit_next_rip_ = target;
+    jit_next_set_ = true;
+}
+
+void Cpu::jit_leave() {
+    regs_[index_of(Reg::kRsp)] = regs_[index_of(Reg::kRbp)];
+    uint64_t value = 0;
+    (void)pop_value(8, value);
+    write_gpr(Reg::kRbp, 8, true, value);
 }
 
 void Cpu::jit_pop_reg(uint64_t slot) {
@@ -511,6 +549,12 @@ void Cpu::maybe_compile_block(uint64_t rip) {
 }
 
 bool Cpu::run_jit_block() {
+    // A helper faulted at the very end of the last block: one interpreter
+    // step re-raises it; normal dispatch resumes afterwards.
+    if (jit_suspend_) {
+        jit_suspend_ = false;
+        return false;
+    }
     // Empty table is the common case (JIT disabled): skip the hash lookup.
     if (jit_blocks_.empty()) {
         return false;
@@ -525,7 +569,13 @@ bool Cpu::run_jit_block() {
         std::println(stderr, "jit: run rip=0x{:x} insns={}", rip_, it->second.insn_count);
     }
     it->second.page->invoke(it->second.entry, regs_.data());
-    rip_ += it->second.length;
+    // jit_ret records its own exit target; every other block falls through.
+    if (jit_next_set_) {
+        rip_ = jit_next_rip_;
+        jit_next_set_ = false;
+    } else {
+        rip_ += it->second.length;
+    }
     jit_insn_count_ += it->second.insn_count;
     retire(it->second.insn_count);
     return true;
