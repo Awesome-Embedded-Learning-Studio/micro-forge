@@ -257,6 +257,18 @@ constexpr std::array<std::uint8_t, 49> kCmovRegHelper = {
     0x5F,                                     // @48: pop rdi (1)
 };
 // Holes: dst32@2, src32@10, cc32@15, width32@21, cpu64@27, helper64@37.
+// SETCC reg: rdi=cpu, esi=dst slot, ecx=cc. 37 bytes.
+constexpr std::array<std::uint8_t, 35> kSetccRegHelper = {
+    0x57,                                  // @0: push rdi (1)
+    0xBE, 0,    0,    0, 0,                // @1: mov esi,dst32 (5)
+    0xBA, 0,    0,    0, 0,                // @6: mov edx,cc32 (5)
+    0x48, 0xBF, 0,    0, 0, 0, 0, 0, 0, 0, // @11: mov rdi,cpu64 (10)
+    0x49, 0xBB, 0,    0, 0, 0, 0, 0, 0, 0, // @21: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                      // @31: call r11 (3)
+    0x5F,                                  // @34: pop rdi (1)
+};
+// Holes: dst32@2, cc32@7, cpu64@13, helper64@23.
+
 // CMP memory tail: rdi=cpu, rsi=vaddr (from load prefix), edx=slot, ecx=width.
 constexpr std::array<std::uint8_t, 34> kCmpMemCall = {
     0xBA, 0,    0,    0, 0,                // @0: mov edx,slot32 (5)

@@ -37,6 +37,7 @@ extern "C" void mf_jit_imul(void* cpu, uint64_t slot, uint64_t value, unsigned w
 extern "C" void mf_jit_cmp_mem(void* cpu, uint64_t vaddr, uint64_t slot, unsigned width);
 extern "C" void mf_jit_cmov(void* cpu, uint64_t slot, uint64_t src_val, unsigned cc,
                             unsigned width);
+extern "C" void mf_jit_setcc(void* cpu, uint64_t slot, unsigned cc);
 
 std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
     constexpr std::size_t max_insns = 64;
@@ -156,6 +157,9 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
             case base::JitHelper::kCmov:
                 helper = reinterpret_cast<std::uint64_t>(&mf_jit_cmov);
                 break;
+            case base::JitHelper::kSetcc:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_setcc);
+                break;
             default:
                 return fail_compile();
             }
@@ -223,6 +227,10 @@ extern "C" void mf_jit_and(void* cpu, uint64_t slot, uint64_t value, unsigned wi
 extern "C" void mf_jit_cmov(void* cpu, uint64_t slot, uint64_t src_val, unsigned cc,
                             unsigned width) {
     static_cast<Cpu*>(cpu)->jit_cmov(slot, src_val, cc, width);
+}
+
+extern "C" void mf_jit_setcc(void* cpu, uint64_t slot, unsigned cc) {
+    static_cast<Cpu*>(cpu)->jit_setcc(slot, cc);
 }
 
 extern "C" void mf_jit_or(void* cpu, uint64_t slot, uint64_t value, unsigned width) {
@@ -296,6 +304,12 @@ void Cpu::jit_sub(uint64_t slot, uint64_t value, unsigned width) {
 void Cpu::jit_and(uint64_t slot, uint64_t value, unsigned width) {
     auto& dst = regs_[slot / 8U];
     dst = merge_width(dst, alu_logic(dst & value, width), width);
+}
+
+void Cpu::jit_setcc(uint64_t slot, unsigned cc) {
+    auto& dst = regs_[slot / 8U];
+    const uint64_t val = condition(static_cast<Cc>(cc)) ? 1U : 0U;
+    dst = merge_width(dst, val, 1);
 }
 
 void Cpu::jit_cmov(uint64_t slot, uint64_t src_val, unsigned cc, unsigned width) {

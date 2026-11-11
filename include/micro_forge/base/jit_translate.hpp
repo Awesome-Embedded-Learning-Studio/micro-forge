@@ -35,8 +35,9 @@ enum class JitHelper : std::uint8_t {
     kOr,
     kXor,
     kCmpMem,
-    kImul, ///< two/three-operand imul: reg = reg * r/m, CF/OF from truncation
-    kCmov, ///< cmovcc reg,reg: dst = src when the condition holds
+    kImul,  ///< two/three-operand imul: reg = reg * r/m, CF/OF from truncation
+    kCmov,  ///< cmovcc reg,reg: dst = src when the condition holds
+    kSetcc, ///< setcc reg8: dst byte = 1 when the condition holds
 };
 
 /**

@@ -278,6 +278,21 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
         }
         return std::nullopt;
     }
+    // setcc reg8: single-byte conditional write, flags come from the helper.
+    if (insn.mnemonic == Mnemonic::kSetcc && *slot % sizeof(uint64_t) == 0 &&
+        insn.ops[0].kind == Operand::Kind::kReg && insn.ops[0].size == 1 && !insn.has_lock) {
+        return TranslatedInsn{
+            .code = jit_templates::kSetccRegHelper,
+            .patches =
+                {
+                    {.offset = 2, .size = 4, .value = *slot},
+                    {.offset = 7, .size = 4, .value = static_cast<std::uint32_t>(insn.cc)},
+                },
+            .call_offset = 23,
+            .cpu_offset = 13,
+            .helper = JitHelper::kSetcc,
+        };
+    }
     // mov reg,[base+index*scale+disp]: compute vaddr before calling the helper.
     if (insn.mnemonic == Mnemonic::kMov && insn.ops[0].kind == Operand::Kind::kReg &&
         insn.ops[1].kind == Operand::Kind::kMem && insn.ops[1].has_base &&

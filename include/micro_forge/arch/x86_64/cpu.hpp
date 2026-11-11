@@ -224,6 +224,11 @@ public:
     /// @param[in] cc Hardware condition code 0-15.
     /// @param[in] width Operand width in bytes; narrow writes keep the high bytes.
     void jit_cmov(uint64_t slot, uint64_t src_val, unsigned cc, unsigned width);
+
+    /// @brief SETCC helper: writes 1/0 into the low byte of the slot.
+    /// @param[in] slot Byte offset of the destination register slot in regs_.
+    /// @param[in] cc Hardware condition code 0-15.
+    void jit_setcc(uint64_t slot, unsigned cc);
     /// @brief JIT OR: combine GPR[slot/8] with value, updating flags.
     void jit_or(uint64_t slot, uint64_t value, unsigned width);
     /// @brief JIT XOR: xor GPR[slot/8] with value, updating flags.

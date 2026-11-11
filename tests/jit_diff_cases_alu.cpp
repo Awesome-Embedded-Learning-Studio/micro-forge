@@ -198,6 +198,30 @@ std::vector<DiffCase> alu_cases() {
     negative.memory_initial = 1;
     negative.memory_expected = 1;
     cases.push_back(std::move(negative));
+    // setcc r8: kFlags leaves e/b/le/be/s/o/p true, the rest false; the byte
+    // write must keep the upper 7 bytes of the seeded destination.
+    const uint64_t kept = kLoaded & ~0xFFULL;
+    const std::vector<std::pair<const char*, std::vector<uint8_t>>> setccs = {
+        {"st94_e_cl", {0x0F, 0x94, 0xC1}},        {"st95_ne_cl", {0x0F, 0x95, 0xC1}},
+        {"st92_b_cl", {0x0F, 0x92, 0xC1}},        {"st97_a_cl", {0x0F, 0x97, 0xC1}},
+        {"st93_ae_cl", {0x0F, 0x93, 0xC1}},       {"st9e_le_cl", {0x0F, 0x9E, 0xC1}},
+        {"st9f_g_cl", {0x0F, 0x9F, 0xC1}},        {"st96_be_cl", {0x0F, 0x96, 0xC1}},
+        {"st94_e_r9b", {0x41, 0x0F, 0x94, 0xC1}}, {"st95_ne_r9b", {0x41, 0x0F, 0x95, 0xC1}},
+    };
+    for (const auto& [name, code] : setccs) {
+        const unsigned cc_op = code[code.size() - 2];
+        const bool taken = cc_op == 0x94U || cc_op == 0x92U || cc_op == 0x9EU || cc_op == 0x96U;
+        const bool r9 = code.size() == 4;
+        DiffCase c{
+            .name = name,
+            .code = code,
+            .initial = kLoaded,
+            .expected = kept | (taken ? 1U : 0U),
+            .flags = kFlags,
+        };
+        c.result_reg = r9 ? Reg::kR9 : Reg::kRcx;
+        cases.push_back(c);
+    }
     return cases;
 }
 } // namespace jit_diff_cases
