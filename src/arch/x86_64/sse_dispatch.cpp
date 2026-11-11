@@ -51,7 +51,10 @@ bool Cpu::is_sse_mnemonic(Mnemonic mnemonic) {
     case Mnemonic::kPcmpeqd:
     case Mnemonic::kPcmpeqq:
     case Mnemonic::kPshufd:
+    case Mnemonic::kPshuflw:
+    case Mnemonic::kPshufhw:
     case Mnemonic::kMovlps:
+    case Mnemonic::kMovlpd:
     case Mnemonic::kMovhps:
     case Mnemonic::kMovlhps:
     case Mnemonic::kMovhlps:
@@ -63,6 +66,9 @@ bool Cpu::is_sse_mnemonic(Mnemonic mnemonic) {
     case Mnemonic::kFxsave64:
     case Mnemonic::kFxrstor:
     case Mnemonic::kFxrstor64:
+    case Mnemonic::kPsadbw:
+    case Mnemonic::kPextrw:
+    case Mnemonic::kMovss:
         return true;
     default:
         return false;

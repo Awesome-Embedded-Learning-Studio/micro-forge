@@ -192,10 +192,13 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
         const auto rm = static_cast<uint8_t>(kernel::bit::extract(modrm, kModrmRm));
         const bool modreg = (mod == 3);
         const uint64_t bad = opcode_off;
-        if (esc && esc_op == 0x1E &&
-            !detail::remap_cet(modrm, static_cast<uint8_t>(reg), modreg, out.mnemonic, ent.a)) {
+        const auto refuse = [&bad] {
             return std::unexpected(
                 DecodeError{.kind = DecodeError::Kind::kUnsupportedOpcode, .offset = bad});
+        };
+        if (esc && esc_op == 0x1E &&
+            !detail::remap_cet(modrm, static_cast<uint8_t>(reg), modreg, out.mnemonic, ent.a)) {
+            return refuse();
         }
         // 0F 12/16 with mod=3 are the register-half moves (the memory
         // forms are movlps/movhps).
@@ -207,11 +210,18 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
         case kGrp1:
             out.mnemonic = grp1_mn(reg);
             break;
+        case kGrp0X87:
+            // Only fninit (ModRM E3) is modeled; other DB forms refuse.
+            if (modrm != 0xE3) {
+                return refuse();
+            }
+            out.mnemonic = Mnemonic::kFninit;
+            ent.a = Slot::kNone;
+            break;
         case kGrp2:
             out.mnemonic = grp2_mn(reg);
             if (out.mnemonic == Mnemonic::kNop) {
-                return std::unexpected(
-                    DecodeError{.kind = DecodeError::Kind::kUnsupportedOpcode, .offset = bad});
+                return refuse();
             }
             break;
         case kGrp3:
@@ -222,23 +232,20 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
             } else {
                 out.mnemonic = grp3_mn(reg);
                 if (out.mnemonic == Mnemonic::kNop) {
-                    return std::unexpected(
-                        DecodeError{.kind = DecodeError::Kind::kUnsupportedOpcode, .offset = bad});
+                    return refuse();
                 }
             }
             break;
         case kGrp4:
             out.mnemonic = grp4_mn(reg);
             if (out.mnemonic == Mnemonic::kNop) {
-                return std::unexpected(
-                    DecodeError{.kind = DecodeError::Kind::kUnsupportedOpcode, .offset = bad});
+                return refuse();
             }
             break;
         case kGrp5:
             out.mnemonic = grp5_mn(reg);
             if (out.mnemonic == Mnemonic::kNop) {
-                return std::unexpected(
-                    DecodeError{.kind = DecodeError::Kind::kUnsupportedOpcode, .offset = bad});
+                return refuse();
             }
             // inc/dec default to 32-bit operands; call/jmp/push follow
             // the push rule (REX.W or default 8, 66 selects 16) -- 66 FF
@@ -256,24 +263,16 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
             } else if (!modreg && reg == 7) {
                 out.mnemonic = Mnemonic::kInvlpg;
                 ent.a = Slot::kRm8; // objdump renders BYTE PTR
+            } else if (modreg && reg == 1 && (rm == 2 || rm == 3)) {
+                // 0F 01 CA/CB: clac/stac; reg field is 1 (sidt slot).
+                out.mnemonic = (rm == 2) ? Mnemonic::kClac : Mnemonic::kStac;
+                ent.a = Slot::kNone;
             } else {
-                switch (reg) {
-                case 0:
-                    out.mnemonic = Mnemonic::kSgdt;
-                    break;
-                case 1:
-                    out.mnemonic = Mnemonic::kSidt;
-                    break;
-                case 2:
-                    out.mnemonic = Mnemonic::kLgdt;
-                    break;
-                case 3:
-                    out.mnemonic = Mnemonic::kLidt;
-                    break;
-                default:
-                    return std::unexpected(
-                        DecodeError{.kind = DecodeError::Kind::kUnsupportedOpcode, .offset = bad});
+                const auto mn = grp6_mn(reg);
+                if (!mn) {
+                    return refuse();
                 }
+                out.mnemonic = *mn;
             }
             break;
         case kGrp7:
@@ -292,8 +291,7 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
                 out.mnemonic = Mnemonic::kLtr;
                 break;
             default:
-                return std::unexpected(
-                    DecodeError{.kind = DecodeError::Kind::kUnsupportedOpcode, .offset = bad});
+                return refuse();
             }
             break;
         case kGrp8:
@@ -301,8 +299,7 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
             // (Batch-4 review: the map was off by one, executing every
             // real bt as a writing bts.)
             if (reg < 4) {
-                return std::unexpected(
-                    DecodeError{.kind = DecodeError::Kind::kUnsupportedOpcode, .offset = bad});
+                return refuse();
             }
             if (reg == 4) {
                 out.mnemonic = Mnemonic::kBt;
@@ -318,14 +315,12 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
             if (reg != 0) {
                 // 8F /1-/7 are undefined encodings, not alias pop
                 // (objdump refuses 8F C8; batch-4 review).
-                return std::unexpected(
-                    DecodeError{.kind = DecodeError::Kind::kUnsupportedOpcode, .offset = bad});
+                return refuse();
             }
             break;
         case kGrp9:
             if (reg != 6 || !modreg) {
-                return std::unexpected(
-                    DecodeError{.kind = DecodeError::Kind::kUnsupportedOpcode, .offset = bad});
+                return refuse();
             }
             out.mnemonic = Mnemonic::kRdrand;
             ent.a = Slot::kRm; // register form via modrm r/m
@@ -333,8 +328,7 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
         case kGrpPs: {
             if (kernel::bit::extract(modrm, kModrmMod) != 3) {
                 // Packed-shift immediate forms are register-only.
-                return std::unexpected(
-                    DecodeError{.kind = DecodeError::Kind::kUnsupportedOpcode, .offset = bad});
+                return refuse();
             }
             const auto base = static_cast<uint8_t>(esc_op - 0x71);
             const bool is_ll = reg == 6;
@@ -346,8 +340,7 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
                 break;
             }
             if (!is_ll && !is_rl) {
-                return std::unexpected(
-                    DecodeError{.kind = DecodeError::Kind::kUnsupportedOpcode, .offset = bad});
+                return refuse();
             }
             const bool is_w = base == 0;
             const bool is_d = base == 1;
@@ -375,8 +368,7 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
             } else if (modreg && reg == 7) {
                 out.mnemonic = Mnemonic::kSfence;
             } else {
-                return std::unexpected(
-                    DecodeError{.kind = DecodeError::Kind::kUnsupportedOpcode, .offset = bad});
+                return refuse();
             }
             if (modreg) {
                 ent.a = Slot::kNone;
@@ -475,7 +467,10 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
         case Slot::kOpr:
         case Slot::kOpr8:
             dst.kind = Operand::Kind::kReg;
-            dst.reg = gpr_at(static_cast<uint8_t>(static_cast<unsigned>(op) & 7U), p.rex_b);
+            // Escape space (bswap 0F C8+rd): the reg field lives in
+            // esc_op; the primary opcode byte would mask to 7 (edi).
+            dst.reg = gpr_at(static_cast<uint8_t>(static_cast<unsigned>(esc ? esc_op : op) & 7U),
+                             p.rex_b);
             break;
         case Slot::kXReg:
             dst.kind = Operand::Kind::kReg;

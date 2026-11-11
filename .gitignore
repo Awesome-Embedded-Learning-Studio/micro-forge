@@ -3,6 +3,7 @@ build*/
 out/
 
 CLAUDE.md
+HANDOFF.md
 # .claude/agents/ is published (auditor prompts carry no machine-local
 # data); the rest of .claude/ stays out.
 .claude/*

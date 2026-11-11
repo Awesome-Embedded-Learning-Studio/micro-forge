@@ -10,6 +10,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <span>
 
 #include "micro_forge/arch/x86_64/decode_error.hpp"
@@ -110,18 +111,19 @@ struct Ent {
 /// @brief Group-opcode ids dispatched on the ModRM reg field.
 enum Groups : uint8_t {
     kGrpNone = 0,
-    kGrp1,   // 80/81/83: ALU + imm
-    kGrp2,   // C0/C1/D0-D3: shifts
-    kGrp3,   // F6/F7: test/not/neg/mul/imul/div/idiv
-    kGrp4,   // FE: inc/dec rm8
-    kGrp5,   // FF: inc/dec/call/jmp/push r/m
-    kGrp6,   // 0F 01: descriptor tables / invlpg / swapgs
-    kGrp8,   // 0F BA: bt/bts/btr/btc + imm8
-    kGrp7,   // 0F 00: sldt/str/lldt/ltr/verr/verw
-    kGrp9,   // 0F C7: rdrand/rdseed
-    kGrpPs,  // 0F 71-73 (66): packed shifts + imm8
-    kGrpAe,  // 0F AE: fxsave/fxrstor/fences
-    kGrpPop, // 8F: pop r/m, /0 only (/1-/7 undefined)
+    kGrp1,    // 80/81/83: ALU + imm
+    kGrp2,    // C0/C1/D0-D3: shifts
+    kGrp3,    // F6/F7: test/not/neg/mul/imul/div/idiv
+    kGrp4,    // FE: inc/dec rm8
+    kGrp5,    // FF: inc/dec/call/jmp/push r/m
+    kGrp6,    // 0F 01: descriptor tables / invlpg / swapgs
+    kGrp8,    // 0F BA: bt/bts/btr/btc + imm8
+    kGrp7,    // 0F 00: sldt/str/lldt/ltr/verr/verw
+    kGrp9,    // 0F C7: rdrand/rdseed
+    kGrpPs,   // 0F 71-73 (66): packed shifts + imm8
+    kGrpAe,   // 0F AE: fxsave/fxrstor/fences
+    kGrpPop,  // 8F: pop r/m, /0 only (/1-/7 undefined)
+    kGrp0X87, // 0xDB: x87 FPU group (fninit E3 only, the rest refused)
 };
 
 /// @brief Byte-stream cursor with bounds-checked consumption.
@@ -398,6 +400,9 @@ extern const std::array<Ent, 256> kEsc38;
 [[nodiscard]] Mnemonic grp3_mn(uint8_t reg);
 [[nodiscard]] Mnemonic grp4_mn(uint8_t reg);
 [[nodiscard]] Mnemonic grp5_mn(uint8_t reg);
+/// kGrp6 reg-field dispatch for the descriptor-table forms (0F 01 /0-/3);
+/// nullopt is the shared "outside the subset" refusal.
+[[nodiscard]] std::optional<Mnemonic> grp6_mn(uint8_t reg);
 
 /// @brief Parses legacy prefixes and REX from @p st into @p p.
 ///

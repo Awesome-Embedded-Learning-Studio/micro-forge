@@ -201,6 +201,7 @@ enum class Mnemonic : uint8_t {
     kShufps,
     kMovlps,
     kMovhps,
+    kMovlpd,
     kMovlhps,
     kMovhlps,
     kPmovmskb,
@@ -242,6 +243,8 @@ enum class Mnemonic : uint8_t {
     kMovq_xmm,
     kMovd_xmm,
     kPshufd,
+    kPshuflw,
+    kPshufhw,
     kPunpcklbw,
     kPunpcklwd,
     kPunpckldq,
@@ -277,6 +280,15 @@ enum class Mnemonic : uint8_t {
     kPcmpeqb,
     kPcmpeqd,
     kPcmpeqq,
+    // New-kernel instruction face (2026-11-10 profile over the r35 ACPI/
+    // SMP/uaccess paths; see document/notes for the audit).
+    kPsadbw,
+    kPextrw,
+    kMovss,
+    kClac,
+    kStac,
+    kFninit,
+    kUd2,
 };
 
 /**

@@ -202,13 +202,12 @@ TEST(DecodeTest, BtFamily) {
 }
 
 TEST(DecodeTest, MandatoryPrefixMissIsRefused) {
-    // F2/F3 before 0F select different instructions (SSE); the whitelist
-    // carries none of them, so these must refuse instead of decoding as
-    // the plain 16-byte movups (batch-4 review, objdump: movsd/movss).
+    // F2 before 0F selects instructions (SSE) the whitelist still does
+    // not carry: F2 0F 10 must refuse instead of decoding as movsd.
+    // (F3 0F 10 is movss since the 2026-11 new-kernel face.)
     const std::vector<unsigned char> f2 = {0xF2, 0x0F, 0x10, 0xC0};
     EXPECT_FALSE(mf::decode_one(f2).has_value());
-    const std::vector<unsigned char> f3 = {0xF3, 0x0F, 0x10, 0xC0};
-    EXPECT_FALSE(mf::decode_one(f3).has_value());
+    EXPECT_EQ(text_of({0xF3, 0x0F, 0x10, 0xC0}), "movss xmm0, xmm0");
 }
 
 TEST(DecodeTest, FFGroupHonorsOperandSizePrefix) {
@@ -234,8 +233,10 @@ TEST(DecodeTest, InOut) {
 }
 
 TEST(DecodeTest, ErrorChannels) {
-    const std::vector<uint8_t> ud2 = {0x0F, 0x0B};
-    auto r = mf::decode_one(ud2);
+    // ud2 decodes since the 2026-11 face (execution raises #UD); an
+    // 0F escape form still outside the subset keeps the error channel.
+    const std::vector<uint8_t> bad_esc = {0x0F, 0x06}; // clts
+    auto r = mf::decode_one(bad_esc);
     ASSERT_FALSE(r.has_value());
     EXPECT_EQ(r.error().kind, mf::DecodeError::Kind::kUnsupportedOpcode);
 

@@ -21,6 +21,7 @@ uint64_t Cpu::rflags() const {
     f |= if_ ? kernel::bit::mask_bit(9) : 0U;
     f |= df_ ? kernel::bit::mask_bit(10) : 0U;
     f |= of_ ? kernel::bit::mask_bit(11) : 0U;
+    f |= ac_ ? kernel::bit::mask_bit(18) : 0U;
     return f;
 }
 
@@ -32,6 +33,7 @@ void Cpu::set_rflags(uint64_t value) {
     sf_ = (value & kernel::bit::mask_bit(7)) != 0;
     if_ = (value & kernel::bit::mask_bit(9)) != 0;
     df_ = (value & kernel::bit::mask_bit(10)) != 0;
+    ac_ = (value & kernel::bit::mask_bit(18)) != 0;
     of_ = (value & kernel::bit::mask_bit(11)) != 0;
 }
 
@@ -163,6 +165,25 @@ ExitStatus Cpu::execute_system(const DecodedInsn& insn, uint64_t rip_after) {
     case Mnemonic::kSti:
         if_ = true;
         break;
+    case Mnemonic::kClac:
+        ac_ = false;
+        break;
+    case Mnemonic::kStac:
+        ac_ = true;
+        break;
+    case Mnemonic::kFninit:
+        // DB E3 only (decoder refuses every other 0xDB form): the modeled
+        // x87 state is "reset, unused" — no fp stack, no status word.
+        break;
+    case Mnemonic::kUd2:
+        latch(ExitStatus{
+            .kind = ExitStatus::Kind::kFault,
+            .code = insn_rip_,
+            .rip = insn_rip_,
+            .detail = static_cast<uint8_t>(FaultId::kUd),
+        });
+        retire(1);
+        return exit_;
     case Mnemonic::kCpuid: {
         const auto answer = cpuid(static_cast<uint32_t>(regs_[index_of(Reg::kRax)]),
                                   static_cast<uint32_t>(regs_[index_of(Reg::kRcx)]));

@@ -64,6 +64,7 @@ enum class FaultId : uint8_t {
     kMemory = 2, ///< Memory access failed on the bus; code = address.
     kFetch = 3,  ///< Instruction fetch failed; code = address.
     kMsr = 4,    ///< MSR outside the whitelist (#GP); code = the index.
+    kUd = 5,     ///< Undefined instruction (#UD, ud2); code = rip.
 };
 
 /**
@@ -244,17 +245,14 @@ public:
     /// @brief Latched exit status (kRunning while a run may continue).
     [[nodiscard]] const ExitStatus& exit_status() const { return exit_; }
 
-    /// @brief rflags image composed from the stored flags (reserved bit
-    ///        1 set, IF from the interrupt-enable state).
+    /// @brief rflags image (reserved bit 1 set, IF from if_).
     [[nodiscard]] uint64_t rflags() const;
     /// @brief Decomposes an rflags image into the stored flags.
     void set_rflags(uint64_t value);
     /// @brief Interrupt-enable state (IF).
     [[nodiscard]] bool interrupts_enabled() const { return if_; }
     /// @brief Current privilege level (0 = kernel, 3 = user).
-    [[nodiscard]] unsigned cpl() const { return cpl_; }
-    /// @brief Reads one control register by enumeration offset
-    ///        (0=CR0, 1=CR2, 2=CR3, 3=CR4).
+    [[nodiscard]] unsigned cpl() const { return cpl_; }    /// @brief Reads one control register (0=CR0, 1=CR2, 2=CR3, 3=CR4).
     [[nodiscard]] uint64_t control_register(unsigned index) const { return cr_[index]; }
     /// @brief Writes one control register by enumeration offset.
     void set_control_register(unsigned index, uint64_t value) { cr_[index] = value; }
@@ -461,6 +459,8 @@ private:
     ExitStatus execute_cached(const CachedInsn& cached, uint64_t rip_after);
     /// SSE/SSE2 subset execution (sse.cpp).
     ExitStatus execute_sse(const DecodedInsn& insn, uint64_t rip_after);
+    /// New-kernel SSE face via execute_sse default (sse_ext.cpp).
+    ExitStatus execute_sse_ext(const DecodedInsn& insn, uint64_t rip_after);
     /// Whether the mnemonic belongs to the SSE executor (sse.cpp).
     [[nodiscard]] static bool is_sse_mnemonic(Mnemonic mnemonic);
     /// Pushes @p value at @p width (default 8); false latches a fault.
@@ -486,17 +486,15 @@ private:
     bool sf_ = false;
     bool of_ = false;
     bool df_ = false;
-    bool if_ = false;
+    bool if_ = false, ac_ = false;
     /// Control registers by enumeration offset (0=CR0, 1=CR2, 2=CR3,
     /// 3=CR4); values are stored for batch 6a, paging arrives with the MMU.
     std::array<uint64_t, 4> cr_{};
     /// Debug registers DR0-3/6/7 (indexed by register number).
     std::array<uint64_t, 8> dr_{};
     /// GDTR/IDTR base and limit (system instructions store them here).
-    uint64_t gdtr_base_ = 0;
-    uint16_t gdtr_limit_ = 0;
-    uint64_t idtr_base_ = 0;
-    uint16_t idtr_limit_ = 0;
+    uint64_t gdtr_base_ = 0, idtr_base_ = 0;
+    uint16_t gdtr_limit_ = 0, idtr_limit_ = 0;
     /// MSR space: only whitelisted indices live here (Cinux boot set).
     std::unordered_map<uint32_t, uint64_t> msr_;
     /// Current privilege level (0 kernel, 3 user); set by sysretq/iretq
@@ -561,8 +559,7 @@ private:
     /// Delivers the queued vector if IF is set and the machine runs.
     void deliver_interrupt();
     /// CR2 and the last #PF error code (read by the interrupt path).
-    uint64_t cr2_ = 0;
-    uint64_t pf_error_ = 0;
+    uint64_t cr2_ = 0, pf_error_ = 0;
     /// Software MMU (pass-through until the boot shim enables paging).
     Mmu mmu_{bus_};
     /// SSE2 register file: 16 XMM registers, two 64-bit halves each.
@@ -577,8 +574,7 @@ private:
     uint16_t ldt_selector_ = 0;
     /// Segment bases (FS/GS models; addressing arrives with the MMU).
     uint64_t fs_base_ = 0;
-    uint64_t gs_base_ = 0;
-    uint64_t kernel_gs_base_ = 0;
+    uint64_t gs_base_ = 0, kernel_gs_base_ = 0;
     kernel::Tick icount_ = 0;
     std::vector<char> console_;
     std::function<void(uint64_t rip)> trace_;

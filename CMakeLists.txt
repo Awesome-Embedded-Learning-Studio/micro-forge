@@ -65,6 +65,7 @@ add_library(micro_forge
     src/arch/x86_64/grp3.cpp
     src/arch/x86_64/sysregs.cpp
     src/arch/x86_64/sse.cpp
+    src/arch/x86_64/sse_ext.cpp
     src/arch/x86_64/sse_dispatch.cpp
     src/arch/x86_64/syscall_impl.cpp
     src/arch/x86_64/mmu.cpp

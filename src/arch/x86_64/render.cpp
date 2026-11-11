@@ -245,34 +245,35 @@ std::string_view gpr_name(Reg reg, uint8_t size, bool rex_present) {
 }
 
 /// @brief Mnemonic text indexed by Mnemonic value (order = enum order).
-constexpr std::array<std::string_view, 169> kMnemonicNames = {
-    "mov",       "movsx",      "movzx",     "movsxd",    "xchg",       "lea",       "push",
-    "pop",       "cmovcc",     "movabs",    "add",       "adc",        "sub",       "sbb",
-    "inc",       "dec",        "neg",       "cmp",       "mul",        "imul",      "div",
-    "idiv",      "and",        "or",        "xor",       "not",        "test",      "shl",
-    "shr",       "sar",        "rol",       "ror",       "rcl",        "rcr",       "shld",
-    "shrd",      "bt",         "bts",       "btr",       "btc",        "bsf",       "bsr",
-    "xadd",      "cmpxchg",    "jmp",       "jcc",       "call",       "ret",       "leave",
-    "loop",      "loope",      "loopne",    "jrcxz",     "setcc",      "cwde",      "cdqe",
-    "cdq",       "cqo",        "nop",       "endbr64",   "pause",      "lfence",    "mfence",
-    "sfence",    "movsb",      "movsw",     "movsd",     "movsq",      "stosb",     "stosw",
-    "stosd",     "stosq",      "lodsb",     "lodsw",     "lodsd",      "lodsq",     "scasb",
-    "scasw",     "scasd",      "scasq",     "cmpsb",     "cmpsw",      "cmpsd",     "cmpsq",
-    "cpuid",     "rdtsc",      "rdmsr",     "wrmsr",     "rdrand",     "psrldq",    "pslldq",
-    "shufps",    "movlps",     "movhps",    "movlhps",   "movhlps",    "pmovmskb",  "syscall",
-    "sysretq",   "iret",       "lret",      "sldt",      "str",        "lldt",      "ltr",
-    "swapgs",    "invlpg",     "lgdt",      "lidt",      "sgdt",       "sidt",      "hlt",
-    "pushf",     "popf",       "cli",       "sti",       "in",         "out",       "cld",
-    "std",       "bswap",      "tzcnt",     "lzcnt",     "fxsave",     "fxrstor",   "fxsave64",
-    "fxrstor64", "movaps",     "movups",    "movdqa",    "movdqu",     "movq",      "movd",
-    "pshufd",    "punpcklbw",  "punpcklwd", "punpckldq", "punpcklqdq", "punpckhbw", "punpckhwd",
-    "punpckhdq", "punpckhqdq", "packuswb",  "pxor",      "pand",       "pandn",     "por",
-    "psrlw",     "psrld",      "psrlq",     "psllw",     "pslld",      "psllq",     "paddd",
-    "paddq",     "psubd",      "paddb",     "psubb",     "paddw",      "psubw",     "psubq",
-    "pminub",    "pmaxub",     "pminsw",    "pmaxsw",    "rdsspq",     "pcmpeqb",   "pcmpeqd",
-    "pcmpeqq",
+constexpr std::array<std::string_view, 179> kMnemonicNames = {
+    "mov",        "movsx",     "movzx",     "movsxd",    "xchg",       "lea",       "push",
+    "pop",        "cmovcc",    "movabs",    "add",       "adc",        "sub",       "sbb",
+    "inc",        "dec",       "neg",       "cmp",       "mul",        "imul",      "div",
+    "idiv",       "and",       "or",        "xor",       "not",        "test",      "shl",
+    "shr",        "sar",       "rol",       "ror",       "rcl",        "rcr",       "shld",
+    "shrd",       "bt",        "bts",       "btr",       "btc",        "bsf",       "bsr",
+    "xadd",       "cmpxchg",   "jmp",       "jcc",       "call",       "ret",       "leave",
+    "loop",       "loope",     "loopne",    "jrcxz",     "setcc",      "cwde",      "cdqe",
+    "cdq",        "cqo",       "nop",       "endbr64",   "pause",      "lfence",    "mfence",
+    "sfence",     "movsb",     "movsw",     "movsd",     "movsq",      "stosb",     "stosw",
+    "stosd",      "stosq",     "lodsb",     "lodsw",     "lodsd",      "lodsq",     "scasb",
+    "scasw",      "scasd",     "scasq",     "cmpsb",     "cmpsw",      "cmpsd",     "cmpsq",
+    "cpuid",      "rdtsc",     "rdmsr",     "wrmsr",     "rdrand",     "psrldq",    "pslldq",
+    "shufps",     "movlps",    "movhps",    "movlpd",    "movlhps",    "movhlps",   "pmovmskb",
+    "syscall",    "sysretq",   "iret",      "lret",      "sldt",       "str",       "lldt",
+    "ltr",        "swapgs",    "invlpg",    "lgdt",      "lidt",       "sgdt",      "sidt",
+    "hlt",        "pushf",     "popf",      "cli",       "sti",        "in",        "out",
+    "cld",        "std",       "bswap",     "tzcnt",     "lzcnt",      "fxsave",    "fxrstor",
+    "fxsave64",   "fxrstor64", "movaps",    "movups",    "movdqa",     "movdqu",    "movq",
+    "movd",       "pshufd",    "pshuflw",   "pshufhw",   "punpcklbw",  "punpcklwd", "punpckldq",
+    "punpcklqdq", "punpckhbw", "punpckhwd", "punpckhdq", "punpckhqdq", "packuswb",  "pxor",
+    "pand",       "pandn",     "por",       "psrlw",     "psrld",      "psrlq",     "psllw",
+    "pslld",      "psllq",     "paddd",     "paddq",     "psubd",      "paddb",     "psubb",
+    "paddw",      "psubw",     "psubq",     "pminub",    "pmaxub",     "pminsw",    "pmaxsw",
+    "rdsspq",     "pcmpeqb",   "pcmpeqd",   "pcmpeqq",   "psadbw",     "pextrw",    "movss",
+    "clac",       "stac",      "fninit",    "ud2",
 };
-static_assert(kMnemonicNames.size() == 169, "keep in sync with Mnemonic in decoded.hpp");
+static_assert(kMnemonicNames.size() == 179, "keep in sync with Mnemonic in decoded.hpp");
 
 std::string_view mnemonic_name(Mnemonic mn) {
     const auto idx = static_cast<size_t>(mn);
@@ -343,6 +344,18 @@ std::string to_text(const DecodedInsn& insn, uint64_t rip) {
             s += ' ';
             append_hex(s, static_cast<uint64_t>(insn.ops[0].disp));
         }
+        return s;
+    }
+    if (insn.mnemonic == Mnemonic::kFninit) {
+        // The table slot exists only to consume the ModRM byte; objdump
+        // prints the bare mnemonic.
+        s += "fninit";
+        return s;
+    }
+    if (insn.mnemonic == Mnemonic::kNop && insn.opsize == 2 && insn.length == 2) {
+        // 66 90: objdump keeps the operand size and prints xchg; the
+        // one-byte form stays "nop" (new-kernel alignment padding).
+        s += "xchg ax, ax";
         return s;
     }
     if (insn.mnemonic == Mnemonic::kSysret) {

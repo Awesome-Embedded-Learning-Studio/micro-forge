@@ -134,7 +134,10 @@ ExitStatus Cpu::execute(const DecodedInsn& insn, uint64_t rip_after) {
         if (!read_operand(insn, a, rip_after, va)) {
             return exit_;
         }
-        va = std::byteswap(va) & width_mask(osz);
+        // Mask to the operand width, byte-swap the whole 64-bit lane, then shift
+        // the swapped bytes back down: byteswap alone lands the answer in the
+        // high bits of the register-width word.
+        va = std::byteswap(va & width_mask(osz)) >> (64U - (osz * 8U));
         if (!write_operand(insn, a, va)) {
             return exit_;
         }
@@ -506,6 +509,10 @@ ExitStatus Cpu::execute(const DecodedInsn& insn, uint64_t rip_after) {
     case Mnemonic::kPopfq:
     case Mnemonic::kCli:
     case Mnemonic::kSti:
+    case Mnemonic::kClac:
+    case Mnemonic::kStac:
+    case Mnemonic::kFninit:
+    case Mnemonic::kUd2:
     case Mnemonic::kCpuid:
     case Mnemonic::kRdtsc:
     case Mnemonic::kRdmsr:

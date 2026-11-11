@@ -131,6 +131,86 @@ TEST_F(MmuTest, InvalidatedEntryWalksAgain) {
     EXPECT_EQ(0xBBU, static_cast<uint32_t>(cpu_.gpr(Reg::kRax)));
 }
 
+TEST_F(MmuTest, DirectMapLargePageAliasesFourKUserPage) {
+    // Kernel-style layout: high-half direct map through a PD of 2 MiB
+    // large pages, and a low user 4 KiB page pointing at the same frame.
+    // One run: store the magic through the direct-map alias, then read it
+    // back through the user mapping.
+    constexpr uint64_t k_direct_pdpt = 0x410000;
+    constexpr uint64_t k_direct_pd = 0x411000;
+    constexpr uint64_t k_user_pdpt = 0x412000;
+    constexpr uint64_t k_user_pd = 0x413000;
+    constexpr uint64_t k_user_pt = 0x414000;
+    constexpr uint64_t k_frame = 0x1BB000;   // alias target inside the 2 MiB test RAM
+    constexpr uint64_t k_user_va = 0xA40000; // heap head seen in the crash
+    write64(kPml4, k_user_pdpt | Mmu::kPresent | Mmu::kWrite | Mmu::kUser);
+    write64(kPml4 + (256ULL * 8U), k_direct_pdpt | Mmu::kPresent | Mmu::kWrite);
+    write64(k_user_pdpt, k_user_pd | Mmu::kPresent | Mmu::kWrite | Mmu::kUser);
+    // Code at 0x100000 rides a 2 MiB identity large page in PD slot 0.
+    write64(k_user_pd, Mmu::kPresent | Mmu::kWrite | Mmu::kUser | Mmu::kPageSize);
+    // PD slot (0xA40000 >> 21) = 5 points at the 4 KiB table.
+    write64(k_user_pd + (5ULL * 8U), k_user_pt | Mmu::kPresent | Mmu::kWrite | Mmu::kUser);
+    write64(k_user_pt + (((k_user_va >> 12U) & 0x1FFU) * 8U),
+            k_frame | Mmu::kPresent | Mmu::kWrite | Mmu::kUser | Mmu::kNx);
+    // Direct map: PDPT[0] -> PD of 512 2 MiB large pages (kernel style,
+    // no pre-set A/D bits, cache-disable like MakeLargePageEntry).
+    write64(k_direct_pdpt, k_direct_pd | Mmu::kPresent | Mmu::kWrite);
+    for (uint64_t i = 0; i < 512U; ++i) {
+        write64(k_direct_pd + (i * 8U), (i * 0x200000ULL) | Mmu::kPresent | Mmu::kWrite |
+                                            Mmu::kPageSize |
+                                            (1ULL << 4U) /* PCD, ignored bits for RAM */);
+    }
+    // movabs rax, 0xFFFF8000001BB000 ; mov [rax], rdx ;
+    // mov rcx, [abs 0xA40000] ; hlt
+    load({
+        0x48, 0xB8, 0x00, 0xB0, 0x1B, 0x00, 0x00, 0x80, 0xFF, 0xFF, // movabs
+        0x48, 0x89, 0x10,                                           // mov [rax], rdx
+        0x48, 0x8B, 0x0C, 0x25, 0x00, 0x00, 0xA4, 0x00,
+    }); // mov rcx,[abs]
+    cpu_.set_gpr(Reg::kRdx, 0xDEADBEEFCAFEBABEULL);
+    cpu_.set_control_register(2, kPml4);
+    cpu_.flush_tlb();
+    cpu_.set_paging(true);
+    cpu_.set_control_register(0, 0x80000001ULL);           // no WP
+    ASSERT_TRUE(cpu_.write_msr(0xC0000080U, 1ULL << 11U)); // EFER.NXE
+    (void)cpu_.run(10);
+    ASSERT_EQ(ExitStatus::Kind::kHalt, cpu_.exit_status().kind)
+        << "alias sequence faulted detail=" << static_cast<unsigned>(cpu_.exit_status().detail)
+        << " cr2=" << cpu_.page_fault_address() << " err=" << cpu_.page_fault_error();
+    // Host truth: the frame must hold the magic.
+    uint64_t stored = 0;
+    for (unsigned i = 0; i < 8; ++i) {
+        stored |= static_cast<uint64_t>(ram_.data()[k_frame + i]) << (8U * i);
+    }
+    EXPECT_EQ(0xDEADBEEFCAFEBABEULL, stored)
+        << "store through the direct map missed the physical frame";
+    EXPECT_EQ(0xDEADBEEFCAFEBABEULL, cpu_.gpr(Reg::kRcx))
+        << "user mapping sees a different frame than the direct map";
+}
+
+TEST_F(MmuTest, UserFourKPageReadsItsFrame) {
+    constexpr uint64_t k_user_pdpt = 0x412000;
+    constexpr uint64_t k_user_pd = 0x413000;
+    constexpr uint64_t k_user_pt = 0x414000;
+    constexpr uint64_t k_frame = 0x1BB000;
+    constexpr uint64_t k_user_va = 0xA40000;
+    write64(kPml4, k_user_pdpt | Mmu::kPresent | Mmu::kWrite | Mmu::kUser);
+    write64(k_user_pdpt, k_user_pd | Mmu::kPresent | Mmu::kWrite | Mmu::kUser);
+    write64(k_user_pd, Mmu::kPresent | Mmu::kWrite | Mmu::kUser | Mmu::kPageSize);
+    write64(k_user_pd + (5ULL * 8U), k_user_pt | Mmu::kPresent | Mmu::kWrite | Mmu::kUser);
+    write64(k_user_pt + (((k_user_va >> 12U) & 0x1FFU) * 8U),
+            k_frame | Mmu::kPresent | Mmu::kWrite | Mmu::kUser);
+    poke(k_frame, {0xBE, 0xBA, 0xFE, 0xCA, 0, 0, 0, 0});
+    // mov rdx, [abs 0xA40000] ; hlt
+    load({0x48, 0x8B, 0x14, 0x25, 0x00, 0x00, 0xA4, 0x00});
+    cpu_.set_control_register(2, kPml4);
+    cpu_.flush_tlb();
+    cpu_.set_paging(true);
+    (void)cpu_.run(10);
+    ASSERT_EQ(ExitStatus::Kind::kHalt, cpu_.exit_status().kind) << "read faulted";
+    EXPECT_EQ(0xCAFEBABEULL, cpu_.gpr(Reg::kRdx)) << "user read missed the frame";
+}
+
 TEST_F(MmuTest, FastLookupRechecksCurrentPermissions) {
     install_identity();
     write64(kPd, Mmu::kPresent | Mmu::kPageSize | Mmu::kAccessed | Mmu::kNx);

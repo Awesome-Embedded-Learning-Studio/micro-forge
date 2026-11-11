@@ -25,7 +25,7 @@ namespace micro_forge::kernel {
 inline constexpr std::uint32_t kSnapshotMagic = 0x4E53464DU;
 
 /// @brief Layout version of the snapshot envelope and section encoding.
-inline constexpr std::uint32_t kSnapshotFormatVersion = 1;
+inline constexpr std::uint32_t kSnapshotFormatVersion = 2;
 
 /// @brief Why a snapshot was refused at open time.
 enum class SnapshotError : std::uint8_t {

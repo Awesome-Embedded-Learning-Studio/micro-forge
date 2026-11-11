@@ -162,6 +162,11 @@ constexpr std::array<Ent, 256> build_primary() {
     t[0xFB] = make_ent(Mnemonic::kSti);
     t[0xFC] = make_ent(Mnemonic::kCld);
     t[0xFD] = make_ent(Mnemonic::kStd);
+    // DB E3: fninit (ApMain FPU reset). The kRm slot consumes the ModRM;
+    // execution rejects the memory form, other DB reg-forms are x87 we do
+    // not model — the profile shows only E3 in the guest .text.
+    t[0xDB] = make_ent(Mnemonic::kFninit, Slot::kNone, Slot::kNone, Slot::kNone, SizeR::kQ,
+                       ImmK::k0, kNoImm, kGrp0X87);
     t[0xFE] = make_ent(Mnemonic::kNop, Slot::kRm8, Slot::kNone, Slot::kNone, SizeR::kB, ImmK::k0,
                        kNoImm, kGrp4);
     t[0xFF] = make_ent(Mnemonic::kNop, Slot::kRm, Slot::kNone, Slot::kNone, SizeR::kD, ImmK::k0,
@@ -178,7 +183,8 @@ constexpr std::array<Ent, 256> build_esc0() {
     std::array<Ent, 256> t{};
     t[0x05] = make_ent(Mnemonic::kSyscall);
     t[0x07] = make_ent(Mnemonic::kSysret);
-    t[0x00] = make_ent(Mnemonic::kNop, Slot::kRm, Slot::kNone, Slot::kNone, SizeR::kD, ImmK::k0,
+    t[0x0B] = make_ent(Mnemonic::kUd2);
+    t[0x00] = make_ent(Mnemonic::kNop, Slot::kRm16, Slot::kNone, Slot::kNone, SizeR::kD, ImmK::k0,
                        kNoImm, kGrp7);
     t[0xC6] =
         make_ent(Mnemonic::kShufps, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV, ImmK::k8, 2);
@@ -188,10 +194,10 @@ constexpr std::array<Ent, 256> build_esc0() {
                        kNoImm, kGrp6);
     t[0x10] = make_ent(Mnemonic::kMovups, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
     t[0x11] = make_ent(Mnemonic::kMovups, Slot::kXRm, Slot::kXReg, Slot::kNone, SizeR::kV);
-    t[0x12] = make_ent(Mnemonic::kMovlps, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
-    t[0x13] = make_ent(Mnemonic::kMovlps, Slot::kXRm, Slot::kXReg, Slot::kNone, SizeR::kV);
-    t[0x16] = make_ent(Mnemonic::kMovhps, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
-    t[0x17] = make_ent(Mnemonic::kMovhps, Slot::kXRm, Slot::kXReg, Slot::kNone, SizeR::kV);
+    t[0x12] = make_ent(Mnemonic::kMovlps, Slot::kXReg, Slot::kXRm64, Slot::kNone, SizeR::kQ);
+    t[0x13] = make_ent(Mnemonic::kMovlps, Slot::kXRm64, Slot::kXReg, Slot::kNone, SizeR::kQ);
+    t[0x16] = make_ent(Mnemonic::kMovhps, Slot::kXReg, Slot::kXRm64, Slot::kNone, SizeR::kQ);
+    t[0x17] = make_ent(Mnemonic::kMovhps, Slot::kXRm64, Slot::kXReg, Slot::kNone, SizeR::kQ);
     for (uint8_t op = 0x18; op <= 0x1F; ++op) {
         t[op] = make_ent(Mnemonic::kNop, Slot::kRm, Slot::kNone, Slot::kNone, SizeR::kD);
     }
@@ -253,6 +259,15 @@ constexpr std::array<Ent, 256> build_esc0() {
 constexpr std::array<Ent, 256> build_esc66() {
     std::array<Ent, 256> t{};
     t[0xD7] = make_ent(Mnemonic::kPmovmskb, Slot::kReg, Slot::kXRm, Slot::kNone, SizeR::kD);
+    // 66 0F 12/13: movlpd (QWORD half-register move, new-kernel face).
+    t[0x12] = make_ent(Mnemonic::kMovlpd, Slot::kXReg, Slot::kXRm64, Slot::kNone, SizeR::kQ);
+    t[0x13] = make_ent(Mnemonic::kMovlpd, Slot::kXRm64, Slot::kXReg, Slot::kNone, SizeR::kQ);
+    // 66 0F C5: pextrw r32, xmm, imm8 (reg-form only; memory rejected at
+    // execution like pmovmskb does).
+    t[0xC5] =
+        make_ent(Mnemonic::kPextrw, Slot::kReg, Slot::kXRm, Slot::kNone, SizeR::kD, ImmK::k8, 2);
+    // 66 0F F6: psadbw (ACPI checksum paths in the r35 kernel).
+    t[0xF6] = make_ent(Mnemonic::kPsadbw, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
     t[0xFC] = make_ent(Mnemonic::kPaddb, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
     t[0xFD] = make_ent(Mnemonic::kPaddw, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
     t[0xF8] = make_ent(Mnemonic::kPsubb, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
@@ -303,17 +318,25 @@ constexpr std::array<Ent, 256> build_esc66() {
     return t;
 }
 
-/// 0F table under F2: glibc emits F2-prefixed pshufd (prefix ignored).
+/// 0F table under F2: pshuflw shuffles the low 4 words (new-kernel face;
+/// the old glibc note mislabeled F2 0F 70 as pshufd, objdump disagreed).
 constexpr std::array<Ent, 256> build_esc_f2() {
     std::array<Ent, 256> t{};
     t[0x70] =
-        make_ent(Mnemonic::kPshufd, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV, ImmK::k8, 2);
+        make_ent(Mnemonic::kPshuflw, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV, ImmK::k8, 2);
     return t;
 }
 
 constexpr std::array<Ent, 256> build_esc_f3() {
     std::array<Ent, 256> t{};
     t[0x1E] = make_ent(Mnemonic::kEndbr64, Slot::kNone, Slot::kNone, Slot::kNone, SizeR::kV);
+    // F3 0F 10/11: movss (fbdev var_screeninfo answers in the r35 kernel;
+    // bit mover only, no float arithmetic).
+    t[0x10] = make_ent(Mnemonic::kMovss, Slot::kXReg, Slot::kXRm32, Slot::kNone, SizeR::kV);
+    t[0x11] = make_ent(Mnemonic::kMovss, Slot::kXRm32, Slot::kXReg, Slot::kNone, SizeR::kV);
+    // F3 0F 70: pshufhw (high 4 words; objdump differential).
+    t[0x70] =
+        make_ent(Mnemonic::kPshufhw, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV, ImmK::k8, 2);
     t[0x6F] = make_ent(Mnemonic::kMovdqu, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
     t[0x7E] = make_ent(Mnemonic::kMovq_xmm, Slot::kXReg, Slot::kXRm64, Slot::kNone, SizeR::kV);
     t[0x7F] = make_ent(Mnemonic::kMovdqu, Slot::kXRm, Slot::kXReg, Slot::kNone, SizeR::kV);
@@ -421,6 +444,21 @@ Mnemonic grp4_mn(uint8_t reg) {
         return Mnemonic::kDec;
     default:
         return Mnemonic::kNop;
+    }
+}
+
+std::optional<Mnemonic> grp6_mn(uint8_t reg) {
+    switch (reg) {
+    case 0:
+        return Mnemonic::kSgdt;
+    case 1:
+        return Mnemonic::kSidt;
+    case 2:
+        return Mnemonic::kLgdt;
+    case 3:
+        return Mnemonic::kLidt;
+    default:
+        return std::nullopt;
     }
 }
 

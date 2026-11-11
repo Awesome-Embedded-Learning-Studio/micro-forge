@@ -29,7 +29,9 @@ void Cpu::reset(uint64_t rip, uint64_t rsp) {
     of_ = false;
     df_ = false;
     if_ = false;
+    ac_ = false;
     // Long-mode entry state the boot shim hands over: paging and
+    // protection enabled, no EFER bits, empty tables.
     // protection enabled, no EFER bits, empty tables.
     cr_.fill(0);
     cr_[0] = 0x80000001ULL; // PE | PG
@@ -78,6 +80,14 @@ void Cpu::save(kernel::SnapshotWriter& writer) const {
         flags |= kernel::bit::mask_bit(6);
     }
     writer.u8(static_cast<uint8_t>(flags));
+    uint8_t flags2 = 0;
+    if (if_) {
+        flags2 |= kernel::bit::mask_bit(0);
+    }
+    if (ac_) {
+        flags2 |= kernel::bit::mask_bit(1);
+    }
+    writer.u8(flags2);
     writer.u64(icount_);
     writer.bytes({reinterpret_cast<const uint8_t*>(console_.data()), console_.size()});
 }
@@ -88,6 +98,9 @@ bool Cpu::restore(kernel::SnapshotReader& reader) {
         r = reader.u64(ok);
     }
     const uint64_t flags = reader.u8(ok);
+    const uint64_t flags2 = reader.u8(ok);
+    if_ = (flags2 & kernel::bit::mask_bit(0)) != 0;
+    ac_ = (flags2 & kernel::bit::mask_bit(1)) != 0;
     cf_ = kernel::bit::extract(flags, {
                                           .low = 0,
                                           .width = 1,

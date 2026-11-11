@@ -24,6 +24,30 @@ using Vec128 = std::array<uint64_t, 2>;
     return static_cast<uint8_t>(v[i / 8U] >> (8U * (i % 8U)));
 }
 
+[[nodiscard]] inline uint16_t elem16(const Vec128& v, unsigned i) {
+    return static_cast<uint16_t>(v[i / 4U] >> (16U * (i % 4U)));
+}
+
+/// @brief Shuffles the low four words by 2-bit selectors, keeps the high.
+inline void pshuflw(Vec128& dst, const Vec128& src, uint64_t ctrl) {
+    for (unsigned i = 0; i < 4; ++i) {
+        const auto pick = static_cast<unsigned>((ctrl >> (2U * i)) & 3U);
+        const auto w = elem16(src, pick);
+        dst[0] |= static_cast<uint64_t>(w) << (16U * i);
+    }
+    dst[1] = src[1];
+}
+
+/// @brief Shuffles the high four words, keeps the low quadword.
+inline void pshufhw(Vec128& dst, const Vec128& src, uint64_t ctrl) {
+    dst[0] = src[0];
+    for (unsigned i = 0; i < 4; ++i) {
+        const auto pick = static_cast<unsigned>((ctrl >> (2U * i)) & 3U);
+        const auto w = elem16(src, 4U + pick);
+        dst[1] |= static_cast<uint64_t>(w) << (16U * i);
+    }
+}
+
 /**
  * @brief Writes one byte of a 128-bit value.
  *
@@ -124,6 +148,25 @@ inline void pack_min_max(Mnemonic mnemonic, Vec128& dst, const Vec128& src) {
             word_out |= (val & mask) << shift;
         }
         dst[half] = word_out;
+    }
+}
+
+/**
+ * @brief PSADBW (66 0F F6): per 8-byte lane, sum of unsigned byte
+ * absolute differences, widened into the lane's low 16 bits.
+ *
+ * @param[in,out] dst Destination register value (also the left operand).
+ * @param[in] src Source register value.
+ */
+inline void psadbw(Vec128& dst, const Vec128& src) {
+    for (unsigned half = 0; half < 2; ++half) {
+        unsigned sum = 0; // at most 8 * 255 = 2040: fits 16 bits
+        for (unsigned k = 0; k < 8; ++k) {
+            const auto lhs = static_cast<unsigned>(dst[half] >> (8U * k)) & 0xFFU;
+            const auto rhs = static_cast<unsigned>(src[half] >> (8U * k)) & 0xFFU;
+            sum += (lhs > rhs) ? (lhs - rhs) : (rhs - lhs);
+        }
+        dst[half] = sum;
     }
 }
 
