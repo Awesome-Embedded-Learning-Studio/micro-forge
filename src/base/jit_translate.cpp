@@ -94,6 +94,45 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
         }
         return std::nullopt;
     }
+    // call reg64 / rel32: helper pushes the return address and records the
+    // exit target; the host ret terminates the block. mem form stays out.
+    if (insn.mnemonic == Mnemonic::kCall && insn.addr_size == 8 && !insn.has_lock) {
+        if (insn.ops[0].kind == Operand::Kind::kImm) {
+            const uint64_t ret_addr = rip + insn.length;
+            const uint64_t target = ret_addr + static_cast<uint64_t>(insn.ops[0].disp);
+            return TranslatedInsn{
+                .code = jit_templates::kCallImmHelper,
+                .patches =
+                    {
+                        JitPage::Patch{.offset = 3, .size = 8, .value = target},
+                        JitPage::Patch{.offset = 13, .size = 8, .value = rip},
+                        JitPage::Patch{.offset = 23, .size = 8, .value = ret_addr},
+                    },
+                .call_offset = 43,
+                .cpu_offset = 33,
+                .helper = JitHelper::kCall,
+            };
+        }
+        if (insn.ops[0].kind == Operand::Kind::kReg && insn.ops[0].size == 8) {
+            const auto reg = reg_slot_offset(insn.ops[0].reg);
+            const uint64_t ret_addr = rip + insn.length;
+            if (reg.has_value()) {
+                return TranslatedInsn{
+                    .code = jit_templates::kCallRegHelper,
+                    .patches =
+                        {
+                            JitPage::Patch{.offset = 5, .size = 4, .value = *reg},
+                            JitPage::Patch{.offset = 11, .size = 8, .value = rip},
+                            JitPage::Patch{.offset = 21, .size = 8, .value = ret_addr},
+                        },
+                    .call_offset = 41,
+                    .cpu_offset = 31,
+                    .helper = JitHelper::kCall,
+                };
+            }
+        }
+        return std::nullopt;
+    }
     // leave: rsp=rbp then pop rbp; helper-faulted reads latch like stores.
     if (insn.mnemonic == Mnemonic::kLeave && insn.addr_size == 8 && !insn.has_lock &&
         insn.ops[0].kind != Operand::Kind::kImm) {

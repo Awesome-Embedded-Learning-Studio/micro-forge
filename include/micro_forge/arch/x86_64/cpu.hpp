@@ -249,6 +249,9 @@ public:
     void jit_ret(uint64_t sp, uint64_t my_rip);
     /// @brief leave helper: rsp=rbp, then pop rbp (faults latch).
     void jit_leave();
+    /// @brief call helper: pushes @p ret_addr, jumps to @p target.
+    /// @param[in] my_rip The call's own rip (fault re-entry).
+    void jit_call(uint64_t target, uint64_t my_rip, uint64_t ret_addr);
     /// @brief JIT OR: combine GPR[slot/8] with value, updating flags.
     void jit_or(uint64_t slot, uint64_t value, unsigned width);
     /// @brief JIT XOR: xor GPR[slot/8] with value, updating flags.
@@ -566,10 +569,8 @@ private:
     unsigned last_fault_length_ = 0;
     /// Reads TSS.RSP0: ltr's selector indexes the GDT, offset 4 holds it.
     [[nodiscard]] uint64_t kernel_stack_top();
-    /// Raises #PF (vector 14) with its error code; false when no IDT.
-    bool raise_page_fault(uint64_t error);
+    bool raise_page_fault(uint64_t error); // #PF vector 14; false if no IDT
     /// Queued interrupt delivery (batch 6c).
-
     uint8_t pending_vector_ = 0;
     bool interrupt_pending_ = false;
     bool sti_shadow_ = false;                       // STI blocks delivery past the next retire
@@ -580,18 +581,17 @@ private:
     uint32_t mxcsr_ = 0x1F80U;                      // MXCSR (FXSAVE carries it)
     uint64_t rng_state_ = 0x9E3779B97F4A7C15ULL;    // splitmix64 seed
     uint16_t tss_selector_ = 0, ldt_selector_ = 0;  // 0F 00 group; v0: none
-    /// FS/GS segment bases (models; full addressing with the MMU).
-    uint64_t fs_base_ = 0, gs_base_ = 0, kernel_gs_base_ = 0;
+    uint64_t fs_base_ = 0, gs_base_ = 0, kernel_gs_base_ = 0; // FS/GS bases
+
     kernel::Tick icount_ = 0;   // virtual time
     std::vector<char> console_; // serial bytes (diagnostics)
     std::function<void(uint64_t)> trace_;
-    kernel::IrqLine* irq_line_ = nullptr; // wiring; snapshots re-attach
-    std::function<void()> irq_hook_;      // fired while the line is high
-    uint64_t insn_rip_ = 0;               // executing rip (traces)
-    uint8_t cur_length_ = 0;              // executing instruction length
-    /// Block exit target (jit_ret); suspend routes faults to interpreter.
-    uint64_t jit_next_rip_ = 0;
-    bool jit_next_set_ = false, jit_suspend_ = false;
+    kernel::IrqLine* irq_line_ = nullptr;             // wiring; snapshots re-attach
+    std::function<void()> irq_hook_;                  // fired while the line is high
+    uint64_t insn_rip_ = 0;                           // executing rip (traces)
+    uint8_t cur_length_ = 0;                          // executing instruction length
+    uint64_t jit_next_rip_ = 0;                       // block exit target (jit_ret / jit_call)
+    bool jit_next_set_ = false, jit_suspend_ = false; // suspend: fault retry
     ExitStatus exit_{};
     std::array<uint8_t, 16> fetch_buf_{}; // GPR array index of a register enum:
     [[nodiscard]] static unsigned index_of(Reg reg) { return static_cast<unsigned>(reg) & 0xFU; }

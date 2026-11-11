@@ -371,6 +371,50 @@ std::vector<DiffCase> alu_cases() {
     leave_rbp.base_reg = Reg::kRbp;
     leave_rbp.base = kData;
     cases.push_back(leave_rbp);
+    // call reg64: the helper pushes the return address and jumps.
+    DiffCase call_reg{
+        .name = "call_rax",
+        .code =
+            {
+                0x48,
+                0xC7,
+                0xC0,
+                0x0C,
+                0x10,
+                0x00,
+                0x00, // mov rax,0x100C
+                0xFF,
+                0xD0, // call rax
+                0xF4,
+                0x90,
+                0xF4,
+            }, // hlt; nop; hlt@0x100C
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = kFlags,
+    };
+    call_reg.jit_insns = 2; // mov + call (block ends at the call)
+    cases.push_back(call_reg);
+    // call rel32: patched imm64 target, same helper ABI.
+    DiffCase call_imm{
+        .name = "call_rel32",
+        .code =
+            {
+                0xE8,
+                0x02,
+                0x00,
+                0x00,
+                0x00, // call +2 -> 0x1007
+                0xF4,
+                0x90,
+                0xF4,
+            },
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = kFlags,
+    };
+    call_imm.jit_insns = 1;
+    cases.push_back(call_imm);
     return cases;
 }
 } // namespace jit_diff_cases

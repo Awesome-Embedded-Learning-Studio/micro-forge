@@ -44,6 +44,7 @@ extern "C" void mf_jit_load_xmm(void* cpu, uint64_t vaddr, uint64_t slot);
 extern "C" void mf_jit_store_xmm(void* cpu, uint64_t vaddr, uint64_t slot);
 extern "C" void mf_jit_ret(void* cpu, uint64_t sp, uint64_t my_rip);
 extern "C" void mf_jit_leave(void* cpu);
+extern "C" void mf_jit_call(void* cpu, uint64_t target, uint64_t my_rip, uint64_t ret_addr);
 extern "C" void mf_jit_pop_reg(void* cpu, uint64_t slot);
 
 std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
@@ -92,8 +93,8 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
         covered += decoded->length;
         ++count;
         pc += decoded->length;
-        if (decoded->mnemonic == Mnemonic::kRet) {
-            --budget; // a terminated block needs no trailing ret
+        if (decoded->mnemonic == Mnemonic::kRet || decoded->mnemonic == Mnemonic::kCall) {
+            --budget; // both templates end in their own host ret
             break;
         }
     }
@@ -187,6 +188,9 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
                 break;
             case base::JitHelper::kLeave:
                 helper = reinterpret_cast<std::uint64_t>(&mf_jit_leave);
+                break;
+            case base::JitHelper::kCall:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_call);
                 break;
             default:
                 return fail_compile();
@@ -283,6 +287,10 @@ extern "C" void mf_jit_ret(void* cpu, uint64_t sp, uint64_t my_rip) {
 
 extern "C" void mf_jit_leave(void* cpu) {
     static_cast<Cpu*>(cpu)->jit_leave();
+}
+
+extern "C" void mf_jit_call(void* cpu, uint64_t target, uint64_t my_rip, uint64_t ret_addr) {
+    static_cast<Cpu*>(cpu)->jit_call(target, my_rip, ret_addr);
 }
 
 extern "C" void mf_jit_pop_reg(void* cpu, uint64_t slot) {
@@ -396,17 +404,23 @@ void Cpu::jit_store_xmm(uint64_t vaddr, uint64_t slot) {
 }
 
 void Cpu::jit_ret(uint64_t sp, uint64_t my_rip) {
+    // Faulted stack read: rsp stays put; the interpreter pass re-delivers.
     const uint64_t target = jit_load(sp, 8);
-    if (exception_injected_) {
-        // Redo the ret in the interpreter so the fault is delivered
-        // exactly as the slow path would; rsp is still untouched.
-        jit_suspend_ = true;
-        jit_next_rip_ = my_rip;
-        jit_next_set_ = true;
-        return;
+    const bool ok = !exception_injected_;
+    if (ok) {
+        regs_[index_of(Reg::kRsp)] = sp + 8U;
     }
-    regs_[index_of(Reg::kRsp)] = sp + 8U;
-    jit_next_rip_ = target;
+    jit_next_rip_ = ok ? target : my_rip;
+    jit_suspend_ = !ok; // retry in the interpreter on a faulted pop
+    jit_next_set_ = true;
+}
+
+void Cpu::jit_call(uint64_t target, uint64_t my_rip, uint64_t ret_addr) {
+    // A failed push latches the fault; suspend gives the interpreter one
+    // pass at the call itself so the fault re-raises like the slow path.
+    const bool ok = push_value(ret_addr, 8);
+    jit_next_rip_ = ok ? target : my_rip;
+    jit_suspend_ = !ok; // retry in the interpreter on a faulted push
     jit_next_set_ = true;
 }
 
@@ -549,8 +563,8 @@ void Cpu::maybe_compile_block(uint64_t rip) {
 }
 
 bool Cpu::run_jit_block() {
-    // A helper faulted at the very end of the last block: one interpreter
-    // step re-raises it; normal dispatch resumes afterwards.
+    // A helper faulted at the last block end: one interpreter step re-raises
+    // it; normal dispatch resumes afterwards.
     if (jit_suspend_) {
         jit_suspend_ = false;
         return false;
@@ -569,7 +583,7 @@ bool Cpu::run_jit_block() {
         std::println(stderr, "jit: run rip=0x{:x} insns={}", rip_, it->second.insn_count);
     }
     it->second.page->invoke(it->second.entry, regs_.data());
-    // jit_ret records its own exit target; every other block falls through.
+    // jit_ret/jit_call record their own exit; others fall through.
     if (jit_next_set_) {
         rip_ = jit_next_rip_;
         jit_next_set_ = false;

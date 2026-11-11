@@ -254,6 +254,35 @@ constexpr std::array<std::uint8_t, 44> kRetHelper = {
     0xC3,                                     // @43: ret (1)
 };
 // Holes: rsp32@5, my_rip64@11; relocations cpu64@21, helper64@31.
+// call reg64 via helper (ABI: rdi=cpu, rsi=target, rdx=call's rip, rcx=ret
+// addr). The helper pushes the return address and records the exit target;
+// the host ret terminates the block.
+constexpr std::array<std::uint8_t, 54> kCallRegHelper = {
+    0x57,                                     // @0: push rdi (1)
+    0x48, 0x8B, 0xB4, 0x27, 0, 0, 0, 0,       // @1: mov rsi,[rdi+reg32] (8)
+    0x48, 0xBA, 0,    0,    0, 0, 0, 0, 0, 0, // @9: movabs rdx,my_rip64 (10)
+    0x48, 0xB9, 0,    0,    0, 0, 0, 0, 0, 0, // @19: movabs rcx,ret_addr64 (10)
+    0x48, 0xBF, 0,    0,    0, 0, 0, 0, 0, 0, // @29: mov rdi,cpu64 (10)
+    0x49, 0xBB, 0,    0,    0, 0, 0, 0, 0, 0, // @39: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                         // @49: call r11 (3)
+    0x5F,                                     // @52: pop rdi (1)
+    0xC3,                                     // @53: ret (1)
+};
+// Holes: reg32@5, my_rip64@11, ret_addr64@21; cpu64@31, helper64@41.
+// call rel32: same ABI with the target as a patched imm64 (no regs read).
+// The push keeps rsp 16-byte aligned at the helper call (SysV ABI).
+constexpr std::array<std::uint8_t, 56> kCallImmHelper = {
+    0x57,                                  // @0: push rdi (1)
+    0x48, 0xBE, 0,    0, 0, 0, 0, 0, 0, 0, // @1: movabs rsi,target64 (10)
+    0x48, 0xBA, 0,    0, 0, 0, 0, 0, 0, 0, // @11: movabs rdx,my_rip64 (10)
+    0x48, 0xB9, 0,    0, 0, 0, 0, 0, 0, 0, // @21: movabs rcx,ret_addr64 (10)
+    0x48, 0xBF, 0,    0, 0, 0, 0, 0, 0, 0, // @31: mov rdi,cpu64 (10)
+    0x49, 0xBB, 0,    0, 0, 0, 0, 0, 0, 0, // @41: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                      // @51: call r11 (3)
+    0x5F,                                  // @54: pop rdi (1)
+    0xC3,                                  // @55: ret (1)
+};
+// Holes: target64@3, my_rip64@13, ret_addr64@23; cpu64@33, helper64@43.
 // leave via helper (rsp=rbp; rbp=pop) -- mid-block, no control flow:
 //   push rdi ; mov rdi,<cpu64> ; movabs r11,jit_leave ; call r11 ; pop rdi
 constexpr std::array<std::uint8_t, 25> kLeaveHelper = {
