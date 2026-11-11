@@ -52,6 +52,20 @@ constexpr std::array<std::uint8_t, 22> kLeaSlot = {
     0x48, 0x8B, 0x84, 0x27, 0, 0, 0, 0, 0x48, 0x05, 0, 0, 0, 0, 0x48, 0x89, 0x84, 0x27, 0, 0, 0, 0,
 };
 // Holes: base32@4, disp32@10, dst32@18 (the final mov starts at 14).
+// lea dst,[base+index*scale+disp]:
+//   mov rax,[rdi+base] ; mov r8,[rdi+idx] ; shl r8,log2(scale) ;
+//   add rax,r8 ; add rax,disp32 ; mov [rdi+dst],rax
+// 48 8B 84 27 <base32>  4C 8B 84 27 <idx32>  49 C1 E0 <scale8>
+// 4C 01 C0  48 05 <disp32>  48 89 84 27 <dst32>
+constexpr std::array<std::uint8_t, 37> kLeaIdxSlot = {
+    0x48, 0x8B, 0x84, 0x27, 0, 0, 0, 0, // @0:  mov rax,[rdi+base] (8)
+    0x4C, 0x8B, 0x84, 0x27, 0, 0, 0, 0, // @8:  mov r8,[rdi+idx] (8)
+    0x49, 0xC1, 0xE0, 0,                // @16: shl r8,scale8 (4)
+    0x4C, 0x01, 0xC0,                   // @20: add rax,r8 (3)
+    0x48, 0x05, 0,    0,    0, 0,       // @23: add rax,disp32 (6)
+    0x48, 0x89, 0x84, 0x27, 0, 0, 0, 0, // @29: mov [rdi+dst],rax (8)
+};
+// Holes: base32@4, idx32@12, scale8@19 (log2 scale), disp32@25, dst32@33.
 // mov dst,[base+disp] via helper:
 //   push rdi ; mov rsi,[rdi+base] ; add rsi,disp32 ; mov rdi,<cpu64> ;
 //   mov edx,width32 ; movabs r11,jit_load ; call r11 ; pop rdi ; mov [rdi+dst],rax

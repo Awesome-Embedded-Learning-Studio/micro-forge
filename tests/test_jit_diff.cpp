@@ -99,6 +99,16 @@ std::vector<DiffCase> width_cases() {
     append("Mov32Zero", {0x41, 0xB9, 0, 0, 0, 0}, UINT64_MAX, 0);
     append("Mov32Unsigned", {0x41, 0xB9, 0xFF, 0xFF, 0xFF, 0xFF}, UINT64_MAX, UINT32_MAX);
     append("Mov32C7SignBit", {0x41, 0xC7, 0xC1, 0, 0, 0, 0x80}, UINT64_MAX, 0x80000000);
+    // lea r9,[rbx+rcx*8+0x30]: host-side address arithmetic, flags untouched.
+    auto lea_idx = indexed_case("LeaIndexScale8", {0x48, 0x8D, 0x44, 0xCB, 0x30}, false, kData);
+    lea_idx.expected = kData + 3 * 8 + 0x30;
+    lea_idx.jit_insns = 1;
+    cases.push_back(std::move(lea_idx));
+    // lea r9,[rbx+rcx*2-1]: disp8 negative, scale 2.
+    auto lea_neg = indexed_case("LeaIndexScale2Neg", {0x48, 0x8D, 0x44, 0x4B, 0xFF}, false, kData);
+    lea_neg.expected = kData + 3 * 2 - 1;
+    lea_neg.jit_insns = 1;
+    cases.push_back(std::move(lea_neg));
     auto hot = indexed_case("HotLoopPrefix",
                             {0x8B, 0x30, 0x83, 0xC2, 1, 0x89, 0x34, 0x88, 0x48, 0x83, 0xC0, 4},
                             false, kData, 0);

@@ -468,6 +468,45 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
             .cpu_offset = std::nullopt,
         };
     }
+    // lea dst,[base+index*scale+disp]: host-side address arithmetic only.
+    if (insn.mnemonic == Mnemonic::kLea && insn.ops[1].kind == Operand::Kind::kMem &&
+        insn.ops[1].has_base && insn.ops[1].has_index && !insn.ops[1].rip_relative &&
+        insn.ops[0].size == 8) {
+        const auto base = reg_slot_offset(insn.ops[1].base);
+        const auto index = reg_slot_offset(insn.ops[1].index);
+        if (!base.has_value() || !index.has_value()) {
+            return std::nullopt;
+        }
+        unsigned scale8 = 0;
+        const bool scale_ok = insn.ops[1].scale == 1 || insn.ops[1].scale == 2 ||
+                              insn.ops[1].scale == 4 || insn.ops[1].scale == 8;
+        if (scale_ok) {
+            scale8 = static_cast<unsigned>(std::countr_zero(insn.ops[1].scale));
+        } else {
+            return std::nullopt;
+        }
+        std::vector<JitPage::Patch> patches = {
+            JitPage::Patch{.offset = 4, .size = 4, .value = *base},
+            JitPage::Patch{.offset = 12, .size = 4, .value = *index},
+            JitPage::Patch{.offset = 19, .size = 1, .value = scale8},
+            JitPage::Patch{
+                .offset = 25,
+                .size = 4,
+                .value = static_cast<std::uint32_t>(insn.ops[1].disp),
+            },
+            JitPage::Patch{
+                .offset = 33,
+                .size = 4,
+                .value = *slot,
+            },
+        };
+        return TranslatedInsn{
+            .code = kLeaIdxSlot,
+            .patches = std::move(patches),
+            .call_offset = std::nullopt,
+            .cpu_offset = std::nullopt,
+        };
+    }
     // Register-to-register move: copy one slot to another.
     if (insn.mnemonic == Mnemonic::kMov && insn.ops[1].kind == Operand::Kind::kReg &&
         insn.ops[0].size == 8) {
