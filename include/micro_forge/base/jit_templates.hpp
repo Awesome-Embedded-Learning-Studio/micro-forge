@@ -130,6 +130,30 @@ constexpr std::array<std::uint8_t, 53> kStoreSlot = {
 };
 // Holes: src32@5, base32@13, disp32@20, cpu64@26, width32@35,
 // helper64@41.
+// mov [base+disp],imm via helper (rcx=value, full imm64 so the C7
+// sign-extended qword form is exact):
+//   push rdi ; movabs rcx,imm64 ; mov rsi,[rdi+base] ; add rsi,disp32 ;
+//   mov rdi,<cpu64> ; mov edx,width32 ; movabs r11,jit_store ; call r11 ; pop rdi
+constexpr std::array<std::uint8_t, 55> kStoreImmSlot = {
+    0x57,                                     // @0: push rdi (1)
+    0x48, 0xB9, 0,    0,    0, 0, 0, 0, 0, 0, // @1: movabs rcx,imm64 (10)
+    0x48, 0x8B, 0xB4, 0x27, 0, 0, 0, 0,       // @11: mov rsi,[rdi+base32] (8)
+    0x48, 0x81, 0xC6, 0,    0, 0, 0,          // @19: add rsi,disp32 (7)
+    0x48, 0xBF, 0,    0,    0, 0, 0, 0, 0, 0, // @26: mov rdi,cpu64 (10)
+    0xBA, 0,    0,    0,    0,                // @36: mov edx,width32 (5)
+    0x49, 0xBB, 0,    0,    0, 0, 0, 0, 0, 0, // @41: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                         // @51: call r11 (3)
+    0x5F,                                     // @54: pop rdi (1)
+};
+// Holes: imm64@3, base32@15, disp32@22, cpu64@28, width32@37,
+// helper64@43.
+// mov r32,r32 with zero-extension: 32-bit load zeroes the top half.
+//   mov eax,[rdi+src32] ; mov [rdi+dst32],rax
+constexpr std::array<std::uint8_t, 15> kMovSlotSlot32 = {
+    0x8B, 0x84, 0x27, 0,    0, 0, 0,    // @0: mov eax,[rdi+src32] (7)
+    0x48, 0x89, 0x84, 0x27, 0, 0, 0, 0, // @7: mov [rdi+dst32],rax (8)
+};
+// Holes: src32@3, dst32@11.
 // Indexed store: cumulative starts 0+1+8+8+8+4+3+7+10+5+10+3+1 = 68.
 constexpr std::array<std::uint8_t, 68> kStoreIdxSlot = {
     0x57,                                     // @0: push rdi (1)

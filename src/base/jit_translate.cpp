@@ -125,9 +125,8 @@ std::optional<std::size_t> reg_slot_offset(Reg reg) {
 }
 
 std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& insn, uint64_t rip) {
-    // ret is deliberately not lowered: the JIT template returns to the
-    // dispatcher, while a guest ret pops [rsp] into rip. Ending the block
-    // just before it lets the interpreter perform the real ret.
+    // ret stays interpreter-only: a guest ret pops [rsp] into rip, so the
+    // block ends just before it and the dispatcher handles the real ret.
     if (insn.mnemonic == Mnemonic::kRet) {
         return std::nullopt;
     }
@@ -228,8 +227,38 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
             .helper = JitHelper::kStore,
         };
     }
-    // Stores have a memory destination; only the remaining forms share
-    // the register-destination lookup.
+    // mov [base+disp],imm: the constant rides in the patched imm64 hole.
+    if (insn.mnemonic == Mnemonic::kMov && insn.ops[0].kind == Operand::Kind::kMem &&
+        insn.ops[0].has_base && !insn.ops[0].has_index && !insn.ops[0].rip_relative &&
+        memory_width(insn.ops[0].size) && insn.ops[1].kind == Operand::Kind::kImm &&
+        insn.ops[1].disp >= INT32_MIN && insn.ops[1].disp <= INT32_MAX) {
+        const auto base = reg_slot_offset(insn.ops[0].base);
+        if (!base.has_value()) {
+            return std::nullopt;
+        }
+        std::vector<JitPage::Patch> patches = {
+            JitPage::Patch{
+                .offset = 3,
+                .size = 8,
+                .value = static_cast<uint64_t>(insn.ops[1].disp),
+            },
+            JitPage::Patch{.offset = 15, .size = 4, .value = *base},
+            JitPage::Patch{
+                .offset = 22,
+                .size = 4,
+                .value = static_cast<std::uint32_t>(insn.ops[0].disp),
+            },
+            JitPage::Patch{.offset = 37, .size = 4, .value = insn.ops[0].size},
+        };
+        return TranslatedInsn{
+            .code = kStoreImmSlot,
+            .patches = std::move(patches),
+            .call_offset = 43,
+            .cpu_offset = 28,
+            .helper = JitHelper::kStore,
+        };
+    }
+    // Stores have a memory destination; remaining forms share the reg lookup.
     if (insn.ops[0].kind != Operand::Kind::kReg || !memory_width(insn.ops[0].size)) {
         return std::nullopt;
     }
@@ -382,8 +411,7 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
             .helper = JitHelper::kLoad,
         };
     }
-    // mov reg,[rip+disp]: the absolute address is known at compile time
-    // (rip_after + disp), so the helper receives it directly.
+    // mov reg,[rip+disp]: rip_after + disp is a compile-time constant.
     if (insn.mnemonic == Mnemonic::kMov && insn.ops[0].kind == Operand::Kind::kReg &&
         insn.ops[1].kind == Operand::Kind::kMem && insn.ops[1].rip_relative &&
         insn.ops[0].size == 8) {
@@ -515,16 +543,8 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
             return std::nullopt;
         }
         std::vector<JitPage::Patch> patches = {
-            JitPage::Patch{
-                .offset = 4,
-                .size = 4,
-                .value = *source,
-            },
-            JitPage::Patch{
-                .offset = 12,
-                .size = 4,
-                .value = *slot,
-            },
+            JitPage::Patch{.offset = 4, .size = 4, .value = *source},
+            JitPage::Patch{.offset = 12, .size = 4, .value = *slot},
         };
         return TranslatedInsn{
             .code = kMovSlotSlot,
@@ -533,8 +553,26 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
             .cpu_offset = std::nullopt,
         };
     }
-    // Only guest imm32 forms are lowered; wider constants (kernel high-half
-    // addresses) stay with the interpreter rather than being truncated.
+    // 32-bit register move: the host 32-bit load zero-extends the result.
+    if (insn.mnemonic == Mnemonic::kMov && insn.ops[1].kind == Operand::Kind::kReg &&
+        insn.ops[0].size == 4) {
+        const auto source = reg_slot_offset(insn.ops[1].reg);
+        if (!source.has_value()) {
+            return std::nullopt;
+        }
+        std::vector<JitPage::Patch> patches = {
+            JitPage::Patch{.offset = 3, .size = 4, .value = *source},
+            JitPage::Patch{.offset = 11, .size = 4, .value = *slot},
+        };
+        return TranslatedInsn{
+            .code = kMovSlotSlot32,
+            .patches = std::move(patches),
+            .call_offset = std::nullopt,
+            .cpu_offset = std::nullopt,
+        };
+    }
+    // Only guest imm32 constants are lowered; kernel high-half addresses
+    // stay with the interpreter rather than being truncated.
     if ((insn.ops[0].size != 4 && insn.ops[0].size != 8) ||
         insn.ops[1].kind != Operand::Kind::kImm || insn.ops[1].disp < INT32_MIN ||
         insn.ops[1].disp > (insn.ops[0].size == 4 ? static_cast<int64_t>(UINT32_MAX) : INT32_MAX)) {

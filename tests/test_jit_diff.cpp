@@ -99,7 +99,26 @@ std::vector<DiffCase> width_cases() {
     append("Mov32Zero", {0x41, 0xB9, 0, 0, 0, 0}, UINT64_MAX, 0);
     append("Mov32Unsigned", {0x41, 0xB9, 0xFF, 0xFF, 0xFF, 0xFF}, UINT64_MAX, UINT32_MAX);
     append("Mov32C7SignBit", {0x41, 0xC7, 0xC1, 0, 0, 0, 0x80}, UINT64_MAX, 0x80000000);
-    // lea r9,[rbx+rcx*8+0x30]: host-side address arithmetic, flags untouched.
+    // mov eax,eax-style 32-bit reg-to-reg: zeroes the dirty upper half.
+    append("Mov32RegRegZeroExt", {0x45, 0x89, 0xD1}, 0xABCDEF1289ABCDEFULL, 0x44332211);
+    DiffCase mov32_r8{"Mov32RegRegRexBoth", {0x45, 0x89, 0xC1}, ~0ULL, 0x76543210};
+    mov32_r8.source_reg = Reg::kR8; // mov r9d,r8d: REX.R+B at once
+    mov32_r8.source = kLoaded;      // r8 seeds the source constant
+    cases.push_back(mov32_r8);
+    DiffCase store_imm8{"StoreImm8Base",      {0xC6, 0x03, 0x77}, 0, 0, kFlags, true,
+                        0x1122334455667788ULL};
+    store_imm8.base_reg = Reg::kRbx; // [rbx] hits kData byte 0
+    store_imm8.base = kData;
+    store_imm8.memory_expected = 0x1122334455667777ULL;
+    cases.push_back(store_imm8);
+    // mov qword [rbx-8],-1: verified via the 24-byte snapshot compare.
+    DiffCase store_imm64{
+        "StoreImm64SignExt",  {0x48, 0xC7, 0x43, 0xF8, 0xFF, 0xFF, 0xFF, 0xFF}, 0, 0, kFlags, true,
+        0x1122334455667788ULL};
+    store_imm64.base_reg = Reg::kRbx; // [rbx-8] takes the full sign-extended imm
+    store_imm64.memory_expected = 0x1122334455667788ULL;
+    cases.push_back(store_imm64);
+    // lea r9,[rbx+rcx*8+0x30]: flags untouched.
     auto lea_idx = indexed_case("LeaIndexScale8", {0x48, 0x8D, 0x44, 0xCB, 0x30}, false, kData);
     lea_idx.expected = kData + 3 * 8 + 0x30;
     lea_idx.jit_insns = 1;
@@ -286,8 +305,7 @@ TEST_P(JitDiffTest, MatchesInterpreter) {
     EXPECT_EQ(0U, interpreter.insns);
     ASSERT_GT(jit.blocks, 0U);
     ASSERT_GT(jit.insns, 0U);
-    // Only the instruction under test can compile; no padding mov can
-    // satisfy these counters while the target falls back to interpreting.
+    // Only the instruction under test can compile; no padding mov passes.
     EXPECT_EQ(1U, jit.blocks);
     EXPECT_EQ(test.jit_insns, jit.insns);
     EXPECT_EQ(interpreter.exit, jit.exit);
