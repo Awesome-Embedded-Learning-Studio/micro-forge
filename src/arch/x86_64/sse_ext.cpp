@@ -93,7 +93,8 @@ ExitStatus Cpu::execute_sse_ext(const DecodedInsn& insn, uint64_t rip_after) {
         }
         const Vec128 src = xmm(b.reg);
         const auto word = static_cast<unsigned>(ctrl & 3U);
-        const auto value = static_cast<uint64_t>((src[word / 2U] >> (16U * (word % 2U))) & 0xFFFFULL);
+        const auto value =
+            static_cast<uint64_t>((src[word / 2U] >> (16U * (word % 2U))) & 0xFFFFULL);
         if (!write_operand(insn, a, value)) {
             return exit_;
         }

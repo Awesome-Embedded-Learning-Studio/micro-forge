@@ -139,4 +139,52 @@ TEST_F(InterruptTest, TrapGateKeepsInterruptsEnabled) {
     EXPECT_TRUE(cpu_.interrupts_enabled()); // trap gate never cleared IF
 }
 
+TEST_F(InterruptTest, StiShadowDelaysDeliveryPastTheNextInstruction) {
+    // SDM STI: after STI opens IF, exactly one more instruction retires
+    // before a queued vector is recognized. The handler stamps 9 over the
+    // marker at 0x4000; without the shadow it would deliver at the STI
+    // retire, run BEFORE the mainline's mov, and the mov's 2 would win.
+    load({
+        0x0F,
+        0x01,
+        0x18, // lidt [rax]
+        0xFA, // cli
+        0xFB, // sti
+        0xC7,
+        0x04,
+        0x25,
+        0x00,
+        0x40,
+        0x00,
+        0x00,
+        0x02,
+        0x00,
+        0x00,
+        0x00, // mov dword [0x4000], 2
+    });
+    // handler: mov dword [0x4000], 9; iretq
+    const uint8_t handler[] = {
+        0xC7, 0x04, 0x25, 0x00, 0x40, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x48, 0xCF,
+    };
+    for (unsigned i = 0; i < sizeof(handler); ++i) {
+        ram_.data()[kHandler + i] = handler[i];
+    }
+    const uint64_t descriptor = kIdt + 0x100;
+    ram_.data()[descriptor] = 0x0F;
+    ram_.data()[descriptor + 1] = 0x02; // limit 0x20F (covers vector 0x20)
+    for (unsigned i = 0; i < 8; ++i) {
+        ram_.data()[descriptor + 2 + i] = static_cast<uint8_t>(kIdt >> (8U * i));
+    }
+    write_counter(0);
+
+    cpu_.reset(kCodeBase, kStackTop);
+    cpu_.set_gpr(Reg::kRax, descriptor);
+    (void)cpu_.run(2); // lidt, cli: the queue cannot drain with IF off
+    cpu_.request_interrupt(0x20);
+    (void)cpu_.run(20); // sti, mov, hlt — delivery must not cut between STI and mov
+
+    EXPECT_EQ(9U, counter()); // handler stamped last, past the shadowed mov
+    EXPECT_EQ(ExitStatus::Kind::kHalt, cpu_.exit_status().kind);
+}
+
 } // namespace

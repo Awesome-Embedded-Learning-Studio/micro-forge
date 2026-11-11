@@ -553,12 +553,12 @@ private:
     /// Reads TSS.RSP0 for the current task: ltr's selector indexes the
     /// GDT, the descriptor gives the TSS base, offset 4 holds RSP0.
     [[nodiscard]] uint64_t kernel_stack_top();
-    /// Raises #PF (vector 14) with its error code, or returns false when
-    /// there is no IDT to deliver into (then the caller latches).
+    /// Raises #PF (vector 14) with its error code; false when no IDT.
     bool raise_page_fault(uint64_t error);
     /// Queued interrupt delivery (batch 6c).
     uint8_t pending_vector_ = 0;
     bool interrupt_pending_ = false;
+    bool sti_shadow_ = false; // STI blocks delivery past the next retire
     /// Delivers the queued vector if IF is set and the machine runs.
     void deliver_interrupt();
     /// CR2 and the last #PF error code (read by the interrupt path).

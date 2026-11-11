@@ -164,6 +164,7 @@ ExitStatus Cpu::execute_system(const DecodedInsn& insn, uint64_t rip_after) {
         break;
     case Mnemonic::kSti:
         if_ = true;
+        sti_shadow_ = true; // one instruction runs before IF reopens delivery
         break;
     case Mnemonic::kClac:
         ac_ = false;

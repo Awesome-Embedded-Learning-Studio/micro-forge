@@ -164,7 +164,13 @@ void Cpu::retire(unsigned n) {
         irq_hook_(); // device acknowledgement / EOI hook
     }
     if (interrupt_pending_) {
-        deliver_interrupt();
+        // STI shadow: after STI opens IF, exactly one more instruction
+        // retires before the queued vector is recognized (SDM STI).
+        if (sti_shadow_) {
+            sti_shadow_ = false;
+        } else {
+            deliver_interrupt();
+        }
     }
     if (trace_) {
         trace_(insn_rip_);
