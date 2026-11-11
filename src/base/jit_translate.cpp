@@ -241,6 +241,22 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
             .helper = JitHelper::kStore,
         };
     }
+    // push imm: the value is already sign-extended into ops[0].disp.
+    if (insn.addr_size == 8 && !insn.has_lock && insn.mnemonic == Mnemonic::kPush &&
+        insn.ops[0].kind == Operand::Kind::kImm) {
+        const JitPage::Patch imm_patch{
+            .offset = 3,
+            .size = 8,
+            .value = static_cast<std::uint64_t>(insn.ops[0].disp),
+        };
+        return TranslatedInsn{
+            .code = jit_templates::kPushImmHelper,
+            .patches = {imm_patch},
+            .call_offset = 23,
+            .cpu_offset = 13,
+            .helper = JitHelper::kPushImm,
+        };
+    }
     // Stores have a memory destination; remaining forms share the reg lookup.
     if (insn.ops[0].kind != Operand::Kind::kReg || !memory_width(insn.ops[0].size)) {
         return std::nullopt;
@@ -292,6 +308,29 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
             .cpu_offset = 13,
             .helper = JitHelper::kSetcc,
         };
+    }
+    // push/pop reg64 and push imm: the helper walks rsp via push_value/pop_value.
+    if (insn.addr_size == 8 && !insn.has_lock) {
+        if (insn.mnemonic == Mnemonic::kPush && insn.ops[0].kind == Operand::Kind::kReg &&
+            insn.ops[0].size == 8 && *slot % sizeof(uint64_t) == 0) {
+            return TranslatedInsn{
+                .code = jit_templates::kPushRegHelper,
+                .patches = {{.offset = 5, .size = 4, .value = *slot}},
+                .call_offset = 21,
+                .cpu_offset = 11,
+                .helper = JitHelper::kPushVal,
+            };
+        }
+        if (insn.mnemonic == Mnemonic::kPop && insn.ops[0].kind == Operand::Kind::kReg &&
+            insn.ops[0].size == 8 && *slot % sizeof(uint64_t) == 0) {
+            return TranslatedInsn{
+                .code = jit_templates::kPopRegHelper,
+                .patches = {{.offset = 2, .size = 4, .value = *slot}},
+                .call_offset = 18,
+                .cpu_offset = 8,
+                .helper = JitHelper::kPopReg,
+            };
+        }
     }
     // mov reg,[base+index*scale+disp]: compute vaddr before calling the helper.
     if (insn.mnemonic == Mnemonic::kMov && insn.ops[0].kind == Operand::Kind::kReg &&

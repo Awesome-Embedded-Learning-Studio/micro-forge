@@ -222,6 +222,82 @@ std::vector<DiffCase> alu_cases() {
         c.result_reg = r9 ? Reg::kR9 : Reg::kRcx;
         cases.push_back(c);
     }
+    // push/pop reg64 + push imm: rsp seeds at 0xF000 (writable RAM), so a
+    // balanced push/pop pair must restore both the value and rsp itself.
+    DiffCase push_pop{
+        .name = "push_rdx_pop_rcx",
+        .code = {0x52, 0x59},
+        .initial = kLoaded,
+        .expected = kStored,
+        .flags = kFlags,
+    };
+    push_pop.result_reg = Reg::kRcx;
+    push_pop.source_reg = Reg::kRdx;
+    push_pop.jit_insns = 2;
+    cases.push_back(push_pop);
+    DiffCase push_r9{
+        .name = "push_rcx_pop_r9",
+        .code = {0x51, 0x41, 0x59},
+        .initial = kLoaded,
+        .expected = kStored,
+        .flags = kFlags,
+    };
+    push_r9.source_reg = Reg::kRcx;
+    push_r9.jit_insns = 2;
+    cases.push_back(push_r9);
+    DiffCase rsp_check{
+        .name = "push_pop_rsp_back",
+        .code = {0x52, 0x59, 0x52, 0x59},
+        .initial = 0xF000, // seeds rsp itself: keep the writable stack top
+        .expected = 0xF000,
+        .flags = kFlags,
+    };
+    rsp_check.result_reg = Reg::kRsp;
+    rsp_check.source_reg = Reg::kRdx;
+    rsp_check.jit_insns = 4;
+    cases.push_back(rsp_check);
+    DiffCase push_rsp{
+        .name = "push_rsp_pop_rcx",
+        .code = {0x54, 0x59},
+        .initial = kLoaded,
+        .expected = 0xF000,
+        .flags = kFlags,
+    };
+    push_rsp.result_reg = Reg::kRcx;
+    push_rsp.source_reg = Reg::kRsp;
+    push_rsp.source = 0xF000; // source seeds rsp: keep the writable stack top
+    push_rsp.jit_insns = 2;
+    cases.push_back(push_rsp);
+    DiffCase push_imm32c{
+        .name = "push_imm32_pop_rcx",
+        .code = {0x68, 0x44, 0x33, 0x22, 0x11, 0x59},
+        .initial = kLoaded,
+        .expected = 0x11223344,
+        .flags = kFlags,
+    };
+    push_imm32c.result_reg = Reg::kRcx;
+    push_imm32c.jit_insns = 2;
+    cases.push_back(push_imm32c);
+    DiffCase push_imm8c{
+        .name = "push_imm8_pop_rcx",
+        .code = {0x6A, 0x93, 0x59},
+        .initial = kLoaded,
+        .expected = 0xFFFFFFFFFFFFFF93ULL,
+        .flags = kFlags,
+    };
+    push_imm8c.result_reg = Reg::kRcx;
+    push_imm8c.jit_insns = 2;
+    cases.push_back(push_imm8c);
+    DiffCase pop_rsp{
+        .name = "push_imm_pop_rsp",
+        .code = {0x68, 0x78, 0x56, 0x34, 0x12, 0x5C},
+        .initial = 0xF000, // seeds rsp itself: keep the writable stack top
+        .expected = 0x12345678,
+        .flags = kFlags,
+    };
+    pop_rsp.result_reg = Reg::kRsp;
+    pop_rsp.jit_insns = 2;
+    cases.push_back(pop_rsp);
     return cases;
 }
 } // namespace jit_diff_cases

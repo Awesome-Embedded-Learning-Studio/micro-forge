@@ -229,6 +229,16 @@ public:
     /// @param[in] slot Byte offset of the destination register slot in regs_.
     /// @param[in] cc Hardware condition code 0-15.
     void jit_setcc(uint64_t slot, unsigned cc);
+
+    /// @brief PUSH helper: stores @p value at rsp-8 and lowers rsp.
+    /// @param[in] value Register value or pre-extended immediate.
+    void jit_push_val(uint64_t value);
+    /// @brief PUSH imm helper: stores @p value at rsp-8 and lowers rsp.
+    /// @param[in] value Immediate value, already extended to 64 bits.
+    void jit_push_imm(uint64_t value);
+    /// @brief POP reg64 helper: loads from rsp into the slot and raises rsp.
+    /// @param[in] slot Byte offset of the destination register slot in regs_.
+    void jit_pop_reg(uint64_t slot);
     /// @brief JIT OR: combine GPR[slot/8] with value, updating flags.
     void jit_or(uint64_t slot, uint64_t value, unsigned width);
     /// @brief JIT XOR: xor GPR[slot/8] with value, updating flags.
@@ -540,12 +550,11 @@ private:
     std::uint64_t code_lo_ = 0;                         // JIT range, 0 = no filter
     std::uint64_t code_hi_ = 0;
     bool jit_requested_ = false; // config switch (env bypasses)
-    /// Invalidates the decode cache when @p paddr lands on a code page.
+    /// Invalidates the decode cache when @p paddr hits a code page.
     void note_store(uint64_t paddr);
     std::array<uint8_t, 16> last_fault_bytes_{};
     unsigned last_fault_length_ = 0;
-    /// Reads TSS.RSP0 for the current task: ltr's selector indexes the
-    /// GDT, the descriptor gives the TSS base, offset 4 holds RSP0.
+    /// Reads TSS.RSP0: ltr's selector indexes the GDT, offset 4 holds it.
     [[nodiscard]] uint64_t kernel_stack_top();
     /// Raises #PF (vector 14) with its error code; false when no IDT.
     bool raise_page_fault(uint64_t error);
@@ -563,8 +572,7 @@ private:
     std::array<std::array<uint64_t, 2>, 16> xmm_{};
     /// MXCSR control/status word (FXSAVE carries it across switches).
     uint32_t mxcsr_ = 0x1F80U;
-    /// Deterministic RNG state (rdrand derives from the seed derivation
-    /// of batch 8; a fixed splitmix64 seed until then).
+    /// Deterministic RNG state (splitmix64 seed until batch 8 derives it).
     uint64_t rng_state_ = 0x9E3779B97F4A7C15ULL;
     /// Task/ldt selectors (0F 00 group; no descriptor semantics in v0).
     uint16_t tss_selector_ = 0;
@@ -575,8 +583,7 @@ private:
     kernel::Tick icount_ = 0;
     std::vector<char> console_;
     std::function<void(uint64_t rip)> trace_;
-    /// Attached interrupt line (wiring, not state: snapshots carry the
-    /// line level in the device section, the pointer is re-attached).
+    /// Attached interrupt line (wiring only: snapshots re-attach it).
     kernel::IrqLine* irq_line_ = nullptr;
     /// Receiving hook fired while the line is high (batch-6: injection).
     std::function<void()> irq_hook_;
@@ -586,7 +593,6 @@ private:
     uint8_t cur_length_ = 0;
     ExitStatus exit_{};
     std::array<uint8_t, 16> fetch_buf_{};
-
     /// GPR array index of a register enum.
     [[nodiscard]] static unsigned index_of(Reg reg) { return static_cast<unsigned>(reg) & 0xFU; }
 };

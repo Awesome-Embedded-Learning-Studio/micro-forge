@@ -38,6 +38,9 @@ extern "C" void mf_jit_cmp_mem(void* cpu, uint64_t vaddr, uint64_t slot, unsigne
 extern "C" void mf_jit_cmov(void* cpu, uint64_t slot, uint64_t src_val, unsigned cc,
                             unsigned width);
 extern "C" void mf_jit_setcc(void* cpu, uint64_t slot, unsigned cc);
+extern "C" void mf_jit_push_val(void* cpu, uint64_t value);
+extern "C" void mf_jit_push_imm(void* cpu, uint64_t value);
+extern "C" void mf_jit_pop_reg(void* cpu, uint64_t slot);
 
 std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
     constexpr std::size_t max_insns = 64;
@@ -160,6 +163,15 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
             case base::JitHelper::kSetcc:
                 helper = reinterpret_cast<std::uint64_t>(&mf_jit_setcc);
                 break;
+            case base::JitHelper::kPushVal:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_push_val);
+                break;
+            case base::JitHelper::kPushImm:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_push_imm);
+                break;
+            case base::JitHelper::kPopReg:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_pop_reg);
+                break;
             default:
                 return fail_compile();
             }
@@ -233,6 +245,18 @@ extern "C" void mf_jit_setcc(void* cpu, uint64_t slot, unsigned cc) {
     static_cast<Cpu*>(cpu)->jit_setcc(slot, cc);
 }
 
+extern "C" void mf_jit_push_val(void* cpu, uint64_t value) {
+    static_cast<Cpu*>(cpu)->jit_push_val(value);
+}
+
+extern "C" void mf_jit_push_imm(void* cpu, uint64_t value) {
+    static_cast<Cpu*>(cpu)->jit_push_imm(value);
+}
+
+extern "C" void mf_jit_pop_reg(void* cpu, uint64_t slot) {
+    static_cast<Cpu*>(cpu)->jit_pop_reg(slot);
+}
+
 extern "C" void mf_jit_or(void* cpu, uint64_t slot, uint64_t value, unsigned width) {
     static_cast<Cpu*>(cpu)->jit_or(slot, value, width);
 }
@@ -304,6 +328,21 @@ void Cpu::jit_sub(uint64_t slot, uint64_t value, unsigned width) {
 void Cpu::jit_and(uint64_t slot, uint64_t value, unsigned width) {
     auto& dst = regs_[slot / 8U];
     dst = merge_width(dst, alu_logic(dst & value, width), width);
+}
+
+void Cpu::jit_push_val(uint64_t value) {
+    (void)push_value(value, 8);
+}
+
+void Cpu::jit_push_imm(uint64_t value) {
+    (void)push_value(value, 8);
+}
+
+void Cpu::jit_pop_reg(uint64_t slot) {
+    uint64_t v = 0;
+    if (pop_value(8, v)) {
+        regs_[slot / 8U] = v;
+    }
 }
 
 void Cpu::jit_setcc(uint64_t slot, unsigned cc) {

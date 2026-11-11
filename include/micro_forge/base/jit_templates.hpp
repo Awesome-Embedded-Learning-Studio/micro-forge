@@ -257,7 +257,7 @@ constexpr std::array<std::uint8_t, 49> kCmovRegHelper = {
     0x5F,                                     // @48: pop rdi (1)
 };
 // Holes: dst32@2, src32@10, cc32@15, width32@21, cpu64@27, helper64@37.
-// SETCC reg: rdi=cpu, esi=dst slot, ecx=cc. 37 bytes.
+// SETCC reg: rdi=cpu, esi=dst slot, edx=cc. 35 bytes.
 constexpr std::array<std::uint8_t, 35> kSetccRegHelper = {
     0x57,                                  // @0: push rdi (1)
     0xBE, 0,    0,    0, 0,                // @1: mov esi,dst32 (5)
@@ -268,6 +268,39 @@ constexpr std::array<std::uint8_t, 35> kSetccRegHelper = {
     0x5F,                                  // @34: pop rdi (1)
 };
 // Holes: dst32@2, cc32@7, cpu64@13, helper64@23.
+
+// PUSH reg64: rdi=cpu, rsi=src slot. 33 bytes.
+constexpr std::array<std::uint8_t, 33> kPushRegHelper = {
+    0x57,                                     // @0: push rdi (1)
+    0x48, 0x8B, 0xB4, 0x27, 0, 0, 0, 0,       // @1: mov rsi,[rdi+slot32] (8)
+    0x48, 0xBF, 0,    0,    0, 0, 0, 0, 0, 0, // @9: mov rdi,cpu64 (10)
+    0x49, 0xBB, 0,    0,    0, 0, 0, 0, 0, 0, // @19: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                         // @29: call r11 (3)
+    0x5F,                                     // @32: pop rdi (1)
+};
+// Holes: slot32@4, cpu64@11, helper64@21.
+
+// PUSH imm64 (sign-extended imm8/imm32 arrive pre-extended): 35 bytes.
+constexpr std::array<std::uint8_t, 35> kPushImmHelper = {
+    0x57,                                  // @0: push rdi (1)
+    0x48, 0xBE, 0,    0, 0, 0, 0, 0, 0, 0, // @1: movabs rsi,imm64 (10)
+    0x48, 0xBF, 0,    0, 0, 0, 0, 0, 0, 0, // @11: mov rdi,cpu64 (10)
+    0x49, 0xBB, 0,    0, 0, 0, 0, 0, 0, 0, // @21: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                      // @31: call r11 (3)
+    0x5F,                                  // @34: pop rdi (1)
+};
+// Holes: imm64@3, cpu64@13, helper64@23.
+
+// POP reg64: rdi=cpu, esi=dst slot. 30 bytes.
+constexpr std::array<std::uint8_t, 30> kPopRegHelper = {
+    0x57,                                  // @0: push rdi (1)
+    0xBE, 0,    0,    0, 0,                // @1: mov esi,slot32 (5)
+    0x48, 0xBF, 0,    0, 0, 0, 0, 0, 0, 0, // @6: mov rdi,cpu64 (10)
+    0x49, 0xBB, 0,    0, 0, 0, 0, 0, 0, 0, // @16: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                      // @26: call r11 (3)
+    0x5F,                                  // @29: pop rdi (1)
+};
+// Holes: slot32@2, cpu64@8, helper64@18.
 
 // CMP memory tail: rdi=cpu, rsi=vaddr (from load prefix), edx=slot, ecx=width.
 constexpr std::array<std::uint8_t, 34> kCmpMemCall = {
