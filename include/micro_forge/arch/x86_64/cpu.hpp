@@ -207,7 +207,7 @@ public:
     /// @brief JIT load helper.
     /// @return Width bytes at vaddr, or 0 on failure.
     uint64_t jit_load(uint64_t vaddr, unsigned width);
-    /// @brief JIT ADD: slot is reg*8; imm32 is sign-extended; width is 4 or 8.
+    /// @brief JIT ADD: slot is reg*8; imm32 sign-extended; width 4 or 8.
     /// @return Updated register value.
     uint64_t jit_add(uint64_t slot, uint64_t imm, unsigned width);
     /// @brief JIT CMP: compare GPR[slot/8] with value using width 4 or 8.
@@ -222,6 +222,8 @@ public:
     void jit_or(uint64_t slot, uint64_t value, unsigned width);
     /// @brief JIT XOR: xor GPR[slot/8] with value, updating flags.
     void jit_xor(uint64_t slot, uint64_t value, unsigned width);
+    /// @brief JIT IMUL: GPR[slot/8] = low(product); CF=OF on truncation.
+    void jit_imul(uint64_t slot, uint64_t value, unsigned width);
     /// @brief JIT CMP memory: compare GPR[slot/8] with width bytes at vaddr.
     void jit_cmp_mem(uint64_t vaddr, uint64_t slot, unsigned width);
     /// @brief JIT store: write width bytes at vaddr.
@@ -229,10 +231,7 @@ public:
     /// @brief JIT memory ADD: qword [vaddr] += value, updating flags.
     void jit_add_mem(uint64_t vaddr, uint64_t value);
     /// @brief Restricts JIT compilation to [lo, hi); zero means no filter.
-    void set_code_range(uint64_t lo, uint64_t hi) {
-        code_lo_ = lo;
-        code_hi_ = hi;
-    }
+    void set_code_range(uint64_t lo, uint64_t hi) { code_lo_ = lo, code_hi_ = hi; }
     /// @brief Turns block compilation on without the env variable.
     void set_jit_enabled(bool enabled) { jit_requested_ = enabled; }
     /// @brief JIT counters: coverage meter plus block/failed-rip counts.

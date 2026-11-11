@@ -1,17 +1,21 @@
 /// @file jit_kernel_probe.cpp
 /// @brief Native JIT coverage, Cpu::run throughput and flat-image profile.
 
+#include <cstring>
 #include <micro_forge/arch/x86_64/decoder.hpp>
 #include <micro_forge/base/jit_translate.hpp>
 #include <micro_forge/loader/cinux_loader.hpp>
 #include <micro_forge/machine.hpp>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <print>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace {
@@ -91,13 +95,49 @@ int main(int argc, const char* const* argv) {
         machine.attach_disk(std::move(disk));
     }
     auto& cpu = machine.cpu();
+    // MICRO_FORGE_TRACE_RIP=1: sample interpreter-path RIPs (the residual
+    // stream the JIT still hands back) and dump a histogram at exit.
+    std::unordered_map<uint64_t, uint64_t> rip_hist;
+    const bool trace_rips =
+        std::getenv("MICRO_FORGE_TRACE_RIP") != nullptr; // NOLINT(concurrency-mt-unsafe)
+    // MICRO_FORGE_DUMP_STATE=1: print all GPRs at the budget cutoff so a JIT
+    // run and an interpreter run can be diffed register by register.
+    if (std::getenv("MICRO_FORGE_DUMP_STATE") != nullptr) { // NOLINT(concurrency-mt-unsafe)
+        for (unsigned r = 0; r < 16; ++r) {
+            std::println(stderr, "gpr{:2}={:#018x} rip={:#x} rf={:#x}", r,
+                         cpu.gpr(static_cast<micro_forge::arch::x86_64::Reg>(r)), cpu.rip(),
+                         cpu.rflags());
+        }
+    }
+    if (trace_rips) {
+        cpu.set_trace([&rip_hist](uint64_t rip) { ++rip_hist[rip]; });
+    }
+    // MICRO_FORGE_TRACE_WIN=lo:hi: dump every step RIP whose icount lands in
+    // [lo,hi) — under JIT each sample is a block head — to locate divergence.
+    const char* win_env = std::getenv("MICRO_FORGE_TRACE_WIN"); // NOLINT(concurrency-mt-unsafe)
+    std::vector<std::pair<uint64_t, uint64_t>> win_rips;        // icount, rip
+    if (win_env != nullptr) {
+        const char* colon = std::strchr(win_env, ':');
+        const uint64_t lo = std::strtoull(win_env, nullptr, 0);
+        const uint64_t hi = colon != nullptr ? std::strtoull(colon + 1, nullptr, 0) : lo + 10'000;
+        cpu.set_trace([&cpu, &win_rips, lo, hi](uint64_t rip) {
+            const uint64_t now = cpu.icount();
+            if (now >= lo && now < hi) {
+                win_rips.emplace_back(now, rip);
+            }
+        });
+    }
     if (!micro_forge::loader::boot_cinux(machine.ram(), cpu, image)) {
         std::println(stderr, "boot_cinux refused the image");
         return 2;
     }
     using Clock = std::chrono::steady_clock;
     double run_seconds = 0;
-    for (const uint64_t budget : {100'000'000ULL, 500'000'000ULL}) {
+    const char* budget_env = std::getenv("MICRO_FORGE_RUN_BUDGET"); // NOLINT(concurrency-mt-unsafe)
+    const std::vector<uint64_t> budgets =
+        budget_env != nullptr ? std::vector<uint64_t>{std::strtoull(budget_env, nullptr, 0)}
+                              : std::vector<uint64_t>{100'000'000ULL, 500'000'000ULL};
+    for (const uint64_t budget : budgets) {
         const auto begin = Clock::now();
         const auto status = cpu.run(budget);
         run_seconds += std::chrono::duration<double>(Clock::now() - begin).count();
@@ -118,6 +158,23 @@ int main(int argc, const char* const* argv) {
     }
     std::ofstream output(argv[2], std::ios::binary);
     output.write(cpu.console().data(), static_cast<std::streamsize>(cpu.console().size()));
+    if (trace_rips) {
+        std::vector<std::pair<uint64_t, uint64_t>> top(rip_hist.begin(), rip_hist.end());
+        std::ranges::sort(top, [](const auto& a, const auto& b) { return a.second > b.second; });
+        uint64_t total = 0;
+        for (const auto& [rip, n] : top) {
+            total += n;
+        }
+        std::println(stderr, "samples={} unique={}", total, top.size());
+        for (std::size_t i = 0; i < top.size() && i < 400; ++i) {
+            std::println(stderr, "{} rip=0x{:x}", top[i].second, top[i].first);
+        }
+    }
+    if (win_env != nullptr) {
+        for (const auto& [ic, rip] : win_rips) {
+            std::println(stderr, "win icount={} rip=0x{:x}", ic, rip);
+        }
+    }
     return output.good() &&
                    cpu.exit_status().kind == micro_forge::arch::x86_64::ExitStatus::Kind::kHalt
                ? 0

@@ -34,6 +34,7 @@ add_library(micro_forge
     src/engine.cpp
     src/base/jit.cpp
     src/base/jit_translate.cpp
+    src/base/jit_translate_alu.cpp
     src/base/wasm_emit.cpp
     src/base/wasm_block.cpp
     src/presets/cinux/cinux_machine.cpp

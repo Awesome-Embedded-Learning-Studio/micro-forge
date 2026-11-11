@@ -84,10 +84,16 @@ TEST(JitAluLayoutTest, RejectsUnsupportedRegisterAndImmediateForms) {
         auto good = *decoded;
         good.mnemonic = mnemonic;
         ASSERT_TRUE(translate_insn(good));
-        for (const uint8_t width : {0, 1, 2, 3, 16}) {
+        for (const uint8_t width : {0, 3, 16}) {
             auto bad = good;
             bad.ops[0].size = bad.ops[1].size = width;
             EXPECT_FALSE(translate_insn(bad));
+        }
+        // Byte/word widths lower since the helpers mask to width.
+        for (const uint8_t width : {1, 2}) {
+            auto small = good;
+            small.ops[0].size = small.ops[1].size = width;
+            EXPECT_TRUE(translate_insn(small));
         }
         for (const unsigned operand : {0U, 1U}) {
             auto bad = good;

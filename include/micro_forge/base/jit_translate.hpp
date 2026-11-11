@@ -35,6 +35,7 @@ enum class JitHelper : std::uint8_t {
     kOr,
     kXor,
     kCmpMem,
+    kImul, ///< two/three-operand imul: reg = reg * r/m, CF/OF from truncation
 };
 
 /**

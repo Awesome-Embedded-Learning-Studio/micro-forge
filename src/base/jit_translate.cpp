@@ -6,6 +6,8 @@
 
 #include "micro_forge/base/jit_translate.hpp"
 
+#include "jit_translate_alu.hpp"
+
 #include "micro_forge/base/jit_templates.hpp"
 
 #include <algorithm>
@@ -56,25 +58,6 @@ std::optional<std::size_t> operand_slot(const Operand& op, bool rex) {
         *slot = *slot - 32 + 1; // AH/CH/DH/BH: byte 1 of RAX/RCX/RDX/RBX
     }
     return slot;
-}
-
-JitHelper alu_helper(Mnemonic mnemonic) {
-    switch (mnemonic) {
-    case Mnemonic::kCmp:
-        return JitHelper::kCmp;
-    case Mnemonic::kTest:
-        return JitHelper::kTest;
-    case Mnemonic::kSub:
-        return JitHelper::kSub;
-    case Mnemonic::kAnd:
-        return JitHelper::kAnd;
-    case Mnemonic::kOr:
-        return JitHelper::kOr;
-    case Mnemonic::kXor:
-        return JitHelper::kXor;
-    default:
-        return JitHelper::kNone;
-    }
 }
 
 } // namespace
@@ -266,82 +249,11 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
     if (!slot.has_value()) {
         return std::nullopt;
     }
-    const auto helper = alu_helper(insn.mnemonic);
+    const auto helper = detail::alu_helper(insn.mnemonic);
     if (helper != JitHelper::kNone) {
-        const auto width = insn.ops[0].size;
-        const auto& source = insn.ops[1];
-        if ((width != 4 && width != 8) || insn.has_lock) {
-            return std::nullopt;
+        if (auto lowered = detail::translate_alu(insn, *slot, helper)) {
+            return lowered;
         }
-        if (source.kind == Operand::Kind::kImm && source.disp >= INT32_MIN &&
-            source.disp <= (width == 4 ? static_cast<int64_t>(UINT32_MAX) : INT32_MAX)) {
-            return TranslatedInsn{
-                .code = kAluImmHelper,
-                .patches =
-                    {
-                        {.offset = 2, .size = 4, .value = *slot},
-                        {.offset = 8, .size = 8, .value = static_cast<uint64_t>(source.disp)},
-                        {.offset = 17, .size = 4, .value = width},
-                    },
-                .call_offset = 33,
-                .cpu_offset = 23,
-                .helper = helper,
-            };
-        }
-        if (source.kind == Operand::Kind::kReg && source.size == width) {
-            const auto src_slot = reg_slot_offset(source.reg);
-            if (!src_slot) {
-                return std::nullopt;
-            }
-            return TranslatedInsn{
-                .code = kAluRegHelper,
-                .patches =
-                    {
-                        {.offset = 2, .size = 4, .value = *slot},
-                        {.offset = 10, .size = 4, .value = *src_slot},
-                        {.offset = 15, .size = 4, .value = width},
-                    },
-                .call_offset = 31,
-                .cpu_offset = 21,
-                .helper = helper,
-            };
-        }
-        if (helper != JitHelper::kCmp || source.kind != Operand::Kind::kMem ||
-            source.size != width || !source.has_base || source.rip_relative ||
-            insn.addr_size != 8 || insn.seg == arch::x86_64::Seg::kFs ||
-            insn.seg == arch::x86_64::Seg::kGs || source.disp < INT32_MIN ||
-            source.disp > INT32_MAX) {
-            return std::nullopt;
-        }
-        const auto base = reg_slot_offset(source.base);
-        if (!base) {
-            return std::nullopt;
-        }
-        std::vector<JitPage::Patch> patches = {{.offset = 5, .size = 4, .value = *base}};
-        const std::size_t extra = source.has_index ? 15 : 0;
-        if (source.has_index) {
-            const auto index = reg_slot_offset(source.index);
-            if (!index || source.scale > 8 || !std::has_single_bit(source.scale)) {
-                return std::nullopt;
-            }
-            patches.push_back({.offset = 13, .size = 4, .value = *index});
-            patches.push_back({
-                .offset = 20,
-                .size = 1,
-                .value = static_cast<unsigned>(std::countr_zero(source.scale)),
-            });
-        }
-        patches.push_back(
-            {.offset = 12 + extra, .size = 4, .value = static_cast<uint32_t>(source.disp)});
-        patches.push_back({.offset = 17 + extra, .size = 4, .value = *slot});
-        patches.push_back({.offset = 22 + extra, .size = 4, .value = width});
-        return TranslatedInsn{
-            .code = source.has_index ? std::span<const uint8_t>(kCmpMemIdxSlot) : kCmpMemSlot,
-            .patches = std::move(patches),
-            .call_offset = 38 + extra,
-            .cpu_offset = 28 + extra,
-            .helper = JitHelper::kCmpMem,
-        };
     }
     // mov reg,[base+index*scale+disp]: compute vaddr before calling the helper.
     if (insn.mnemonic == Mnemonic::kMov && insn.ops[0].kind == Operand::Kind::kReg &&
@@ -497,9 +409,10 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
         };
     }
     // lea dst,[base+index*scale+disp]: host-side address arithmetic only.
+    // The 32-bit dst form re-uses the arithmetic, then zero-extends.
     if (insn.mnemonic == Mnemonic::kLea && insn.ops[1].kind == Operand::Kind::kMem &&
         insn.ops[1].has_base && insn.ops[1].has_index && !insn.ops[1].rip_relative &&
-        insn.ops[0].size == 8) {
+        (insn.ops[0].size == 4 || insn.ops[0].size == 8)) {
         const auto base = reg_slot_offset(insn.ops[1].base);
         const auto index = reg_slot_offset(insn.ops[1].index);
         if (!base.has_value() || !index.has_value()) {
@@ -513,6 +426,7 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
         } else {
             return std::nullopt;
         }
+        const bool wide = insn.ops[0].size == 8;
         std::vector<JitPage::Patch> patches = {
             JitPage::Patch{.offset = 4, .size = 4, .value = *base},
             JitPage::Patch{.offset = 12, .size = 4, .value = *index},
@@ -523,13 +437,13 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
                 .value = static_cast<std::uint32_t>(insn.ops[1].disp),
             },
             JitPage::Patch{
-                .offset = 33,
+                .offset = wide ? std::size_t{33} : std::size_t{35},
                 .size = 4,
                 .value = *slot,
             },
         };
         return TranslatedInsn{
-            .code = kLeaIdxSlot,
+            .code = wide ? std::span<const uint8_t>(kLeaIdxSlot) : kLeaIdxSlot32,
             .patches = std::move(patches),
             .call_offset = std::nullopt,
             .cpu_offset = std::nullopt,

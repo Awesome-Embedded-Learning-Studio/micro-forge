@@ -75,6 +75,7 @@ struct DiffCase {
     std::optional<uint64_t> index = std::nullopt;
     Reg index_reg = Reg::kRcx;
     unsigned jit_insns = 1;
+    bool require_lowered = true;
 };
 
 struct State {
@@ -88,7 +89,7 @@ struct State {
     ExitStatus::Kind exit;
 };
 
-void execute_case(const DiffCase& test, State& out) {
+inline void execute_case(const DiffCase& test, State& out) {
     micro_forge::kernel::Bus bus;
     micro_forge::kernel::RamRegion ram(0x10000);
     micro_forge::kernel::Scheduler scheduler;
@@ -141,7 +142,7 @@ void execute_case(const DiffCase& test, State& out) {
               bus.read_u64(kData).value());
 }
 
-void run_child(const DiffCase& test, bool jit, State& out) {
+inline void run_child(const DiffCase& test, bool jit, State& out) {
     // Set these BEFORE fork. The parent never executes Cpu::step(), so
     // each child initializes maybe_compile_block's static independently.
     ScopedEnv enabled("MICRO_FORGE_JIT", jit ? "1" : nullptr);
