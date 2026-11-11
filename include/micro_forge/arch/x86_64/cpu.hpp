@@ -218,15 +218,11 @@ public:
     void jit_sub(uint64_t slot, uint64_t value, unsigned width);
     /// @brief JIT AND: mask GPR[slot/8] with value, updating flags.
     void jit_and(uint64_t slot, uint64_t value, unsigned width);
-    /// @brief CMOV helper: writes src into the slot when the condition holds.
-    /// @param[in] slot Byte offset of the destination register slot in regs_.
-    /// @param[in] src_val Source value, already loaded at the right width.
-    /// @param[in] cc Hardware condition code 0-15.
-    /// @param[in] width Operand width in bytes; narrow writes keep the high bytes.
+    /// @brief CMOV: merge @p src_val into the slot when @p cc holds.
+    /// @param[in] slot Dest slot offset; @p width bytes, high bytes kept.
     void jit_cmov(uint64_t slot, uint64_t src_val, unsigned cc, unsigned width);
 
-    /// @brief SETCC helper: writes 1/0 into the low byte of the slot.
-    /// @param[in] slot Byte offset of the destination register slot in regs_.
+    /// @brief SETCC helper: writes 1/0 into the slot's low byte.
     /// @param[in] cc Hardware condition code 0-15.
     void jit_setcc(uint64_t slot, unsigned cc);
 
@@ -238,9 +234,8 @@ public:
     /// @brief POP reg64 helper: loads rsp into the slot and raises rsp.
     /// @param[in] slot Byte offset of the destination register slot.
     void jit_pop_reg(uint64_t slot);
-    /// @brief movups-family: 16 bytes between memory and xmm_[slot/16].
+    /// @brief movups-family: memory -> xmm_[slot/16] (16 bytes).
     /// @param[in] vaddr Guest address of the low qword.
-    /// @param[in] slot Byte offset of the xmm register in xmm_.
     void jit_load_xmm(uint64_t vaddr, uint64_t slot);
     /// @brief movups-family helper: 16 bytes from xmm_[slot/16] to memory.
     void jit_store_xmm(uint64_t vaddr, uint64_t slot);
@@ -252,6 +247,10 @@ public:
     /// @brief call helper: pushes @p ret_addr, jumps to @p target.
     /// @param[in] my_rip The call's own rip (fault re-entry).
     void jit_call(uint64_t target, uint64_t my_rip, uint64_t ret_addr);
+    /// @brief jmp helper: records @p target as the block exit.
+    void jit_jmp(uint64_t target);
+    /// @brief jcc helper: picks @p taken or @p fall by condition(@p cc).
+    void jit_jcc(uint64_t taken, uint64_t fall, Cc cc);
     /// @brief JIT OR: combine GPR[slot/8] with value, updating flags.
     void jit_or(uint64_t slot, uint64_t value, unsigned width);
     /// @brief JIT XOR: xor GPR[slot/8] with value, updating flags.
@@ -590,7 +589,7 @@ private:
     std::function<void()> irq_hook_;                  // fired while the line is high
     uint64_t insn_rip_ = 0;                           // executing rip (traces)
     uint8_t cur_length_ = 0;                          // executing instruction length
-    uint64_t jit_next_rip_ = 0;                       // block exit target (jit_ret / jit_call)
+    uint64_t jit_next_rip_ = 0;                       // block exit target (ret/call/jmp/jcc)
     bool jit_next_set_ = false, jit_suspend_ = false; // suspend: fault retry
     ExitStatus exit_{};
     std::array<uint8_t, 16> fetch_buf_{}; // GPR array index of a register enum:

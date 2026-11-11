@@ -415,6 +415,33 @@ std::vector<DiffCase> alu_cases() {
     };
     call_imm.jit_insns = 1;
     cases.push_back(call_imm);
+    // jmp rel: taken unconditionally via the exit target.
+    DiffCase jmp_rel{
+        .name = "jmp_rel8",
+        .code = {0xEB, 0x02, 0xF4, 0x90, 0xF4}, // jmp +2 -> 0x1004; hlt; nop; hlt
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = kFlags,
+    };
+    cases.push_back(jmp_rel);
+    // jcc taken (kFlags has ZF set, so JE jumps).
+    DiffCase jcc_taken{
+        .name = "jcc_je_taken",
+        .code = {0x74, 0x02, 0xF4, 0x90, 0xF4}, // je +2; hlt; nop; hlt
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = kFlags,
+    };
+    cases.push_back(jcc_taken);
+    // jcc not taken (JNE with ZF set falls through).
+    DiffCase jcc_fall{
+        .name = "jcc_jne_fall",
+        .code = {0x75, 0x02, 0xF4, 0x90, 0xF4}, // jne +2; hlt; nop; hlt
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = kFlags,
+    };
+    cases.push_back(jcc_fall);
     return cases;
 }
 } // namespace jit_diff_cases

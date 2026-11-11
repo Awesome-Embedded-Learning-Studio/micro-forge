@@ -283,6 +283,31 @@ constexpr std::array<std::uint8_t, 56> kCallImmHelper = {
     0xC3,                                  // @55: ret (1)
 };
 // Holes: target64@3, my_rip64@13, ret_addr64@23; cpu64@33, helper64@43.
+// jmp imm via helper (rdi=cpu, rsi=target): records the exit target.
+constexpr std::array<std::uint8_t, 36> kJmpImmHelper = {
+    0x57,                                  // @0: push rdi (1)
+    0x48, 0xBE, 0,    0, 0, 0, 0, 0, 0, 0, // @1: movabs rsi,target64 (10)
+    0x48, 0xBF, 0,    0, 0, 0, 0, 0, 0, 0, // @11: mov rdi,cpu64 (10)
+    0x49, 0xBB, 0,    0, 0, 0, 0, 0, 0, 0, // @21: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                      // @31: call r11 (3)
+    0x5F,                                  // @34: pop rdi (1)
+    0xC3,                                  // @35: ret (1)
+};
+// Holes: target64@3; relocations cpu64@13, helper64@23.
+// jcc via helper (rdi=cpu, rsi=taken, rdx=fall, ecx=cc): pure flag math,
+// no memory access, so no fault path is needed.
+constexpr std::array<std::uint8_t, 51> kJccHelper = {
+    0x57,                                  // @0: push rdi (1)
+    0x48, 0xBE, 0,    0, 0, 0, 0, 0, 0, 0, // @1: movabs rsi,taken64 (10)
+    0x48, 0xBA, 0,    0, 0, 0, 0, 0, 0, 0, // @11: movabs rdx,fall64 (10)
+    0xB9, 0,    0,    0, 0,                // @21: mov ecx,cc32 (5)
+    0x48, 0xBF, 0,    0, 0, 0, 0, 0, 0, 0, // @26: mov rdi,cpu64 (10)
+    0x49, 0xBB, 0,    0, 0, 0, 0, 0, 0, 0, // @36: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                      // @46: call r11 (3)
+    0x5F,                                  // @49: pop rdi (1)
+    0xC3,                                  // @50: ret (1)
+};
+// Holes: taken64@3, fall64@13, cc32@22; cpu64@28, helper64@38.
 // leave via helper (rsp=rbp; rbp=pop) -- mid-block, no control flow:
 //   push rdi ; mov rdi,<cpu64> ; movabs r11,jit_leave ; call r11 ; pop rdi
 constexpr std::array<std::uint8_t, 25> kLeaveHelper = {

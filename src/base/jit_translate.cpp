@@ -133,6 +133,40 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
         }
         return std::nullopt;
     }
+    // jmp imm: record the patched target; the host ret ends the block.
+    if (insn.mnemonic == Mnemonic::kJmp && insn.addr_size == 8 && !insn.has_lock &&
+        insn.ops[0].kind == Operand::Kind::kImm) {
+        const uint64_t target = rip + insn.length + static_cast<uint64_t>(insn.ops[0].disp);
+        return TranslatedInsn{
+            .code = jit_templates::kJmpImmHelper,
+            .patches =
+                {
+                    JitPage::Patch{.offset = 3, .size = 8, .value = target},
+                },
+            .call_offset = 23,
+            .cpu_offset = 13,
+            .helper = JitHelper::kJmp,
+        };
+    }
+    // jcc: taken/fall patched; the helper evaluates the guest condition.
+    if (insn.mnemonic == Mnemonic::kJcc && insn.addr_size == 8 && !insn.has_lock &&
+        insn.ops[0].kind == Operand::Kind::kImm) {
+        const uint64_t fall = rip + insn.length;
+        const uint64_t taken = fall + static_cast<uint64_t>(insn.ops[0].disp);
+        const auto cc = static_cast<uint64_t>(insn.cc);
+        return TranslatedInsn{
+            .code = jit_templates::kJccHelper,
+            .patches =
+                {
+                    JitPage::Patch{.offset = 3, .size = 8, .value = taken},
+                    JitPage::Patch{.offset = 13, .size = 8, .value = fall},
+                    JitPage::Patch{.offset = 22, .size = 4, .value = cc},
+                },
+            .call_offset = 38,
+            .cpu_offset = 28,
+            .helper = JitHelper::kJcc,
+        };
+    }
     // leave: rsp=rbp then pop rbp; helper-faulted reads latch like stores.
     if (insn.mnemonic == Mnemonic::kLeave && insn.addr_size == 8 && !insn.has_lock &&
         insn.ops[0].kind != Operand::Kind::kImm) {

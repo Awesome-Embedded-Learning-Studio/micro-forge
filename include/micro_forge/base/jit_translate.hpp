@@ -43,6 +43,8 @@ enum class JitHelper : std::uint8_t {
     kStoreXmm, ///< movups-family store: xmm -> [base+disp]
     kRet,      ///< ret C3: pop rip into the block exit target
     kCall,     ///< call: push ret addr, jump via the block exit target
+    kJmp,      ///< jmp imm: record the exit target
+    kJcc,      ///< jcc: pick taken/fallthrough by guest flags
     kLeave,    ///< leave: rsp=rbp then pop rbp
     kPushImm,  ///< push imm64 (pre-extended)
     kPopReg,   ///< pop reg64: stack read via rsp
