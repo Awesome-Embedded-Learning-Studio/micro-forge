@@ -17,13 +17,17 @@ ExitStatus Cpu::execute_syscall(uint64_t rip_after) {
         if (!lstar.has_value() || *lstar == 0) {
             latch(ExitStatus{
                 .kind = ExitStatus::Kind::kUnsupported,
-                .code = rip_,
-                .rip = rip_,
+                .code = insn_rip_,
+                .rip = insn_rip_,
                 .detail = regs_[index_of(Reg::kRax)],
             });
             return exit_;
         }
-        regs_[index_of(Reg::kRcx)] = rip_ + 2U; // SYSCALL is two bytes
+        // insn_rip_ is the SYSCALL start in both the cold path (execute_insn
+        // runs before rip_ advances) and the decode-cache hit path (cpu.cpp
+        // moves rip_ to rip_after before execute_cached), so it - not rip_ -
+        // is the RCX contract: return address = syscall + 2.
+        regs_[index_of(Reg::kRcx)] = insn_rip_ + 2U;
         regs_[index_of(Reg::kR11)] = rflags();
         set_rflags(rflags() & ~0x300ULL); // clear IF | TF
         rip_ = *lstar;

@@ -209,6 +209,34 @@ TEST_F(CpuTest, UnmappedLoadReportsFaultAddress) {
     EXPECT_EQ(0xDEAD0000ULL, cpu_.exit_status().code);
 }
 
+TEST_F(CpuTest, SyscallRcxIsStableOnDecodeCacheHits) {
+    // Cinux glibc root cause (2026-11-11): the decode-cache hit path has
+    // already advanced rip_ past the SYSCALL when the handler runs, so
+    // RCX = rip_ + 2 returned syscall+4 there while the cold path returned
+    // syscall+2. libc __brk then derailed into the middle of the next
+    // instruction's displacement on every cached call.
+    cpu_.configure_caches(ram_.size());
+    constexpr uint64_t k_lstar = kCodeBase + 0x100U;
+    const uint8_t stub[] = {0x0F, 0x35, 0xF4}; // sysretq; hlt
+    std::ranges::copy(stub, ram_.data() + k_lstar);
+    load({0x0F, 0x05, 0xF4}); // syscall; hlt
+    // load() resets the core, so the user entry state goes in after it.
+    ASSERT_TRUE(cpu_.write_msr(0xC0000082U, k_lstar));
+    cpu_.set_cpl(3);
+    (void)cpu_.step(); // cold decode: RCX must be syscall + 2
+    EXPECT_EQ(ExitStatus::Kind::kRunning, cpu_.exit_status().kind);
+    EXPECT_EQ(kCodeBase + 2U, cpu_.gpr(Reg::kRcx));
+    EXPECT_EQ(k_lstar, cpu_.rip());
+    // A real flow re-enters user mode via SYSRET; the hook stands in for
+    // it so the cached SYSCALL runs at CPL 3 like the original caller.
+    cpu_.set_cpl(3);
+    cpu_.set_rip(kCodeBase);
+    (void)cpu_.step(); // cache hit: same RCX contract
+    EXPECT_EQ(kCodeBase + 2U, cpu_.gpr(Reg::kRcx));
+    EXPECT_EQ(k_lstar, cpu_.rip());
+    EXPECT_EQ(cpu_.decode_cache_stats().hits, 1U);
+}
+
 TEST_F(CpuTest, SyscallExitCarriesRdi) {
     load({
         0xB8,

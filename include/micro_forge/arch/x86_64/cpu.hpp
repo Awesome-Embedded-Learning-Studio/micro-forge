@@ -252,7 +252,10 @@ public:
     /// @brief Interrupt-enable state (IF).
     [[nodiscard]] bool interrupts_enabled() const { return if_; }
     /// @brief Current privilege level (0 = kernel, 3 = user).
-    [[nodiscard]] unsigned cpl() const { return cpl_; }    /// @brief Reads one control register (0=CR0, 1=CR2, 2=CR3, 3=CR4).
+    [[nodiscard]] unsigned cpl() const { return cpl_; }
+    /// @brief Test hook: enter SYSCALL/SYSRET user-mode tests at CPL 3.
+    void set_cpl(unsigned level) { cpl_ = level & 3U; }
+    /// @brief Reads one control register (0=CR0, 1=CR2, 2=CR3, 3=CR4).
     [[nodiscard]] uint64_t control_register(unsigned index) const { return cr_[index]; }
     /// @brief Writes one control register by enumeration offset.
     void set_control_register(unsigned index, uint64_t value) { cr_[index] = value; }
