@@ -218,6 +218,12 @@ public:
     void jit_sub(uint64_t slot, uint64_t value, unsigned width);
     /// @brief JIT AND: mask GPR[slot/8] with value, updating flags.
     void jit_and(uint64_t slot, uint64_t value, unsigned width);
+    /// @brief CMOV helper: writes src into the slot when the condition holds.
+    /// @param[in] slot Byte offset of the destination register slot in regs_.
+    /// @param[in] src_val Source value, already loaded at the right width.
+    /// @param[in] cc Hardware condition code 0-15.
+    /// @param[in] width Operand width in bytes; narrow writes keep the high bytes.
+    void jit_cmov(uint64_t slot, uint64_t src_val, unsigned cc, unsigned width);
     /// @brief JIT OR: combine GPR[slot/8] with value, updating flags.
     void jit_or(uint64_t slot, uint64_t value, unsigned width);
     /// @brief JIT XOR: xor GPR[slot/8] with value, updating flags.
@@ -397,24 +403,8 @@ private:
     /// GPR write at sub-register width (32-bit writes zero-extend).
     void write_gpr(Reg reg, unsigned width, bool rex, uint64_t value);
     /// Evaluates a condition code against the flags.
-    [[nodiscard]] bool condition(Cc cc) const;
-    /// Sign bit mask helper for @p width bytes.
-    [[nodiscard]] static uint64_t sign_bit(unsigned width) {
-        return kernel::bit::mask_bit((8U * width) - 1U);
-    }
-    /// Full width mask for @p width bytes.
-    [[nodiscard]] static uint64_t width_mask(unsigned width) {
-        return kernel::bit::ones(8U * width);
-    }
-    /// x86 shift-count mask: 6 bits at 64-bit operands, else 5 bits.
-    [[nodiscard]] static uint64_t shift_count_mask(unsigned width) {
-        return width == 8U ? 0x3FULL : 0x1FULL;
-    }
-    /// Sign-extends @p value from @p width bytes to 64 bits.
-    [[nodiscard]] static uint64_t sign_extend(uint64_t value, unsigned width) {
-        return kernel::bit::sign_extend(value, 8U * width);
-    }
-    /// Parity of the low byte (x86 PF: 1 when an even number of set bits).
+    [[nodiscard]] bool
+    condition(Cc cc) const; /// Parity of the low byte (x86 PF: 1 when an even number of set bits).
     [[nodiscard]] static bool parity_of(uint64_t value);
     /// Sets zf/sf/pf from @p result at @p width.
     void set_zsp(uint64_t result, unsigned width);

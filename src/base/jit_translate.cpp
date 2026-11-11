@@ -255,6 +255,29 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
             return lowered;
         }
     }
+    // cmovcc reg,reg: the helper reads the live Cpu flags and keeps the old
+    // destination when the condition fails.
+    if (insn.mnemonic == Mnemonic::kCmovcc && *slot % sizeof(uint64_t) == 0 &&
+        insn.ops[1].kind == Operand::Kind::kReg && insn.ops[1].size == insn.ops[0].size &&
+        !insn.has_lock) {
+        const auto src_slot = reg_slot_offset(insn.ops[1].reg);
+        if (src_slot.has_value()) {
+            return TranslatedInsn{
+                .code = jit_templates::kCmovRegHelper,
+                .patches =
+                    {
+                        {.offset = 2, .size = 4, .value = *slot},
+                        {.offset = 10, .size = 4, .value = *src_slot},
+                        {.offset = 15, .size = 4, .value = static_cast<std::uint32_t>(insn.cc)},
+                        {.offset = 21, .size = 4, .value = insn.ops[0].size},
+                    },
+                .call_offset = 37,
+                .cpu_offset = 27,
+                .helper = JitHelper::kCmov,
+            };
+        }
+        return std::nullopt;
+    }
     // mov reg,[base+index*scale+disp]: compute vaddr before calling the helper.
     if (insn.mnemonic == Mnemonic::kMov && insn.ops[0].kind == Operand::Kind::kReg &&
         insn.ops[1].kind == Operand::Kind::kMem && insn.ops[1].has_base &&

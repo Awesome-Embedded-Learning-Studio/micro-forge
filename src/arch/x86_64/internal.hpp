@@ -17,6 +17,25 @@
 #include "micro_forge/arch/x86_64/decoded.hpp"
 #include "micro_forge/kernel/bit.hpp"
 
+namespace width_util {
+/// Sign bit (as a mask) of a width-byte operand.
+[[nodiscard]] inline uint64_t sign_bit(unsigned width) {
+    return micro_forge::kernel::bit::mask_bit((8U * width) - 1U);
+}
+/// Full width mask for width bytes.
+[[nodiscard]] inline uint64_t width_mask(unsigned width) {
+    return micro_forge::kernel::bit::ones(8U * width);
+}
+/// x86 shift-count mask: 6 bits at 64-bit operands, else 5 bits.
+[[nodiscard]] inline uint64_t shift_count_mask(unsigned width) {
+    return width == 8U ? 0x3FULL : 0x1FULL;
+}
+/// Sign-extends value from width bytes to 64 bits.
+[[nodiscard]] inline uint64_t sign_extend(uint64_t value, unsigned width) {
+    return micro_forge::kernel::bit::sign_extend(value, 8U * width);
+}
+} // namespace width_util
+
 namespace micro_forge::arch::x86_64::detail {
 
 /// ModRM/SIB field locations (SDM names): the positions are written once

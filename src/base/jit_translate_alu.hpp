@@ -31,8 +31,8 @@ namespace micro_forge::base::detail {
  * @param helper helper id from alu_helper().
  * @return Lowered insn, or nullopt when no template fits.
  */
-[[nodiscard]] std::optional<TranslatedInsn>
-translate_alu(const arch::x86_64::DecodedInsn& insn, std::size_t slot, JitHelper helper);
+[[nodiscard]] std::optional<TranslatedInsn> translate_alu(const arch::x86_64::DecodedInsn& insn,
+                                                          std::size_t slot, JitHelper helper);
 
 } // namespace micro_forge::base::detail
 

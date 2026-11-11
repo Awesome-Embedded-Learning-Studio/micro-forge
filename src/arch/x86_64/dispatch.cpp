@@ -6,6 +6,7 @@
 
 #include "micro_forge/arch/x86_64/cpu.hpp"
 
+#include "internal.hpp"
 #include <bit>
 
 namespace micro_forge::arch::x86_64 {
@@ -19,8 +20,7 @@ ExitStatus Cpu::execute(const DecodedInsn& insn, uint64_t rip_after) {
     uint64_t va = 0;
     uint64_t vb = 0;
 
-    // SSE/SSE2 subset routes to its own executor (43 mnemonics); the
-    // switch below owns everything else.
+    // SSE/SSE2 subset (43 mnemonics) has its own executor; the switch owns the rest.
     if (is_sse_mnemonic(insn.mnemonic)) {
         return execute_sse(insn, rip_after);
     }
@@ -69,7 +69,7 @@ ExitStatus Cpu::execute(const DecodedInsn& insn, uint64_t rip_after) {
         if (!read_operand(insn, b, rip_after, vb)) {
             return exit_;
         }
-        vb = sign_extend(vb, b.size);
+        vb = width_util::sign_extend(vb, b.size);
         if (!write_operand(insn, a, vb)) {
             return exit_;
         }
@@ -96,7 +96,7 @@ ExitStatus Cpu::execute(const DecodedInsn& insn, uint64_t rip_after) {
         }
         // 64-bit push of an imm32 already arrived sign-extended from the
         // decoder (kSz4 under REX.W); 16-bit pushes mask in place.
-        if (!push_value(va & width_mask(osz), osz)) {
+        if (!push_value(va & width_util::width_mask(osz), osz)) {
             return exit_;
         }
         break;
@@ -123,12 +123,15 @@ ExitStatus Cpu::execute(const DecodedInsn& insn, uint64_t rip_after) {
     case Mnemonic::kCwde:
     case Mnemonic::kCdqe:
         // ax <- sext(al) / eax <- sext(ax) / rax <- sext(eax).
-        write_gpr(Reg::kRax, osz, true, sign_extend(read_gpr(Reg::kRax, osz / 2U, true), osz / 2U));
+        write_gpr(Reg::kRax, osz, true,
+                  width_util::sign_extend(read_gpr(Reg::kRax, osz / 2U, true), osz / 2U));
         break;
     case Mnemonic::kCdq:
     case Mnemonic::kCqo:
         write_gpr(Reg::kRdx, osz, true,
-                  (read_gpr(Reg::kRax, osz, true) & sign_bit(osz)) != 0 ? width_mask(osz) : 0);
+                  (read_gpr(Reg::kRax, osz, true) & width_util::sign_bit(osz)) != 0
+                      ? width_util::width_mask(osz)
+                      : 0);
         break;
     case Mnemonic::kBswap:
         if (!read_operand(insn, a, rip_after, va)) {
@@ -137,7 +140,7 @@ ExitStatus Cpu::execute(const DecodedInsn& insn, uint64_t rip_after) {
         // Mask to the operand width, byte-swap the whole 64-bit lane, then shift
         // the swapped bytes back down: byteswap alone lands the answer in the
         // high bits of the register-width word.
-        va = std::byteswap(va & width_mask(osz)) >> (64U - (osz * 8U));
+        va = std::byteswap(va & width_util::width_mask(osz)) >> (64U - (osz * 8U));
         if (!write_operand(insn, a, va)) {
             return exit_;
         }
@@ -219,7 +222,7 @@ ExitStatus Cpu::execute(const DecodedInsn& insn, uint64_t rip_after) {
         if (!read_operand(insn, a, rip_after, va)) {
             return exit_;
         }
-        if (!write_operand(insn, a, ~va & width_mask(a.size))) {
+        if (!write_operand(insn, a, ~va & width_util::width_mask(a.size))) {
             return exit_;
         }
         break;
@@ -233,7 +236,7 @@ ExitStatus Cpu::execute(const DecodedInsn& insn, uint64_t rip_after) {
         if (!read_operand(insn, a, rip_after, va) || !read_operand(insn, b, rip_after, vb)) {
             return exit_;
         }
-        const uint64_t eff = vb & shift_count_mask(osz);
+        const uint64_t eff = vb & width_util::shift_count_mask(osz);
         if (eff != 0 &&
             (!alu_shift(insn.mnemonic, va, a.size, vb) || !write_operand(insn, a, va))) {
             return exit_;
@@ -248,23 +251,23 @@ ExitStatus Cpu::execute(const DecodedInsn& insn, uint64_t rip_after) {
             return exit_;
         }
         const unsigned bits = 8U * osz;
-        const uint64_t eff = count & shift_count_mask(osz);
+        const uint64_t eff = count & width_util::shift_count_mask(osz);
         // Counts at or above the operand width leave the result
         // architecturally undefined; hardware shifts by width-1 and we
         // clamp the same way so `bits - eff` cannot underflow (the
         // batch-4 review found the 16-bit form reaching here with 17-31).
         const auto eff_c = static_cast<unsigned>(eff < bits ? eff : bits - 1U);
         if (eff_c != 0) {
-            const uint64_t mask = width_mask(osz);
+            const uint64_t mask = width_util::width_mask(osz);
             uint64_t result = 0;
             if (insn.mnemonic == Mnemonic::kShld) {
                 result = ((va << eff_c) | (vb >> (bits - eff_c))) & mask;
                 cf_ = ((va >> (bits - eff_c)) & kernel::bit::mask_bit(0)) != 0;
-                of_ = cf_ != ((result & sign_bit(osz)) != 0);
+                of_ = cf_ != ((result & width_util::sign_bit(osz)) != 0);
             } else {
                 result = ((va >> eff_c) | (vb << (bits - eff_c))) & mask;
                 cf_ = ((va >> (eff_c - 1U)) & kernel::bit::mask_bit(0)) != 0;
-                of_ = (va & sign_bit(osz)) != 0;
+                of_ = (va & width_util::sign_bit(osz)) != 0;
             }
             set_zsp(result, osz);
             if (!write_operand(insn, a, result)) {
@@ -313,7 +316,7 @@ ExitStatus Cpu::execute(const DecodedInsn& insn, uint64_t rip_after) {
             // The byte offset is the index arithmetic-shifted right by 3;
             // shifting the sign-extended word as UNSIGNED is NOT the same
             // (zero fill vs one fill), so the signed shift is spelled out.
-            const auto index = static_cast<int64_t>(sign_extend(vb, index_width));
+            const auto index = static_cast<int64_t>(width_util::sign_extend(vb, index_width));
             const uint64_t addr =
                 effective_address(a, rip_after) +
                 static_cast<uint64_t>(index >> 3); // NOLINT(bugprone-signed-bitwise)
@@ -343,7 +346,7 @@ ExitStatus Cpu::execute(const DecodedInsn& insn, uint64_t rip_after) {
         if (!read_operand(insn, b, rip_after, vb)) {
             return exit_;
         }
-        vb &= width_mask(osz);
+        vb &= width_util::width_mask(osz);
         if (vb == 0) {
             zf_ = true; // destination is architecturally undefined
             break;
@@ -362,7 +365,7 @@ ExitStatus Cpu::execute(const DecodedInsn& insn, uint64_t rip_after) {
         if (!read_operand(insn, b, rip_after, vb)) {
             return exit_;
         }
-        vb &= width_mask(osz);
+        vb &= width_util::width_mask(osz);
         const uint64_t bits = 8ULL * osz;
         uint64_t result = bits;
         if (vb != 0) {

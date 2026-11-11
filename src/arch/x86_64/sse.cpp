@@ -16,6 +16,7 @@
 
 #include "arch/x86_64/sse_ops.hpp"
 
+#include "internal.hpp"
 #include "micro_forge/kernel/le_access.hpp"
 
 namespace micro_forge::arch::x86_64 {
@@ -76,12 +77,12 @@ ExitStatus Cpu::execute_sse(const DecodedInsn& insn, uint64_t rip_after) {
             if (!read_operand(insn, b, rip_after, lane)) {
                 return exit_;
             }
-            if (!write_vec(a, Vec128{lane & width_mask(width), 0})) {
+            if (!write_vec(a, Vec128{lane & width_util::width_mask(width), 0})) {
                 return exit_;
             }
         } else {
             const Vec128 v = xmm(b.reg);
-            if (!write_operand(insn, a, v[0] & width_mask(width))) {
+            if (!write_operand(insn, a, v[0] & width_util::width_mask(width))) {
                 return exit_;
             }
         }

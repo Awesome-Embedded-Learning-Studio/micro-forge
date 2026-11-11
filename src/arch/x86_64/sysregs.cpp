@@ -6,6 +6,7 @@
 
 #include "micro_forge/arch/x86_64/cpu.hpp"
 
+#include "internal.hpp"
 #include <algorithm>
 #include <array>
 
@@ -149,7 +150,7 @@ ExitStatus Cpu::execute_system(const DecodedInsn& insn, uint64_t rip_after) {
     uint64_t va = 0;
     switch (insn.mnemonic) {
     case Mnemonic::kPushfq:
-        if (!push_value(rflags() & width_mask(insn.opsize), insn.opsize)) {
+        if (!push_value(rflags() & width_util::width_mask(insn.opsize), insn.opsize)) {
             return exit_;
         }
         break;
@@ -269,7 +270,7 @@ ExitStatus Cpu::execute_system(const DecodedInsn& insn, uint64_t rip_after) {
         z = (z ^ (z >> 30U)) * 0xBF58476D1CE4E5B9ULL;
         z = (z ^ (z >> 27U)) * 0x94D049BB133111EBULL;
         z = z ^ (z >> 31U);
-        if (!write_operand(insn, a, z & width_mask(a.size))) {
+        if (!write_operand(insn, a, z & width_util::width_mask(a.size))) {
             return exit_;
         }
         cf_ = true;

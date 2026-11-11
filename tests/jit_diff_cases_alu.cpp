@@ -1,0 +1,203 @@
+// NOLINTBEGIN -- test scaffolding: fork/setenv/env capture are deliberate
+/// @file jit_diff_cases_alu.cpp
+/// @brief ALU-family case table split from jit_diff_cases.cpp (file budget).
+
+#include "jit_diff_cases.hpp"
+
+namespace jit_diff_cases {
+
+using namespace jit_diff;
+
+std::vector<DiffCase> alu_cases() {
+    std::vector<DiffCase> cases;
+    constexpr std::array names = {"Cmp", "Sub", "Test", "And", "Or", "Xor"};
+    constexpr std::array<uint8_t, 6> opcodes = {0x39, 0x29, 0x85, 0x21, 0x09, 0x31};
+    constexpr std::array<uint8_t, 6> extensions = {7, 5, 0, 4, 1, 6};
+    for (const unsigned width : {4U, 8U}) {
+        const uint64_t sign = uint64_t{1} << ((width * 8) - 1);
+        const uint64_t mask = width == 4 ? UINT32_MAX : UINT64_MAX;
+        const uint64_t dirty = width == 4 ? 0xABCDEF1200000000ULL : 0;
+        for (unsigned op = 0; op < names.size(); ++op) {
+            // Explicit expected results/flags, independent of the shared ALU.
+            // Each row is lhs, rhs, masked result, CF/PF/AF/ZF/SF/OF.
+            std::vector<std::array<uint64_t, 4>> samples;
+            if (op < 2) {
+                samples = {
+                    {0, 0x3F, mask - 62, 0x91},
+                    {sign, 1, sign - 1, 0x814},
+                    {sign - 1, mask, sign, 0x885},
+                    {7, 7, 0, 0x44},
+                    {0, mask, 1, 0x11},
+                    {mask, 1, mask - 1, 0x80},
+                };
+            } else if (op < 4) {
+                samples = {
+                    {mask, 0x3F, 0x3F, 4},
+                    {mask, 0, 0, 0x44},
+                    {sign, mask, sign, 0x84},
+                    {3, 1, 1, 0},
+                };
+            } else if (op == 4) {
+                samples = {
+                    {0, 3, 3, 4},
+                    {0, 0, 0, 0x44},
+                    {sign, 1, static_cast<uint64_t>(sign) | 1U, 0x80},
+                    {0, mask, mask, 0x84},
+                };
+            } else {
+                samples = {
+                    {3, 3, 0, 0x44},
+                    {0, 1, 1, 0},
+                    {sign, mask, sign - 1, 4},
+                    {0, mask, mask, 0x84},
+                };
+            }
+            const bool writes = op != 0 && op != 2;
+            for (unsigned row = 0; row < samples.size(); ++row) {
+                const auto& s = samples[row];
+                for (const bool immediate : {false, true}) {
+                    std::vector<uint8_t> code = {
+                        static_cast<uint8_t>((width == 4 ? 0x40U : 0x48U) | (immediate ? 1U : 5U)),
+                        [immediate, op, &opcodes] {
+                            if (!immediate) {
+                                return opcodes[op];
+                            }
+                            return op == 2 ? uint8_t{0xF7} : uint8_t{0x81};
+                        }(),
+                        immediate ? static_cast<uint8_t>(
+                                        0xC1U | (static_cast<unsigned>(extensions[op]) << 3U))
+                                  : uint8_t{0xD1},
+                    }; // r9,r10
+                    if (immediate) {
+                        for (unsigned byte = 0; byte < 4; ++byte) {
+                            code.push_back(static_cast<uint8_t>(s[1] >> (byte * 8)));
+                        }
+                    }
+                    auto const name = std::string(names[op]) + std::to_string(width * 8) +
+                                      (immediate ? "Imm" : "Reg") + std::to_string(row);
+                    DiffCase test{
+                        .name = name,
+                        .code = std::move(code),
+                        .initial = dirty | s[0],
+                        .expected = writes ? s[2] : dirty | s[0],
+                        .flags = s[3],
+                    };
+                    test.source = s[1] | (width == 4 ? 0x7654321000000000ULL : 0);
+                    cases.push_back(std::move(test));
+                }
+            }
+            // dst==src must read the old value before writing/zero-extending.
+            DiffCase alias{
+                .name = std::string(names[op]) + std::to_string(width * 8) + "Alias",
+                .code = {static_cast<uint8_t>(width == 4 ? 0x45 : 0x4D), opcodes[op], 0xC9},
+                .initial = dirty | 3U,
+                .expected =
+                    writes
+                        ? uint64_t{op == 1 || op == 5 ? 0U : 3U}
+                        : (dirty | 3U), // NOLINT(readability-avoid-nested-conditional-operator) //
+                                        // NOLINT(readability-avoid-nested-conditional-operator)
+                .flags = op < 2 || op == 5 ? 0x44U : 4U,
+            };
+            alias.source_reg = alias.result_reg;
+            alias.source = alias.initial;
+            cases.push_back(std::move(alias));
+        }
+        // cmp r9,[r12+disp] and all indexed scales; neither writes the slot.
+        for (unsigned form = 0; form < 5; ++form) {
+            const uint8_t rex = width == 4 ? 0x45 : 0x4D;
+            DiffCase test{
+                .name = "CmpMem" + std::to_string(width * 8) + "Form" + std::to_string(form),
+                .code = {rex, 0x3B, 0x4C, 0x24, 0xB8},
+                .initial = dirty | 0x10U,
+                .expected = dirty | 0x10U,
+                .flags = 0x91,
+            };
+            test.memory_initial = width == 4 ? 0x765432100000004FULL : 0x4F;
+            test.memory_expected = test.memory_initial;
+            if (form != 0) {
+                test.code[3] = static_cast<uint8_t>(((form - 1U) << 6U) | 0x0CU);
+                test.index = 3;
+                test.base -= 3U << (form - 1);
+            }
+            cases.push_back(std::move(test));
+        }
+    }
+    // imm8 sign extension, full-width positive dword immediate, hot cmp form.
+    cases.push_back({
+        .name = "Sub32NegativeImm8",
+        .code = {0x41, 0x83, 0xE9, 0xFF},
+        .initial = 0xABCDEF1200000000ULL,
+        .expected = 1,
+        .flags = 0x11,
+    });
+    cases.push_back({
+        .name = "Sub64NegativeImm8",
+        .code = {0x49, 0x83, 0xE9, 0xFF},
+        .initial = 0,
+        .expected = 1,
+        .flags = 0x11,
+    });
+    cases.push_back({
+        .name = "Cmp32SignBitImm",
+        .code = {0x41, 0x81, 0xF9, 0, 0, 0, 0x80},
+        .initial = 0xABCDEF1200000000ULL,
+        .expected = 0xABCDEF1200000000ULL,
+        .flags = 0x885,
+    });
+    DiffCase hot{
+        .name = "HotCmpEdxMem",
+        .code = {0x3B, 0x57, 0x3C},
+        .initial = UINT64_MAX,
+        .expected = UINT64_MAX,
+        .flags = 0x84,
+    };
+    hot.result_reg = Reg::kRdx;
+    hot.base_reg = Reg::kRdi;
+    hot.base = kData - 0x3C;
+    hot.memory_initial = 0;
+    hot.memory_expected = 0;
+    cases.push_back(std::move(hot));
+    auto loop = indexed_case(
+        "HotLoopThroughCmp",
+        {0x8B, 0x30, 0x83, 0xC2, 1, 0x89, 0x34, 0x88, 0x48, 0x83, 0xC0, 4, 0x3B, 0x57, 0x3C}, false,
+        kData - 0x3C, 0);
+    loop.result_reg = Reg::kRax;
+    loop.base_reg = Reg::kRdi;
+    loop.source_reg = Reg::kRdx;
+    loop.initial = kData;
+    loop.source = UINT64_MAX;
+    loop.expected = kData + 4;
+    loop.flags = 0x85;
+    loop.jit_insns = 5;
+    cases.push_back(std::move(loop));
+    for (const bool wide : {false, true}) {
+        DiffCase alias{
+            .name = wide ? "CmpMem64BaseAlias" : "CmpMem32BaseAlias",
+            .code = {static_cast<uint8_t>(wide ? 0x48 : 0x40), 0x3B, 0x1B},
+            .initial = kData,
+            .expected = kData,
+            .flags = 0x44,
+        }; // cmp rbx,[rbx]
+        alias.result_reg = alias.base_reg = Reg::kRbx;
+        alias.base = kData;
+        alias.memory_initial = kData | (wide ? 0 : 0xABCDEF1200000000ULL);
+        alias.memory_expected = alias.memory_initial;
+        cases.push_back(std::move(alias));
+    }
+    DiffCase negative{
+        .name = "CmpMemNegativeAliasedIndex",
+        .code = {0x48, 0x3B, 0x04, 0x03},
+        .initial = UINT64_MAX - 2,
+        .expected = UINT64_MAX - 2,
+        .flags = 0x84,
+    };
+    negative.result_reg = negative.index_reg = Reg::kRax;
+    negative.base_reg = Reg::kRbx;
+    negative.base = kData + 3;
+    negative.index = UINT64_MAX - 2;
+    negative.memory_initial = 1;
+    negative.memory_expected = 1;
+    cases.push_back(std::move(negative));
+    return cases;
+}
+} // namespace jit_diff_cases

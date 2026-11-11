@@ -16,6 +16,7 @@
 
 #include "micro_forge/arch/x86_64/cpu.hpp"
 
+#include "internal.hpp"
 #include "micro_forge/arch/x86_64/decoder.hpp"
 #include "micro_forge/arch/x86_64/mul_wide.hpp"
 
@@ -34,6 +35,8 @@ extern "C" void mf_jit_or(void* cpu, uint64_t slot, uint64_t value, unsigned wid
 extern "C" void mf_jit_xor(void* cpu, uint64_t slot, uint64_t value, unsigned width);
 extern "C" void mf_jit_imul(void* cpu, uint64_t slot, uint64_t value, unsigned width);
 extern "C" void mf_jit_cmp_mem(void* cpu, uint64_t vaddr, uint64_t slot, unsigned width);
+extern "C" void mf_jit_cmov(void* cpu, uint64_t slot, uint64_t src_val, unsigned cc,
+                            unsigned width);
 
 std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
     constexpr std::size_t max_insns = 64;
@@ -150,6 +153,9 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
             case base::JitHelper::kCmpMem:
                 helper = reinterpret_cast<std::uint64_t>(&mf_jit_cmp_mem);
                 break;
+            case base::JitHelper::kCmov:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_cmov);
+                break;
             default:
                 return fail_compile();
             }
@@ -212,6 +218,11 @@ extern "C" void mf_jit_sub(void* cpu, uint64_t slot, uint64_t value, unsigned wi
 
 extern "C" void mf_jit_and(void* cpu, uint64_t slot, uint64_t value, unsigned width) {
     static_cast<Cpu*>(cpu)->jit_and(slot, value, width);
+}
+
+extern "C" void mf_jit_cmov(void* cpu, uint64_t slot, uint64_t src_val, unsigned cc,
+                            unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_cmov(slot, src_val, cc, width);
 }
 
 extern "C" void mf_jit_or(void* cpu, uint64_t slot, uint64_t value, unsigned width) {
@@ -287,6 +298,14 @@ void Cpu::jit_and(uint64_t slot, uint64_t value, unsigned width) {
     dst = merge_width(dst, alu_logic(dst & value, width), width);
 }
 
+void Cpu::jit_cmov(uint64_t slot, uint64_t src_val, unsigned cc, unsigned width) {
+    if (!condition(static_cast<Cc>(cc))) {
+        return; // condition false: destination keeps its old value
+    }
+    auto& dst = regs_[slot / 8U];
+    dst = merge_width(dst, src_val & width_util::width_mask(width), width);
+}
+
 void Cpu::jit_or(uint64_t slot, uint64_t value, unsigned width) {
     auto& dst = regs_[slot / 8U];
     dst = merge_width(dst, alu_logic(dst | value, width), width);
@@ -302,12 +321,13 @@ void Cpu::jit_xor(uint64_t slot, uint64_t value, unsigned width) {
 // not fit its half. The wide-multiply primitives come from mul_wide.hpp, the
 // same ones the interpreter uses, so the flags are bit-identical.
 void Cpu::jit_imul(uint64_t slot, uint64_t value, unsigned width) {
-    const auto lhs = static_cast<int64_t>(sign_extend(regs_[slot / 8U], width));
-    const auto rhs = static_cast<int64_t>(sign_extend(value, width));
+    const auto lhs = static_cast<int64_t>(width_util::sign_extend(regs_[slot / 8U], width));
+    const auto rhs = static_cast<int64_t>(width_util::sign_extend(value, width));
     const uint64_t low = static_cast<uint64_t>(lhs) * static_cast<uint64_t>(rhs);
-    const uint64_t masked = low & width_mask(width);
-    const bool fits = width == 8U ? imul_high(lhs, rhs) == sign_fill_of(low)
-                                  : static_cast<int64_t>(sign_extend(masked, width)) == lhs * rhs;
+    const uint64_t masked = low & width_util::width_mask(width);
+    const bool fits =
+        width == 8U ? imul_high(lhs, rhs) == sign_fill_of(low)
+                    : static_cast<int64_t>(width_util::sign_extend(masked, width)) == lhs * rhs;
     regs_[slot / 8U] = masked;
     cf_ = of_ = !fits;
 }

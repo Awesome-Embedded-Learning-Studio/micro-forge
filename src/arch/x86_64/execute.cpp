@@ -8,6 +8,7 @@
 
 #include "micro_forge/kernel/bit.hpp"
 
+#include "internal.hpp"
 #include <bit>
 
 namespace micro_forge::arch::x86_64 {
@@ -131,8 +132,8 @@ bool Cpu::parity_of(uint64_t value) {
 }
 
 void Cpu::set_zsp(uint64_t result, unsigned width) {
-    zf_ = (result & width_mask(width)) == 0;
-    sf_ = (result & sign_bit(width)) != 0;
+    zf_ = (result & width_util::width_mask(width)) == 0;
+    sf_ = (result & width_util::sign_bit(width)) != 0;
     pf_ = parity_of(result);
 }
 
@@ -176,7 +177,7 @@ bool Cpu::condition(Cc cc) const {
 }
 
 uint64_t Cpu::alu_add(uint64_t a, uint64_t b, unsigned width, bool carry_in) {
-    const uint64_t mask = width_mask(width);
+    const uint64_t mask = width_util::width_mask(width);
     a &= mask;
     b &= mask;
     const uint64_t sum1 = a + b;
@@ -188,13 +189,13 @@ uint64_t Cpu::alu_add(uint64_t a, uint64_t b, unsigned width, bool carry_in) {
     // width 8 the addition itself wraps the uint64 domain.
     cf_ = (width < 8U) ? ((sum2 >> (8U * width)) != 0) : (carry1 || carry2);
     af_ = ((a ^ b ^ sum2) & 0x10ULL) != 0; // carry from bit 3 into bit 4
-    of_ = ((~(a ^ b)) & (a ^ sum2) & sign_bit(width)) != 0;
+    of_ = ((~(a ^ b)) & (a ^ sum2) & width_util::sign_bit(width)) != 0;
     set_zsp(result, width);
     return result;
 }
 
 uint64_t Cpu::alu_sub(uint64_t a, uint64_t b, unsigned width, bool borrow_in) {
-    const uint64_t mask = width_mask(width);
+    const uint64_t mask = width_util::width_mask(width);
     a &= mask;
     b &= mask;
     const uint64_t diff1 = a - b;
@@ -204,13 +205,13 @@ uint64_t Cpu::alu_sub(uint64_t a, uint64_t b, unsigned width, bool borrow_in) {
     const uint64_t result = diff2 & mask;
     cf_ = borrow1 || borrow2;
     af_ = (((a ^ b ^ diff2) >> 3U) & 1ULL) != 0;
-    of_ = ((a ^ b) & (a ^ diff2) & sign_bit(width)) != 0;
+    of_ = ((a ^ b) & (a ^ diff2) & width_util::sign_bit(width)) != 0;
     set_zsp(result, width);
     return result;
 }
 
 uint64_t Cpu::alu_logic(uint64_t result, unsigned width) {
-    result &= width_mask(width);
+    result &= width_util::width_mask(width);
     cf_ = false;
     of_ = false;
     af_ = false;
@@ -220,7 +221,7 @@ uint64_t Cpu::alu_logic(uint64_t result, unsigned width) {
 
 bool Cpu::alu_shift(Mnemonic mn, uint64_t& value, unsigned width, uint64_t raw_count) {
     const unsigned bits = 8U * width;
-    const uint64_t mask = width_mask(width);
+    const uint64_t mask = width_util::width_mask(width);
     const uint64_t count = raw_count & ((width == 8U) ? 0x3FULL : 0x1FULL);
     value &= mask;
     if (count == 0) {
@@ -231,19 +232,19 @@ bool Cpu::alu_shift(Mnemonic mn, uint64_t& value, unsigned width, uint64_t raw_c
     case Mnemonic::kShl: {
         value = (count <= bits) ? ((orig << count) & mask) : 0U;
         cf_ = (count <= bits) ? (((orig << (bits - count)) & 0x1ULL) != 0) : false;
-        of_ = cf_ != ((value & sign_bit(width)) != 0);
+        of_ = cf_ != ((value & width_util::sign_bit(width)) != 0);
         set_zsp(value, width);
         break;
     }
     case Mnemonic::kShr: {
         value = (count <= bits) ? (orig >> count) : 0U;
         cf_ = (count <= bits) ? (((orig >> (count - 1U)) & 0x1ULL) != 0) : false;
-        of_ = (orig & sign_bit(width)) != 0;
+        of_ = (orig & width_util::sign_bit(width)) != 0;
         set_zsp(value, width);
         break;
     }
     case Mnemonic::kSar: {
-        const auto signed_orig = static_cast<int64_t>(sign_extend(orig, width));
+        const auto signed_orig = static_cast<int64_t>(width_util::sign_extend(orig, width));
         const auto eff = static_cast<unsigned>(count > 63U ? 63U : count);
         value = static_cast<uint64_t>(signed_orig >> eff) & mask; // NOLINT(bugprone-signed-bitwise)
         cf_ = ((static_cast<uint64_t>(signed_orig) >> (eff - 1U)) & 0x1ULL) !=
@@ -258,7 +259,7 @@ bool Cpu::alu_shift(Mnemonic mn, uint64_t& value, unsigned width, uint64_t raw_c
             value = ((orig << eff) | (orig >> (bits - eff))) & mask;
         }
         cf_ = (value & 0x1ULL) != 0;
-        of_ = cf_ != ((value & sign_bit(width)) != 0);
+        of_ = cf_ != ((value & width_util::sign_bit(width)) != 0);
         break;
     }
     case Mnemonic::kRor: {
@@ -266,8 +267,8 @@ bool Cpu::alu_shift(Mnemonic mn, uint64_t& value, unsigned width, uint64_t raw_c
         if (eff != 0) {
             value = ((orig >> eff) | (orig << (bits - eff))) & mask;
         }
-        cf_ = (value & sign_bit(width)) != 0;
-        of_ = cf_ != ((value & (sign_bit(width) >> 1U)) != 0);
+        cf_ = (value & width_util::sign_bit(width)) != 0;
+        of_ = cf_ != ((value & (width_util::sign_bit(width) >> 1U)) != 0);
         break;
     }
     case Mnemonic::kRcl:
@@ -277,18 +278,18 @@ bool Cpu::alu_shift(Mnemonic mn, uint64_t& value, unsigned width, uint64_t raw_c
         for (unsigned i = 0; i < eff; ++i) {
             const bool old_cf = cf_;
             if (mn == Mnemonic::kRcl) {
-                cf_ = (value & sign_bit(width)) != 0;
+                cf_ = (value & width_util::sign_bit(width)) != 0;
                 value = ((value << 1U) & mask) | (old_cf ? 1ULL : 0ULL);
             } else {
                 cf_ = (value & 0x1ULL) != 0;
-                value = (value >> 1U) | (old_cf ? sign_bit(width) : 0ULL);
+                value = (value >> 1U) | (old_cf ? width_util::sign_bit(width) : 0ULL);
             }
         }
         if (eff != 0) {
             if (mn == Mnemonic::kRcl) {
-                of_ = cf_ != ((value & sign_bit(width)) != 0);
+                of_ = cf_ != ((value & width_util::sign_bit(width)) != 0);
             } else {
-                of_ = cf_ != ((value & (sign_bit(width) >> 1U)) != 0);
+                of_ = cf_ != ((value & (width_util::sign_bit(width) >> 1U)) != 0);
             }
         }
         break;

@@ -10,6 +10,7 @@
 #include "micro_forge/arch/x86_64/mul_wide.hpp"
 #include "micro_forge/kernel/bit.hpp"
 
+#include "internal.hpp"
 #include <limits>
 
 namespace micro_forge::arch::x86_64 {
@@ -71,7 +72,7 @@ uint64_t mul_upper(uint64_t low, uint64_t high, unsigned width) {
 
 ExitStatus Cpu::execute_grp3(const DecodedInsn& insn, uint64_t src) {
     const unsigned width = insn.opsize;
-    const uint64_t mask = width_mask(width);
+    const uint64_t mask = width_util::width_mask(width);
     const auto fault_divide = [this] {
         latch(ExitStatus{
             .kind = ExitStatus::Kind::kFault,
@@ -109,8 +110,9 @@ ExitStatus Cpu::execute_grp3(const DecodedInsn& insn, uint64_t src) {
         break;
     }
     case Mnemonic::kImul: {
-        const auto acc = static_cast<int64_t>(sign_extend(read_gpr(Reg::kRax, width, true), width));
-        const auto val = static_cast<int64_t>(sign_extend(src, width));
+        const auto acc =
+            static_cast<int64_t>(width_util::sign_extend(read_gpr(Reg::kRax, width, true), width));
+        const auto val = static_cast<int64_t>(width_util::sign_extend(src, width));
         const int64_t high = imul_high(acc, val);
         const uint64_t low = static_cast<uint64_t>(acc) * static_cast<uint64_t>(val);
         const uint64_t low_masked = low & mask;
@@ -118,7 +120,7 @@ ExitStatus Cpu::execute_grp3(const DecodedInsn& insn, uint64_t src) {
         if (width == 8U) {
             fits = static_cast<uint64_t>(high) == static_cast<uint64_t>(sign_fill_of(low));
         } else {
-            fits = static_cast<int64_t>(sign_extend(low_masked, width)) == acc * val;
+            fits = static_cast<int64_t>(width_util::sign_extend(low_masked, width)) == acc * val;
         }
         const uint64_t upper = mul_upper(low, static_cast<uint64_t>(high), width);
         if (width == 1U) {
@@ -190,7 +192,7 @@ ExitStatus Cpu::execute_grp3(const DecodedInsn& insn, uint64_t src) {
         break;
     }
     case Mnemonic::kIdiv: {
-        const auto divisor = static_cast<int64_t>(sign_extend(src, width));
+        const auto divisor = static_cast<int64_t>(width_util::sign_extend(src, width));
         if (divisor == 0) {
             fault_divide();
             return exit_;
@@ -234,7 +236,7 @@ ExitStatus Cpu::execute_grp3(const DecodedInsn& insn, uint64_t src) {
                 (width == 4U)
                     ? (read_gpr(Reg::kRdx, 4, true) << 32U) | read_gpr(Reg::kRax, 4, true)
                     : (read_gpr(Reg::kRdx, 2, true) << 16U) | read_gpr(Reg::kRax, 2, true);
-            dividend = static_cast<int64_t>(sign_extend(raw, 2U * width));
+            dividend = static_cast<int64_t>(width_util::sign_extend(raw, 2U * width));
         }
         if (dividend == std::numeric_limits<int64_t>::min() && divisor == -1) {
             fault_divide();
@@ -283,17 +285,17 @@ ExitStatus Cpu::execute_imul23(const DecodedInsn& insn, uint64_t rip_after) {
     if (c.kind != Operand::Kind::kNone && !read_operand(insn, c, rip_after, imm)) {
         return exit_;
     }
-    const auto lhs = static_cast<int64_t>(
-        sign_extend(c.kind != Operand::Kind::kNone ? vb : read_gpr(a.reg, a.size, true), osz));
-    const auto rhs =
-        static_cast<int64_t>(sign_extend(c.kind != Operand::Kind::kNone ? imm : vb, osz));
+    const auto lhs = static_cast<int64_t>(width_util::sign_extend(
+        c.kind != Operand::Kind::kNone ? vb : read_gpr(a.reg, a.size, true), osz));
+    const auto rhs = static_cast<int64_t>(
+        width_util::sign_extend(c.kind != Operand::Kind::kNone ? imm : vb, osz));
     const uint64_t low = static_cast<uint64_t>(lhs) * static_cast<uint64_t>(rhs);
-    const uint64_t low_masked = low & width_mask(osz);
+    const uint64_t low_masked = low & width_util::width_mask(osz);
     bool fits = false;
     if (osz == 8U) {
         fits = imul_high(lhs, rhs) == sign_fill_of(low);
     } else {
-        fits = static_cast<int64_t>(sign_extend(low_masked, osz)) == lhs * rhs;
+        fits = static_cast<int64_t>(width_util::sign_extend(low_masked, osz)) == lhs * rhs;
     }
     cf_ = of_ = !fits;
     if (!write_operand(insn, a, low_masked)) {

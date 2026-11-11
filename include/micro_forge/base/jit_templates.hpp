@@ -243,6 +243,20 @@ constexpr std::array<std::uint8_t, 43> kAluRegHelper = {
     0x5F,                                     // @42: pop rdi (1)
 };
 // Holes: slot32@2, src32@10, width32@15, cpu64@21, helper64@31.
+// Holes: slot32@2, src32@10, width32@15, cpu64@21, helper64@31.
+// CMOV reg,reg: rdi=cpu, rsi=dst slot, rdx=src value, ecx=cc, r8d=width.
+constexpr std::array<std::uint8_t, 49> kCmovRegHelper = {
+    0x57,                                     // @0: push rdi (1)
+    0xBE, 0,    0,    0,    0,                // @1: mov esi,dst32 (5)
+    0x48, 0x8B, 0x94, 0x27, 0, 0, 0, 0,       // @6: mov rdx,[rdi+src32] (8)
+    0xB9, 0,    0,    0,    0,                // @14: mov ecx,cc32 (5)
+    0x41, 0xB8, 0,    0,    0, 0,             // @19: mov r8d,width32 (6)
+    0x48, 0xBF, 0,    0,    0, 0, 0, 0, 0, 0, // @25: mov rdi,cpu64 (10)
+    0x49, 0xBB, 0,    0,    0, 0, 0, 0, 0, 0, // @35: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                         // @45: call r11 (3)
+    0x5F,                                     // @48: pop rdi (1)
+};
+// Holes: dst32@2, src32@10, cc32@15, width32@21, cpu64@27, helper64@37.
 // CMP memory tail: rdi=cpu, rsi=vaddr (from load prefix), edx=slot, ecx=width.
 constexpr std::array<std::uint8_t, 34> kCmpMemCall = {
     0xBA, 0,    0,    0, 0,                // @0: mov edx,slot32 (5)
