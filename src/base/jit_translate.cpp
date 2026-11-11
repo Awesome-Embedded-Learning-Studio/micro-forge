@@ -6,8 +6,9 @@
 
 #include "micro_forge/base/jit_translate.hpp"
 
+#include "micro_forge/base/jit_templates.hpp"
+
 #include <algorithm>
-#include <array>
 #include <bit>
 #include <cstdint>
 
@@ -19,160 +20,7 @@ using arch::x86_64::Mnemonic;
 using arch::x86_64::Operand;
 using arch::x86_64::Reg;
 
-// --- templates ---------------------------------------------------------
-// All templates operate on the guest register file through RDI, with the
-// register slot carried in disp32. SIB 0x27 = scale 1, index none, base rdi.
-// movabs rax,imm64 ; mov [rdi+slot32],rax. Holes: imm64@2, slot32@14.
-// A full immediate permits both zero-extended dwords and sign-extended qwords.
-constexpr std::array<std::uint8_t, 18> kMovSlotImm = {
-    0x48, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0x48, 0x89, 0x84, 0x27, 0, 0, 0, 0,
-};
-// add qword [rdi+disp32], imm32                 (48 81 84 27 <disp32> <imm32>)
-constexpr std::array<std::uint8_t, 12> kAddSlotImm = {
-    0x48, 0x81, 0x84, 0x27, 0, 0, 0, 0, 0, 0, 0, 0,
-};
-// sub qword [rdi+disp32], imm32                 (48 81 AC 27 <disp32> <imm32>)
-constexpr std::array<std::uint8_t, 12> kSubSlotImm = {
-    0x48, 0x81, 0xAC, 0x27, 0, 0, 0, 0, 0, 0, 0, 0,
-};
-// and qword [rdi+disp32], imm32                 (48 81 A4 27 <disp32> <imm32>)
-constexpr std::array<std::uint8_t, 12> kAndSlotImm = {
-    0x48, 0x81, 0xA4, 0x27, 0, 0, 0, 0, 0, 0, 0, 0,
-};
-// or qword [rdi+disp32], imm32                  (48 81 8C 27 <disp32> <imm32>)
-constexpr std::array<std::uint8_t, 12> kOrSlotImm = {
-    0x48, 0x81, 0x8C, 0x27, 0, 0, 0, 0, 0, 0, 0, 0,
-};
-// xor qword [rdi+disp32], imm32                 (48 81 B4 27 <disp32> <imm32>)
-constexpr std::array<std::uint8_t, 12> kXorSlotImm = {
-    0x48, 0x81, 0xB4, 0x27, 0, 0, 0, 0, 0, 0, 0, 0,
-};
-// mov rax, [rdi+src] ; mov [rdi+dst], rax   (reg-to-reg slot copy)
-// 48 8B 84 27 <src32>  48 89 84 27 <dst32>
-constexpr std::array<std::uint8_t, 16> kMovSlotSlot = {
-    0x48, 0x8B, 0x84, 0x27, 0, 0, 0, 0, 0x48, 0x89, 0x84, 0x27, 0, 0, 0, 0,
-};
-// Holes: src32@4, dst32@12.
-// lea dst,[base+disp]: mov rax,[rdi+base] ; add rax,disp32 ; mov [rdi+dst],rax
-// 48 8B 84 27 <base32>  48 05 <disp32>  48 89 84 27 <dst32>
-constexpr std::array<std::uint8_t, 22> kLeaSlot = {
-    0x48, 0x8B, 0x84, 0x27, 0, 0, 0, 0, 0x48, 0x05, 0, 0, 0, 0, 0x48, 0x89, 0x84, 0x27, 0, 0, 0, 0,
-};
-// Holes: base32@4, disp32@10, dst32@18 (the final mov starts at 14).
-// mov dst,[base+disp] via helper:
-//   push rdi ; mov rsi,[rdi+base] ; add rsi,disp32 ; mov rdi,<cpu64> ;
-//   mov edx,width32 ; movabs r11,jit_load ; call r11 ; pop rdi ; mov [rdi+dst],rax
-constexpr std::array<std::uint8_t, 53> kLoadSlot = {
-    0x57,                                     // @0: push rdi (1)
-    0x48, 0x8B, 0xB4, 0x27, 0, 0, 0, 0,       // @1: mov rsi,[rdi+base32] (8)
-    0x48, 0x81, 0xC6, 0,    0, 0, 0,          // @9: add rsi,disp32 (7)
-    0x48, 0xBF, 0,    0,    0, 0, 0, 0, 0, 0, // @16: mov rdi,cpu64 (10)
-    0xBA, 0,    0,    0,    0,                // @26: mov edx,width32 (5)
-    0x49, 0xBB, 0,    0,    0, 0, 0, 0, 0, 0, // @31: movabs r11,helper64 (10)
-    0x41, 0xFF, 0xD3,                         // @41: call r11 (3)
-    0x5F,                                     // @44: pop rdi (1)
-    0x48, 0x89, 0x84, 0x27, 0, 0, 0, 0,       // @45: mov [rdi+dst32],rax (8)
-};
-// Holes: base32@5, disp32@12, cpu64@18, width32@27, helper64@33, dst32@49.
-// Indexed load: cumulative starts 0+1+8+8+4+3+7+10+5+10+3+1+8 = 68.
-// REX.R (4C, not 48) selects r8 for the index slot load.
-constexpr std::array<std::uint8_t, 68> kLoadIdxSlot = {
-    0x57,                                     // @0: push rdi (1)
-    0x48, 0x8B, 0xB4, 0x27, 0, 0, 0, 0,       // @1: mov rsi,[rdi+base32] (8)
-    0x4C, 0x8B, 0x84, 0x27, 0, 0, 0, 0,       // @9: mov r8,[rdi+idx32] (8)
-    0x49, 0xC1, 0xE0, 0,                      // @17: shl r8,shift8 (4)
-    0x4C, 0x01, 0xC6,                         // @21: add rsi,r8 (3)
-    0x48, 0x81, 0xC6, 0,    0, 0, 0,          // @24: add rsi,disp32 (7)
-    0x48, 0xBF, 0,    0,    0, 0, 0, 0, 0, 0, // @31: mov rdi,cpu64 (10)
-    0xBA, 0,    0,    0,    0,                // @41: mov edx,width32 (5)
-    0x49, 0xBB, 0,    0,    0, 0, 0, 0, 0, 0, // @46: movabs r11,helper64 (10)
-    0x41, 0xFF, 0xD3,                         // @56: call r11 (3)
-    0x5F,                                     // @59: pop rdi (1)
-    0x48, 0x89, 0x84, 0x27, 0, 0, 0, 0,       // @60: mov [rdi+dst32],rax (8)
-};
-// Holes: base32@5, idx32@13, shift8@20, disp32@27, cpu64@33,
-// width32@42, helper64@48, dst32@64; later holes shift by 8+4+3 = 15.
-// mov dst,[rip+disp] (absolute vaddr precomputed) via helper:
-//   push rdi ; mov rsi,<abs64> ; mov rdi,<cpu64> ; mov edx,width32 ;
-//   movabs r11,jit_load ; call r11 ; pop rdi ; mov [rdi+dst],rax
-constexpr std::array<std::uint8_t, 48> kLoadRip = {
-    0x57,                                     // @0: push rdi (1)
-    0x48, 0xBE, 0,    0,    0, 0, 0, 0, 0, 0, // @1: mov rsi,abs64 (10)
-    0x48, 0xBF, 0,    0,    0, 0, 0, 0, 0, 0, // @11: mov rdi,cpu64 (10)
-    0xBA, 0,    0,    0,    0,                // @21: mov edx,width32 (5)
-    0x49, 0xBB, 0,    0,    0, 0, 0, 0, 0, 0, // @26: movabs r11,helper64 (10)
-    0x41, 0xFF, 0xD3,                         // @36: call r11 (3)
-    0x5F,                                     // @39: pop rdi (1)
-    0x48, 0x89, 0x84, 0x27, 0, 0, 0, 0,       // @40: mov [rdi+dst32],rax (8)
-};
-// Holes: abs64@3, cpu64@13, width32@22, helper64@28, dst32@44.
-// mov [base+disp],src via helper:
-//   push rdi ; mov rcx,[rdi+src] ; mov rsi,[rdi+base] ; add rsi,disp32 ;
-//   mov rdi,<cpu64> ; mov edx,width32 ; movabs r11,jit_store ; call r11 ; pop rdi
-// ABI: rdi=cpu, rsi=vaddr, edx=width, rcx=value.
-constexpr std::array<std::uint8_t, 53> kStoreSlot = {
-    0x57,                                     // @0: push rdi (1)
-    0x48, 0x8B, 0x8C, 0x27, 0, 0, 0, 0,       // @1: mov rcx,[rdi+src32] (8)
-    0x48, 0x8B, 0xB4, 0x27, 0, 0, 0, 0,       // @9: mov rsi,[rdi+base32] (8)
-    0x48, 0x81, 0xC6, 0,    0, 0, 0,          // @17: add rsi,disp32 (7)
-    0x48, 0xBF, 0,    0,    0, 0, 0, 0, 0, 0, // @24: mov rdi,cpu64 (10)
-    0xBA, 0,    0,    0,    0,                // @34: mov edx,width32 (5)
-    0x49, 0xBB, 0,    0,    0, 0, 0, 0, 0, 0, // @39: movabs r11,helper64 (10)
-    0x41, 0xFF, 0xD3,                         // @49: call r11 (3)
-    0x5F,                                     // @52: pop rdi (1)
-};
-// Holes: src32@5, base32@13, disp32@20, cpu64@26, width32@35,
-// helper64@41.
-// Indexed store: cumulative starts 0+1+8+8+8+4+3+7+10+5+10+3+1 = 68.
-constexpr std::array<std::uint8_t, 68> kStoreIdxSlot = {
-    0x57,                                     // @0: push rdi (1)
-    0x48, 0x8B, 0x8C, 0x27, 0, 0, 0, 0,       // @1: mov rcx,[rdi+src32] (8)
-    0x48, 0x8B, 0xB4, 0x27, 0, 0, 0, 0,       // @9: mov rsi,[rdi+base32] (8)
-    0x4C, 0x8B, 0x84, 0x27, 0, 0, 0, 0,       // @17: mov r8,[rdi+idx32] (8)
-    0x49, 0xC1, 0xE0, 0,                      // @25: shl r8,shift8 (4)
-    0x4C, 0x01, 0xC6,                         // @29: add rsi,r8 (3)
-    0x48, 0x81, 0xC6, 0,    0, 0, 0,          // @32: add rsi,disp32 (7)
-    0x48, 0xBF, 0,    0,    0, 0, 0, 0, 0, 0, // @39: mov rdi,cpu64 (10)
-    0xBA, 0,    0,    0,    0,                // @49: mov edx,width32 (5)
-    0x49, 0xBB, 0,    0,    0, 0, 0, 0, 0, 0, // @54: movabs r11,helper64 (10)
-    0x41, 0xFF, 0xD3,                         // @64: call r11 (3)
-    0x5F,                                     // @67: pop rdi (1)
-};
-// Holes: src32@5, base32@13, idx32@21, shift8@28, disp32@35,
-// cpu64@41, width32@50, helper64@56; later holes shift by 8+4+3 = 15.
-// add qword [base+disp],src via helper (rdi=cpu, rsi=vaddr, rdx=value):
-//   push rdi ; mov rdx,[rdi+src] ; mov rsi,[rdi+base] ; add rsi,disp32 ;
-//   mov rdi,<cpu64> ; movabs r11,jit_add_mem ; call r11 ; pop rdi
-constexpr std::array<std::uint8_t, 48> kAddMemSlot = {
-    0x57,                                     // @0: push rdi (1)
-    0x48, 0x8B, 0x94, 0x27, 0, 0, 0, 0,       // @1: mov rdx,[rdi+src32] (8)
-    0x48, 0x8B, 0xB4, 0x27, 0, 0, 0, 0,       // @9: mov rsi,[rdi+base32] (8)
-    0x48, 0x81, 0xC6, 0,    0, 0, 0,          // @17: add rsi,disp32 (7)
-    0x48, 0xBF, 0,    0,    0, 0, 0, 0, 0, 0, // @24: mov rdi,cpu64 (10)
-    0x49, 0xBB, 0,    0,    0, 0, 0, 0, 0, 0, // @34: movabs r11,helper64 (10)
-    0x41, 0xFF, 0xD3,                         // @44: call r11 (3)
-    0x5F,                                     // @47: pop rdi (1)
-};
-// Data holes: src32@5, base32@13, disp32@20 (four bytes each).
-// Relocations: cpu64@26 (8 bytes), helper64@36 (8 bytes).
-// add reg,imm via helper (helper updates the value and flags):
-//   push rdi ; mov esi,<slot32> ; mov edx,<imm32> ; mov ecx,<width32> ; mov rdi,<cpu64> ;
-//   movabs r11,jit_add ; call r11 ; pop rdi
-constexpr std::array<std::uint8_t, 40> kAddImmHelper = {
-    0x57,                                  // @0: push rdi (1)
-    0xBE, 0,    0,    0, 0,                // @1: mov esi,slot32 (5)
-    0xBA, 0,    0,    0, 0,                // @6: mov edx,imm32 (5)
-    0xB9, 0,    0,    0, 0,                // @11: mov ecx,width32 (5)
-    0x48, 0xBF, 0,    0, 0, 0, 0, 0, 0, 0, // @16: mov rdi,cpu64 (10)
-    0x49, 0xBB, 0,    0, 0, 0, 0, 0, 0, 0, // @26: movabs r11,helper64 (10)
-    0x41, 0xFF, 0xD3,                      // @36: call r11 (3)
-    0x5F,                                  // @39: pop rdi (1)
-};
-// Holes: slot32@2, imm32@7, width32@12, cpu64@18, helper64@28.
-// ret
-constexpr std::array<std::uint8_t, 1> kRet = {
-    0xC3,
-};
+using namespace jit_templates;
 
 // Keep the final slot write eight bytes long, preserving every existing hole.
 template <auto Code>
@@ -208,6 +56,25 @@ std::optional<std::size_t> operand_slot(const Operand& op, bool rex) {
         *slot = *slot - 32 + 1; // AH/CH/DH/BH: byte 1 of RAX/RCX/RDX/RBX
     }
     return slot;
+}
+
+JitHelper alu_helper(Mnemonic mnemonic) {
+    switch (mnemonic) {
+    case Mnemonic::kCmp:
+        return JitHelper::kCmp;
+    case Mnemonic::kTest:
+        return JitHelper::kTest;
+    case Mnemonic::kSub:
+        return JitHelper::kSub;
+    case Mnemonic::kAnd:
+        return JitHelper::kAnd;
+    case Mnemonic::kOr:
+        return JitHelper::kOr;
+    case Mnemonic::kXor:
+        return JitHelper::kXor;
+    default:
+        return JitHelper::kNone;
+    }
 }
 
 } // namespace
@@ -369,6 +236,83 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
     const auto slot = operand_slot(insn.ops[0], insn.rex_present);
     if (!slot.has_value()) {
         return std::nullopt;
+    }
+    const auto helper = alu_helper(insn.mnemonic);
+    if (helper != JitHelper::kNone) {
+        const auto width = insn.ops[0].size;
+        const auto& source = insn.ops[1];
+        if ((width != 4 && width != 8) || insn.has_lock) {
+            return std::nullopt;
+        }
+        if (source.kind == Operand::Kind::kImm && source.disp >= INT32_MIN &&
+            source.disp <= (width == 4 ? static_cast<int64_t>(UINT32_MAX) : INT32_MAX)) {
+            return TranslatedInsn{
+                .code = kAluImmHelper,
+                .patches =
+                    {
+                        {.offset = 2, .size = 4, .value = *slot},
+                        {.offset = 8, .size = 8, .value = static_cast<uint64_t>(source.disp)},
+                        {.offset = 17, .size = 4, .value = width},
+                    },
+                .call_offset = 33,
+                .cpu_offset = 23,
+                .helper = helper,
+            };
+        }
+        if (source.kind == Operand::Kind::kReg && source.size == width) {
+            const auto src_slot = reg_slot_offset(source.reg);
+            if (!src_slot) {
+                return std::nullopt;
+            }
+            return TranslatedInsn{
+                .code = kAluRegHelper,
+                .patches =
+                    {
+                        {.offset = 2, .size = 4, .value = *slot},
+                        {.offset = 10, .size = 4, .value = *src_slot},
+                        {.offset = 15, .size = 4, .value = width},
+                    },
+                .call_offset = 31,
+                .cpu_offset = 21,
+                .helper = helper,
+            };
+        }
+        if (helper != JitHelper::kCmp || source.kind != Operand::Kind::kMem ||
+            source.size != width || !source.has_base || source.rip_relative ||
+            insn.addr_size != 8 || insn.seg == arch::x86_64::Seg::kFs ||
+            insn.seg == arch::x86_64::Seg::kGs || source.disp < INT32_MIN ||
+            source.disp > INT32_MAX) {
+            return std::nullopt;
+        }
+        const auto base = reg_slot_offset(source.base);
+        if (!base) {
+            return std::nullopt;
+        }
+        std::vector<JitPage::Patch> patches = {{.offset = 5, .size = 4, .value = *base}};
+        const std::size_t extra = source.has_index ? 15 : 0;
+        if (source.has_index) {
+            const auto index = reg_slot_offset(source.index);
+            if (!index || source.scale > 8 || !std::has_single_bit(source.scale)) {
+                return std::nullopt;
+            }
+            patches.push_back({.offset = 13, .size = 4, .value = *index});
+            patches.push_back({
+                .offset = 20,
+                .size = 1,
+                .value = static_cast<unsigned>(std::countr_zero(source.scale)),
+            });
+        }
+        patches.push_back(
+            {.offset = 12 + extra, .size = 4, .value = static_cast<uint32_t>(source.disp)});
+        patches.push_back({.offset = 17 + extra, .size = 4, .value = *slot});
+        patches.push_back({.offset = 22 + extra, .size = 4, .value = width});
+        return TranslatedInsn{
+            .code = source.has_index ? std::span<const uint8_t>(kCmpMemIdxSlot) : kCmpMemSlot,
+            .patches = std::move(patches),
+            .call_offset = 38 + extra,
+            .cpu_offset = 28 + extra,
+            .helper = JitHelper::kCmpMem,
+        };
     }
     // mov reg,[base+index*scale+disp]: compute vaddr before calling the helper.
     if (insn.mnemonic == Mnemonic::kMov && insn.ops[0].kind == Operand::Kind::kReg &&

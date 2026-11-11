@@ -25,6 +25,13 @@ extern "C" void mf_jit_store(void* cpu, std::uint64_t vaddr, unsigned width, std
 extern "C" std::uint64_t mf_jit_add(void* cpu, std::uint64_t slot, std::uint64_t imm,
                                     unsigned width);
 extern "C" void mf_jit_add_mem(void* cpu, std::uint64_t vaddr, std::uint64_t value);
+extern "C" void mf_jit_cmp(void* cpu, uint64_t slot, uint64_t value, unsigned width);
+extern "C" void mf_jit_test(void* cpu, uint64_t slot, uint64_t value, unsigned width);
+extern "C" void mf_jit_sub(void* cpu, uint64_t slot, uint64_t value, unsigned width);
+extern "C" void mf_jit_and(void* cpu, uint64_t slot, uint64_t value, unsigned width);
+extern "C" void mf_jit_or(void* cpu, uint64_t slot, uint64_t value, unsigned width);
+extern "C" void mf_jit_xor(void* cpu, uint64_t slot, uint64_t value, unsigned width);
+extern "C" void mf_jit_cmp_mem(void* cpu, uint64_t vaddr, uint64_t slot, unsigned width);
 
 std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
     constexpr std::size_t max_insns = 64;
@@ -104,14 +111,42 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
         if (lowered.call_offset.has_value() && lowered.cpu_offset.has_value()) {
             const auto cpu_arg = reinterpret_cast<std::uint64_t>(this);
             std::uint64_t helper = 0;
-            if (lowered.helper == base::JitHelper::kAdd) {
+            switch (lowered.helper) {
+            case base::JitHelper::kAdd:
                 helper = reinterpret_cast<std::uint64_t>(&mf_jit_add);
-            } else if (lowered.helper == base::JitHelper::kAddMem) {
+                break;
+            case base::JitHelper::kAddMem:
                 helper = reinterpret_cast<std::uint64_t>(&mf_jit_add_mem);
-            } else if (lowered.helper == base::JitHelper::kStore) {
+                break;
+            case base::JitHelper::kStore:
                 helper = reinterpret_cast<std::uint64_t>(&mf_jit_store);
-            } else {
+                break;
+            case base::JitHelper::kLoad:
                 helper = reinterpret_cast<std::uint64_t>(&mf_jit_load);
+                break;
+            case base::JitHelper::kCmp:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_cmp);
+                break;
+            case base::JitHelper::kTest:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_test);
+                break;
+            case base::JitHelper::kSub:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_sub);
+                break;
+            case base::JitHelper::kAnd:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_and);
+                break;
+            case base::JitHelper::kOr:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_or);
+                break;
+            case base::JitHelper::kXor:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_xor);
+                break;
+            case base::JitHelper::kCmpMem:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_cmp_mem);
+                break;
+            default:
+                return fail_compile();
             }
             // A half-patched template must never become a block: give up
             // on the whole compile; the interpreter takes this rip.
@@ -158,6 +193,34 @@ extern "C" void mf_jit_add_mem(void* cpu, std::uint64_t vaddr, std::uint64_t val
     static_cast<Cpu*>(cpu)->jit_add_mem(vaddr, value);
 }
 
+extern "C" void mf_jit_cmp(void* cpu, uint64_t slot, uint64_t value, unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_cmp(slot, value, width);
+}
+
+extern "C" void mf_jit_test(void* cpu, uint64_t slot, uint64_t value, unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_test(slot, value, width);
+}
+
+extern "C" void mf_jit_sub(void* cpu, uint64_t slot, uint64_t value, unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_sub(slot, value, width);
+}
+
+extern "C" void mf_jit_and(void* cpu, uint64_t slot, uint64_t value, unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_and(slot, value, width);
+}
+
+extern "C" void mf_jit_or(void* cpu, uint64_t slot, uint64_t value, unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_or(slot, value, width);
+}
+
+extern "C" void mf_jit_xor(void* cpu, uint64_t slot, uint64_t value, unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_xor(slot, value, width);
+}
+
+extern "C" void mf_jit_cmp_mem(void* cpu, uint64_t vaddr, uint64_t slot, unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_cmp_mem(vaddr, slot, width);
+}
+
 } // namespace
 
 uint64_t Cpu::fetch_paddr(uint64_t vaddr) {
@@ -182,6 +245,43 @@ uint64_t Cpu::jit_add(uint64_t slot, uint64_t imm, unsigned width) {
     pf_ = (std::popcount(static_cast<std::uint8_t>(result)) % 2) == 0;
     af_ = ((a ^ imm ^ result) & 0x10U) != 0;
     return result;
+}
+
+// Share the interpreter's ALU, including its borrow and AF semantics.
+// Both ALUs mask the inputs/result to width, so dword writes clear high bits.
+void Cpu::jit_cmp(uint64_t slot, uint64_t value, unsigned width) {
+    (void)alu_sub(regs_[slot / 8U], value, width, false);
+}
+
+void Cpu::jit_test(uint64_t slot, uint64_t value, unsigned width) {
+    (void)alu_logic(regs_[slot / 8U] & value, width);
+}
+
+void Cpu::jit_sub(uint64_t slot, uint64_t value, unsigned width) {
+    auto& dst = regs_[slot / 8U];
+    dst = alu_sub(dst, value, width, false);
+}
+
+void Cpu::jit_and(uint64_t slot, uint64_t value, unsigned width) {
+    auto& dst = regs_[slot / 8U];
+    dst = alu_logic(dst & value, width);
+}
+
+void Cpu::jit_or(uint64_t slot, uint64_t value, unsigned width) {
+    auto& dst = regs_[slot / 8U];
+    dst = alu_logic(dst | value, width);
+}
+
+void Cpu::jit_xor(uint64_t slot, uint64_t value, unsigned width) {
+    auto& dst = regs_[slot / 8U];
+    dst = alu_logic(dst ^ value, width);
+}
+
+void Cpu::jit_cmp_mem(uint64_t vaddr, uint64_t slot, unsigned width) {
+    const uint64_t value = jit_load(vaddr, width);
+    if (!exception_injected_) {
+        jit_cmp(slot, value, width);
+    }
 }
 
 uint64_t Cpu::jit_load(uint64_t vaddr, unsigned width) {

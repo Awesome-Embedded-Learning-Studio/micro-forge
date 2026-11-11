@@ -129,7 +129,7 @@ add_executable(test_jit test_jit.cpp)
 target_link_libraries(test_jit PRIVATE micro_forge GTest::gtest_main)
 gtest_discover_tests(test_jit)
 
-add_executable(test_jit_diff test_jit_diff.cpp)
+add_executable(test_jit_diff test_jit_diff.cpp test_jit_alu_layout.cpp)
 target_link_libraries(test_jit_diff PRIVATE micro_forge GTest::gtest_main)
 # Keep the native differential baseline non-PIE; PIE also supports helpers.
 target_link_options(test_jit_diff PRIVATE -no-pie)

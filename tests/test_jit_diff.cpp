@@ -2,78 +2,11 @@
 /// @file test_jit_diff.cpp
 /// @brief Native JIT/interpreter differential tests with process isolation.
 
-#include <gtest/gtest.h>
-
-#include <micro_forge/arch/x86_64/cpu.hpp>
-#include <micro_forge/arch/x86_64/decoder.hpp>
-#include <micro_forge/base/jit_translate.hpp>
-#include <micro_forge/kernel/ram_region.hpp>
-
-#include <algorithm>
-#include <array>
-#include <cerrno>
-#include <cstdlib>
-#include <limits>
-#include <optional>
-#include <string>
-#include <vector>
-
-#include <sys/wait.h>
-#include <unistd.h>
+#include "jit_diff_support.hpp"
 
 namespace {
 
-using micro_forge::arch::x86_64::Cpu;
-using micro_forge::arch::x86_64::ExitStatus;
-using micro_forge::arch::x86_64::Reg;
-using micro_forge::base::translate_insn;
-
-constexpr uint64_t kCode = 0x1000;
-constexpr uint64_t kData = 0x4000;
-constexpr uint64_t kFlags = 0x8D5; // CF/PF/AF/ZF/SF/OF, initially all set
-constexpr uint64_t kLoaded = 0xFEDCBA9876543210ULL;
-constexpr uint64_t kStored = 0x8877665544332211ULL;
-
-class ScopedEnv {
-public:
-    ScopedEnv(const char* name, const char* value) : name_(name) {
-        if (const auto* old = std::getenv(name)) {
-            old_ = old;
-        }
-        const int result = value ? setenv(name, value, 1) : unsetenv(name);
-        EXPECT_EQ(0, result);
-    }
-    ~ScopedEnv() {
-        if (old_) {
-            (void)setenv(name_, old_->c_str(), 1);
-        } else {
-            (void)unsetenv(name_);
-        }
-    }
-
-private:
-    const char* name_;
-    std::optional<std::string> old_;
-};
-
-struct DiffCase {
-    std::string name;
-    std::vector<uint8_t> code;
-    uint64_t initial;
-    uint64_t expected;
-    uint64_t flags = kFlags;
-    bool store = false;
-    uint64_t memory_initial = kLoaded;
-    uint64_t source = kStored;
-    std::optional<uint64_t> memory_expected = std::nullopt;
-    uint64_t base = kData + 0x48;
-    Reg result_reg = Reg::kR9;
-    Reg base_reg = Reg::kR12;
-    Reg source_reg = Reg::kR10;
-    std::optional<uint64_t> index = std::nullopt;
-    Reg index_reg = Reg::kRcx;
-    unsigned jit_insns = 1;
-};
+using namespace jit_diff;
 
 DiffCase indexed_case(const char* name, std::vector<uint8_t> code, bool store, uint64_t base,
                       uint64_t index = 3, Reg index_reg = Reg::kRcx) {
@@ -179,113 +112,149 @@ std::vector<DiffCase> width_cases() {
     return cases;
 }
 
-struct State {
-    uint64_t rip;
-    std::array<uint64_t, 16> gprs;
-    std::array<bool, 6> flags;
-    uint64_t rflags;
-    std::array<uint8_t, 24> memory; // include both neighbours of the qword
-    std::size_t blocks;
-    uint64_t insns;
-    ExitStatus::Kind exit;
-};
-
-void execute_case(const DiffCase& test, State& out) {
-    micro_forge::kernel::Bus bus;
-    micro_forge::kernel::RamRegion ram(0x10000);
-    micro_forge::kernel::Scheduler scheduler;
-    ASSERT_TRUE(bus.map(0, ram.size(), ram).has_value());
-    Cpu cpu(bus, scheduler);
-    cpu.reset(kCode, 0xF000);
-    cpu.set_code_range(kCode, kCode + test.code.size());
-    std::ranges::copy(test.code, ram.data() + kCode);
-    ram.data()[kCode + test.code.size()] = 0xF4; // hlt is interpreter-only
-
-    const auto seed_state = [&] {
-        for (unsigned i = 0; i < 16; ++i) {
-            cpu.set_gpr(static_cast<Reg>(i), 0x1020304050607080ULL + i * 0x101U);
-        }
-        cpu.set_gpr(Reg::kRsp, 0xF000);
-        cpu.set_gpr(test.result_reg, test.initial);
-        cpu.set_gpr(test.source_reg, test.source);
-        cpu.set_gpr(test.base_reg, test.base);
-        if (test.index) {
-            cpu.set_gpr(test.index_reg, *test.index);
-        }
-        cpu.set_rip(kCode);
-        cpu.set_rflags(kFlags | 2U);
-        std::fill_n(ram.data() + kData - 8, 24, 0xA5);
-        ASSERT_TRUE(bus.write_u64(kData, test.memory_initial).has_value());
-    };
-
-    // First visit compiles but executes in the interpreter. Revisit that
-    // same RIP with identical architectural inputs to execute the block.
-    // Restore memory too: otherwise the warm-up store hides a no-op JIT.
-    seed_state();
-    ASSERT_EQ(ExitStatus::Kind::kRunning, cpu.step().kind);
-    ASSERT_EQ(0U, cpu.jit_insn_count());
-    seed_state();
-    ASSERT_EQ(ExitStatus::Kind::kHalt, cpu.run(16).kind);
-
-    out.rip = cpu.rip();
-    for (unsigned i = 0; i < out.gprs.size(); ++i) {
-        out.gprs[i] = cpu.gpr(static_cast<Reg>(i));
-    }
-    out.flags = {cpu.cf(), cpu.of(), cpu.sf(), cpu.zf(), cpu.af(), cpu.pf()};
-    out.rflags = cpu.rflags();
-    std::copy_n(ram.data() + kData - 8, out.memory.size(), out.memory.begin());
-    out.blocks = cpu.jit_block_count();
-    out.insns = cpu.jit_insn_count();
-    out.exit = cpu.exit_status().kind;
-    EXPECT_EQ(test.expected, cpu.gpr(test.result_reg));
-    EXPECT_EQ(test.flags, cpu.rflags() & kFlags);
-    EXPECT_EQ(test.memory_expected.value_or(test.store ? kStored : kLoaded),
-              bus.read_u64(kData).value());
-}
-
-void run_child(const DiffCase& test, bool jit, State& out) {
-    // Set these BEFORE fork. The parent never executes Cpu::step(), so
-    // each child initializes maybe_compile_block's static independently.
-    ScopedEnv enabled("MICRO_FORGE_JIT", jit ? "1" : nullptr);
-    ScopedEnv add("MICRO_FORGE_JIT_ADD", nullptr); // JIT alone must enable add-imm
-    ScopedEnv trace("MICRO_FORGE_JIT_TRACE", nullptr);
-    int pipefd[2];
-    ASSERT_EQ(0, pipe(pipefd));
-    const pid_t pid = fork();
-    if (pid == -1) {
-        (void)close(pipefd[0]);
-        (void)close(pipefd[1]);
-        FAIL() << "fork failed: " << errno;
-    }
-    if (pid == 0) {
-        (void)close(pipefd[0]);
-        (void)alarm(10); // a corrupt template must not hang the test suite
-        State state{};
-        execute_case(test, state);
-        if (::testing::Test::HasFailure()) {
-            _exit(1);
-        }
-        const auto written = write(pipefd[1], &state, sizeof(state));
-        _exit(written == static_cast<ssize_t>(sizeof(state)) ? 0 : 2);
-    }
-    (void)close(pipefd[1]);
-    int status = 0;
-    pid_t waited;
-    do {
-        waited = waitpid(pid, &status, 0);
-    } while (waited == -1 && errno == EINTR);
-    ssize_t received;
-    do {
-        received = read(pipefd[0], &out, sizeof(out));
-    } while (received == -1 && errno == EINTR);
-    (void)close(pipefd[0]);
-    ASSERT_EQ(pid, waited);
-    ASSERT_TRUE(WIFEXITED(status)) << "child status=" << status << " jit=" << jit;
-    ASSERT_EQ(0, WEXITSTATUS(status)) << "jit=" << jit;
-    ASSERT_EQ(static_cast<ssize_t>(sizeof(out)), received);
-}
-
 class JitDiffTest : public ::testing::TestWithParam<DiffCase> {};
+
+std::vector<DiffCase> alu_cases() {
+    std::vector<DiffCase> cases;
+    constexpr std::array names = {"Cmp", "Sub", "Test", "And", "Or", "Xor"};
+    constexpr std::array<uint8_t, 6> opcodes = {0x39, 0x29, 0x85, 0x21, 0x09, 0x31};
+    constexpr std::array<uint8_t, 6> extensions = {7, 5, 0, 4, 1, 6};
+    for (const unsigned width : {4U, 8U}) {
+        const uint64_t sign = uint64_t{1} << (width * 8 - 1);
+        const uint64_t mask = width == 4 ? UINT32_MAX : UINT64_MAX;
+        const uint64_t dirty = width == 4 ? 0xABCDEF1200000000ULL : 0;
+        for (unsigned op = 0; op < names.size(); ++op) {
+            // Explicit expected results/flags, independent of the shared ALU.
+            // Each row is lhs, rhs, masked result, CF/PF/AF/ZF/SF/OF.
+            std::vector<std::array<uint64_t, 4>> samples;
+            if (op < 2) {
+                samples = {{0, 0x3F, mask - 62, 0x91},
+                           {sign, 1, sign - 1, 0x814},
+                           {sign - 1, mask, sign, 0x885},
+                           {7, 7, 0, 0x44},
+                           {0, mask, 1, 0x11},
+                           {mask, 1, mask - 1, 0x80}};
+            } else if (op < 4) {
+                samples = {{mask, 0x3F, 0x3F, 4},
+                           {mask, 0, 0, 0x44},
+                           {sign, mask, sign, 0x84},
+                           {3, 1, 1, 0}};
+            } else if (op == 4) {
+                samples = {{0, 3, 3, 4},
+                           {0, 0, 0, 0x44},
+                           {sign, 1, sign | 1, 0x80},
+                           {0, mask, mask, 0x84}};
+            } else {
+                samples = {{3, 3, 0, 0x44},
+                           {0, 1, 1, 0},
+                           {sign, mask, sign - 1, 4},
+                           {0, mask, mask, 0x84}};
+            }
+            const bool writes = op != 0 && op != 2;
+            for (unsigned row = 0; row < samples.size(); ++row) {
+                const auto& s = samples[row];
+                for (const bool immediate : {false, true}) {
+                    std::vector<uint8_t> code = {
+                        static_cast<uint8_t>((width == 4 ? 0x40 : 0x48) | (immediate ? 1 : 5)),
+                        immediate ? static_cast<uint8_t>(op == 2 ? 0xF7 : 0x81) : opcodes[op],
+                        immediate ? static_cast<uint8_t>(0xC1 | (extensions[op] << 3))
+                                  : uint8_t{0xD1}}; // r9,r10
+                    if (immediate) {
+                        for (unsigned byte = 0; byte < 4; ++byte) {
+                            code.push_back(static_cast<uint8_t>(s[1] >> (byte * 8)));
+                        }
+                    }
+                    auto name = std::string(names[op]) + std::to_string(width * 8) +
+                                (immediate ? "Imm" : "Reg") + std::to_string(row);
+                    DiffCase test{name, std::move(code), dirty | s[0], writes ? s[2] : dirty | s[0],
+                                  s[3]};
+                    test.source = s[1] | (width == 4 ? 0x7654321000000000ULL : 0);
+                    cases.push_back(std::move(test));
+                }
+            }
+            // dst==src must read the old value before writing/zero-extending.
+            DiffCase alias{std::string(names[op]) + std::to_string(width * 8) + "Alias",
+                           {static_cast<uint8_t>(width == 4 ? 0x45 : 0x4D), opcodes[op], 0xC9},
+                           dirty | 3,
+                           writes ? (op == 1 || op == 5 ? 0U : 3U) : dirty | 3,
+                           op < 2 || op == 5 ? 0x44U : 4U};
+            alias.source_reg = alias.result_reg;
+            alias.source = alias.initial;
+            cases.push_back(std::move(alias));
+        }
+        // cmp r9,[r12+disp] and all indexed scales; neither writes the slot.
+        for (unsigned form = 0; form < 5; ++form) {
+            const uint8_t rex = width == 4 ? 0x45 : 0x4D;
+            DiffCase test{"CmpMem" + std::to_string(width * 8) + "Form" + std::to_string(form),
+                          {rex, 0x3B, 0x4C, 0x24, 0xB8},
+                          dirty | 0x10,
+                          dirty | 0x10,
+                          0x91};
+            test.memory_initial = width == 4 ? 0x765432100000004FULL : 0x4F;
+            test.memory_expected = test.memory_initial;
+            if (form != 0) {
+                test.code[3] = static_cast<uint8_t>(((form - 1) << 6) | 0x0C);
+                test.index = 3;
+                test.base -= 3U << (form - 1);
+            }
+            cases.push_back(std::move(test));
+        }
+    }
+    // imm8 sign extension, full-width positive dword immediate, hot cmp form.
+    cases.push_back(
+        {"Sub32NegativeImm8", {0x41, 0x83, 0xE9, 0xFF}, 0xABCDEF1200000000ULL, 1, 0x11});
+    cases.push_back({"Sub64NegativeImm8", {0x49, 0x83, 0xE9, 0xFF}, 0, 1, 0x11});
+    cases.push_back({"Cmp32SignBitImm",
+                     {0x41, 0x81, 0xF9, 0, 0, 0, 0x80},
+                     0xABCDEF1200000000ULL,
+                     0xABCDEF1200000000ULL,
+                     0x885});
+    DiffCase hot{"HotCmpEdxMem", {0x3B, 0x57, 0x3C}, UINT64_MAX, UINT64_MAX, 0x84};
+    hot.result_reg = Reg::kRdx;
+    hot.base_reg = Reg::kRdi;
+    hot.base = kData - 0x3C;
+    hot.memory_initial = 0;
+    hot.memory_expected = 0;
+    cases.push_back(std::move(hot));
+    auto loop = indexed_case(
+        "HotLoopThroughCmp",
+        {0x8B, 0x30, 0x83, 0xC2, 1, 0x89, 0x34, 0x88, 0x48, 0x83, 0xC0, 4, 0x3B, 0x57, 0x3C}, false,
+        kData - 0x3C, 0);
+    loop.result_reg = Reg::kRax;
+    loop.base_reg = Reg::kRdi;
+    loop.source_reg = Reg::kRdx;
+    loop.initial = kData;
+    loop.source = UINT64_MAX;
+    loop.expected = kData + 4;
+    loop.flags = 0x85;
+    loop.jit_insns = 5;
+    cases.push_back(std::move(loop));
+    for (const bool wide : {false, true}) {
+        DiffCase alias{wide ? "CmpMem64BaseAlias" : "CmpMem32BaseAlias",
+                       {static_cast<uint8_t>(wide ? 0x48 : 0x40), 0x3B, 0x1B},
+                       kData,
+                       kData,
+                       0x44}; // cmp rbx,[rbx]
+        alias.result_reg = alias.base_reg = Reg::kRbx;
+        alias.base = kData;
+        alias.memory_initial = kData | (wide ? 0 : 0xABCDEF1200000000ULL);
+        alias.memory_expected = alias.memory_initial;
+        cases.push_back(std::move(alias));
+    }
+    DiffCase negative{"CmpMemNegativeAliasedIndex",
+                      {0x48, 0x3B, 0x04, 0x03},
+                      UINT64_MAX - 2,
+                      UINT64_MAX - 2,
+                      0x84};
+    negative.result_reg = negative.index_reg = Reg::kRax;
+    negative.base_reg = Reg::kRbx;
+    negative.base = kData + 3;
+    negative.index = UINT64_MAX - 2;
+    negative.memory_initial = 1;
+    negative.memory_expected = 1;
+    cases.push_back(std::move(negative));
+    return cases;
+}
 
 TEST_P(JitDiffTest, MatchesInterpreter) {
     const auto& test = GetParam();
@@ -377,6 +346,11 @@ INSTANTIATE_TEST_SUITE_P(
     [](const ::testing::TestParamInfo<DiffCase>& info) { return info.param.name; });
 
 INSTANTIATE_TEST_SUITE_P(Widths, JitDiffTest, ::testing::ValuesIn(width_cases()),
+                         [](const ::testing::TestParamInfo<DiffCase>& info) {
+                             return info.param.name;
+                         });
+
+INSTANTIATE_TEST_SUITE_P(Alu, JitDiffTest, ::testing::ValuesIn(alu_cases()),
                          [](const ::testing::TestParamInfo<DiffCase>& info) {
                              return info.param.name;
                          });

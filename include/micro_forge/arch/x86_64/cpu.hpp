@@ -128,7 +128,6 @@ public:
      * @param[in] decode_capacity Decode-cache entries (0 = disabled).
      */
     void configure_caches(uint64_t ram_size, std::size_t decode_capacity = 512);
-
     /// @brief Decode-cache capacity configured for this CPU.
     [[nodiscard]] std::size_t decode_cache_capacity() const { return decode_cache_.capacity(); }
     /// @brief Decode-cache hit/miss counters.
@@ -169,10 +168,8 @@ public:
         irq_line_ = &line;
         irq_hook_ = std::move(on_pending);
     }
-
     /// @brief Whether the attached line (if any) is high.
     [[nodiscard]] bool irq_pending() const { return irq_line_ != nullptr && irq_line_->pending(); }
-
     /// @brief Queues one interrupt vector for delivery (batch 6c).
     ///
     /// The vector is delivered at the next retire boundary when IF is
@@ -190,7 +187,6 @@ public:
     [[nodiscard]] bool interrupt_queued() const { return interrupt_pending_; }
 
     // --- state access (tests, and snapshots from batch 4) ---
-
     /// @brief Reads one GPR (full 64 bits).
     [[nodiscard]] uint64_t gpr(Reg reg) const { return regs_[index_of(reg)]; }
     /// Probe-only: byte image of the faulting instruction and its length.
@@ -206,23 +202,31 @@ public:
     /// @brief Sets rip (jump before run).
     void set_rip(uint64_t value) { rip_ = value; }
     /// @brief Translates an instruction fetch.
-    /// @param[in] vaddr Guest virtual address.
-    /// @return The physical address (0 when it faults).
+    /// @return Physical address, or 0 on failure.
     uint64_t fetch_paddr(uint64_t vaddr);
     /// @brief JIT load helper.
-    /// @param[in] vaddr Guest virtual address.
-    /// @param[in] width Access width in bytes.
-    /// @return Loaded value, or 0 when translation fails.
+    /// @return Width bytes at vaddr, or 0 on failure.
     uint64_t jit_load(uint64_t vaddr, unsigned width);
-    /// @brief JIT helper: GPR[slot] += imm, sum with ADD flags.
-    /// @param[in] slot Register slot offset (reg * 8).
-    /// @param[in] imm Immediate value.
-    /// @param[in] width Operand width in bytes (4 or 8).
+    /// @brief JIT ADD: slot is reg*8; imm32 is sign-extended; width is 4 or 8.
     /// @return Updated register value.
     uint64_t jit_add(uint64_t slot, uint64_t imm, unsigned width);
-    /// @brief JIT helper: store @p width bytes at @p vaddr.
+    /// @brief JIT CMP: compare GPR[slot/8] with value using width 4 or 8.
+    void jit_cmp(uint64_t slot, uint64_t value, unsigned width);
+    /// @brief JIT TEST: update flags from GPR[slot/8] & value.
+    void jit_test(uint64_t slot, uint64_t value, unsigned width);
+    /// @brief JIT SUB: subtract value from GPR[slot/8], updating flags.
+    void jit_sub(uint64_t slot, uint64_t value, unsigned width);
+    /// @brief JIT AND: mask GPR[slot/8] with value, updating flags.
+    void jit_and(uint64_t slot, uint64_t value, unsigned width);
+    /// @brief JIT OR: combine GPR[slot/8] with value, updating flags.
+    void jit_or(uint64_t slot, uint64_t value, unsigned width);
+    /// @brief JIT XOR: xor GPR[slot/8] with value, updating flags.
+    void jit_xor(uint64_t slot, uint64_t value, unsigned width);
+    /// @brief JIT CMP memory: compare GPR[slot/8] with width bytes at vaddr.
+    void jit_cmp_mem(uint64_t vaddr, uint64_t slot, unsigned width);
+    /// @brief JIT store: write width bytes at vaddr.
     void jit_store(uint64_t vaddr, unsigned width, uint64_t value);
-    /// @brief JIT helper: qword [vaddr] += value, updating ADD flags.
+    /// @brief JIT memory ADD: qword [vaddr] += value, updating flags.
     void jit_add_mem(uint64_t vaddr, uint64_t value);
     /// @brief Restricts JIT compilation to [lo, hi); zero means no filter.
     void set_code_range(uint64_t lo, uint64_t hi) {
@@ -235,7 +239,6 @@ public:
     [[nodiscard]] std::uint64_t jit_insn_count() const { return jit_insn_count_; }
     [[nodiscard]] std::size_t jit_block_count() const { return jit_blocks_.size(); }
     [[nodiscard]] std::size_t jit_failed_count() const { return jit_failed_.size(); }
-
     /// @brief Retired-instruction count (virtual time).
     [[nodiscard]] kernel::Tick icount() const { return icount_; }
     /// @brief Bytes collected by the write syscall, in order.
@@ -244,7 +247,6 @@ public:
     [[nodiscard]] std::vector<char>& console_sink() { return console_; }
     /// @brief Latched exit status (kRunning while a run may continue).
     [[nodiscard]] const ExitStatus& exit_status() const { return exit_; }
-
     /// @brief rflags image (reserved bit 1 set, IF from if_).
     [[nodiscard]] uint64_t rflags() const;
     /// @brief Decomposes an rflags image into the stored flags.
@@ -370,7 +372,6 @@ public:
 
 private:
     // --- helpers, defined across cpu.cpp and execute.cpp ---
-
     /// Applies the FS/GS segment base for a memory operand's EA.
     [[nodiscard]] uint64_t segment_address(const DecodedInsn& insn, uint64_t ea) const;
     /// Retires @p n icount units: clock advance, scheduler dispatch, irq
@@ -522,7 +523,6 @@ private:
     std::vector<uint64_t> code_page_bits_;
     /// Marks @p paddr's page as an executed-from page.
     void mark_code_page(uint64_t paddr);
-
     /// Compiled block: executable page, entry and guest coverage.
     struct JitBlock {
         /// Blocks share 4 KiB pages (~1.3 KiB each); the shared_ptr keeps

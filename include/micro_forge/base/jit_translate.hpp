@@ -22,7 +22,20 @@
 namespace micro_forge::base {
 
 /// @brief Which C++ helper a template calls (kNone when it calls none).
-enum class JitHelper : std::uint8_t { kNone, kLoad, kStore, kAdd, kAddMem };
+enum class JitHelper : std::uint8_t {
+    kNone,
+    kLoad,
+    kStore,
+    kAdd,
+    kAddMem,
+    kCmp,
+    kTest,
+    kSub,
+    kAnd,
+    kOr,
+    kXor,
+    kCmpMem,
+};
 
 /**
  * @brief One lowered instruction: template bytes, holes, and helper info.
@@ -51,6 +64,8 @@ struct TranslatedInsn {
  * support 1/2/4/8 bytes, preserving partial registers for byte/word loads.
  * Also supports add [base+disp],reg.
  * Memory add supports unsegmented, unlocked qwords only.
+ * cmp/test/sub/and/or/xor support 32/64-bit reg,imm and reg,reg;
+ * cmp also accepts an unsegmented, unlocked base+index*scale+disp source.
  * Everything else returns nullopt and stays with the interpreter.
  *
  * @param[in] insn The decoded instruction.
