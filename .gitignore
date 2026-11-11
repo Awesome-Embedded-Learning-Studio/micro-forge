@@ -75,3 +75,4 @@ reference/
 # Emscripten toolchain clone (browsable, never committed; the pinned
 # version lives in tools/use-emsdk.sh)
 tools/emsdk/
+scripts/dec/__pycache__/
