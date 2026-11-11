@@ -209,7 +209,6 @@ public:
     /// @param[in] vaddr Guest virtual address.
     /// @return The physical address (0 when it faults).
     uint64_t fetch_paddr(uint64_t vaddr);
-
     /// @brief JIT load helper.
     /// @param[in] vaddr Guest virtual address.
     /// @param[in] width Access width in bytes.
@@ -218,8 +217,9 @@ public:
     /// @brief JIT helper: GPR[slot] += imm, sum with ADD flags.
     /// @param[in] slot Register slot offset (reg * 8).
     /// @param[in] imm Immediate value.
+    /// @param[in] width Operand width in bytes (4 or 8).
     /// @return Updated register value.
-    uint64_t jit_add(uint64_t slot, uint64_t imm);
+    uint64_t jit_add(uint64_t slot, uint64_t imm, unsigned width);
     /// @brief JIT helper: store @p width bytes at @p vaddr.
     void jit_store(uint64_t vaddr, unsigned width, uint64_t value);
     /// @brief JIT helper: qword [vaddr] += value, updating ADD flags.

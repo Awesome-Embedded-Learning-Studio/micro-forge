@@ -46,9 +46,11 @@ struct TranslatedInsn {
 /**
  * @brief Lowers one decoded instruction to a template.
  *
- * Supported today: 64-bit mov (imm32, register, base+disp or RIP-relative
- * load, base+disp store), lea base+disp, add [base+disp],reg, and opt-in
- * add reg,imm32. Memory add supports unsegmented, unlocked qwords only.
+ * Supported today: mov imm32 and add reg,imm32 (32/64 bits), 64-bit register
+ * mov, lea base+disp and RIP-relative load; base+index*scale+disp loads/stores
+ * support 1/2/4/8 bytes, preserving partial registers for byte/word loads.
+ * Also supports add [base+disp],reg.
+ * Memory add supports unsegmented, unlocked qwords only.
  * Everything else returns nullopt and stays with the interpreter.
  *
  * @param[in] insn The decoded instruction.

@@ -22,7 +22,8 @@ namespace micro_forge::arch::x86_64 {
 
 extern "C" std::uint64_t mf_jit_load(void* cpu, std::uint64_t vaddr, unsigned width);
 extern "C" void mf_jit_store(void* cpu, std::uint64_t vaddr, unsigned width, std::uint64_t value);
-extern "C" std::uint64_t mf_jit_add(void* cpu, std::uint64_t slot, std::uint64_t imm);
+extern "C" std::uint64_t mf_jit_add(void* cpu, std::uint64_t slot, std::uint64_t imm,
+                                    unsigned width);
 extern "C" void mf_jit_add_mem(void* cpu, std::uint64_t vaddr, std::uint64_t value);
 
 std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
@@ -148,8 +149,9 @@ extern "C" void mf_jit_store(void* cpu, std::uint64_t vaddr, unsigned width, std
     static_cast<Cpu*>(cpu)->jit_store(vaddr, width, value);
 }
 
-extern "C" std::uint64_t mf_jit_add(void* cpu, std::uint64_t slot, std::uint64_t imm) {
-    return static_cast<Cpu*>(cpu)->jit_add(slot, imm);
+extern "C" std::uint64_t mf_jit_add(void* cpu, std::uint64_t slot, std::uint64_t imm,
+                                    unsigned width) {
+    return static_cast<Cpu*>(cpu)->jit_add(slot, imm, width);
 }
 
 extern "C" void mf_jit_add_mem(void* cpu, std::uint64_t vaddr, std::uint64_t value) {
@@ -163,19 +165,20 @@ uint64_t Cpu::fetch_paddr(uint64_t vaddr) {
     return translated.ok ? translated.paddr : 0;
 }
 
-uint64_t Cpu::jit_add(uint64_t slot, uint64_t imm) {
+uint64_t Cpu::jit_add(uint64_t slot, uint64_t imm, unsigned width) {
     // The template loads the immediate with `mov edx, imm32`, which zeroes
     // the upper half; ADD r64,imm32 sign-extends, so restore that here.
     imm = static_cast<uint64_t>(static_cast<std::int64_t>(static_cast<std::int32_t>(imm)));
     const auto index = static_cast<unsigned>(slot / 8U);
-    const uint64_t a = regs_[index];
-    const uint64_t result = a + imm;
+    const uint64_t a = width == 4 ? static_cast<uint32_t>(regs_[index]) : regs_[index];
+    const uint64_t result = width == 4 ? static_cast<uint32_t>(a + imm) : a + imm;
     regs_[index] = result;
-    // Flags follow the interpreter's 64-bit add semantics.
+    // A dword result is zero-extended; the qword path keeps its original arithmetic.
+    const unsigned sign = width == 4 ? 31U : 63U;
     cf_ = result < a;
     zf_ = result == 0;
-    sf_ = (result >> 63U) != 0;
-    of_ = (((a ^ result) & (imm ^ result)) >> 63U) != 0;
+    sf_ = (result >> sign) != 0;
+    of_ = (((a ^ result) & (imm ^ result)) >> sign & 1U) != 0;
     pf_ = (std::popcount(static_cast<std::uint8_t>(result)) % 2) == 0;
     af_ = ((a ^ imm ^ result) & 0x10U) != 0;
     return result;

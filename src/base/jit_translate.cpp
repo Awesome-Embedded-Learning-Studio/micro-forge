@@ -8,8 +8,7 @@
 
 #include <algorithm>
 #include <array>
-#include <cstdlib>
-
+#include <bit>
 #include <cstdint>
 
 namespace micro_forge::base {
@@ -23,11 +22,10 @@ using arch::x86_64::Reg;
 // --- templates ---------------------------------------------------------
 // All templates operate on the guest register file through RDI, with the
 // register slot carried in disp32. SIB 0x27 = scale 1, index none, base rdi.
-// The six slot/imm32 templates below all have disp32@4 and imm32@8.
-
-// mov qword [rdi+disp32], imm32-sign-extended   (48 C7 84 27 <disp32> <imm32>)
-constexpr std::array<std::uint8_t, 12> kMovSlotImm = {
-    0x48, 0xC7, 0x84, 0x27, 0, 0, 0, 0, 0, 0, 0, 0,
+// movabs rax,imm64 ; mov [rdi+slot32],rax. Holes: imm64@2, slot32@14.
+// A full immediate permits both zero-extended dwords and sign-extended qwords.
+constexpr std::array<std::uint8_t, 18> kMovSlotImm = {
+    0x48, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0x48, 0x89, 0x84, 0x27, 0, 0, 0, 0,
 };
 // add qword [rdi+disp32], imm32                 (48 81 84 27 <disp32> <imm32>)
 constexpr std::array<std::uint8_t, 12> kAddSlotImm = {
@@ -76,6 +74,24 @@ constexpr std::array<std::uint8_t, 53> kLoadSlot = {
     0x48, 0x89, 0x84, 0x27, 0, 0, 0, 0,       // @45: mov [rdi+dst32],rax (8)
 };
 // Holes: base32@5, disp32@12, cpu64@18, width32@27, helper64@33, dst32@49.
+// Indexed load: cumulative starts 0+1+8+8+4+3+7+10+5+10+3+1+8 = 68.
+// REX.R (4C, not 48) selects r8 for the index slot load.
+constexpr std::array<std::uint8_t, 68> kLoadIdxSlot = {
+    0x57,                                     // @0: push rdi (1)
+    0x48, 0x8B, 0xB4, 0x27, 0, 0, 0, 0,       // @1: mov rsi,[rdi+base32] (8)
+    0x4C, 0x8B, 0x84, 0x27, 0, 0, 0, 0,       // @9: mov r8,[rdi+idx32] (8)
+    0x49, 0xC1, 0xE0, 0,                      // @17: shl r8,shift8 (4)
+    0x4C, 0x01, 0xC6,                         // @21: add rsi,r8 (3)
+    0x48, 0x81, 0xC6, 0,    0, 0, 0,          // @24: add rsi,disp32 (7)
+    0x48, 0xBF, 0,    0,    0, 0, 0, 0, 0, 0, // @31: mov rdi,cpu64 (10)
+    0xBA, 0,    0,    0,    0,                // @41: mov edx,width32 (5)
+    0x49, 0xBB, 0,    0,    0, 0, 0, 0, 0, 0, // @46: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                         // @56: call r11 (3)
+    0x5F,                                     // @59: pop rdi (1)
+    0x48, 0x89, 0x84, 0x27, 0, 0, 0, 0,       // @60: mov [rdi+dst32],rax (8)
+};
+// Holes: base32@5, idx32@13, shift8@20, disp32@27, cpu64@33,
+// width32@42, helper64@48, dst32@64; later holes shift by 8+4+3 = 15.
 // mov dst,[rip+disp] (absolute vaddr precomputed) via helper:
 //   push rdi ; mov rsi,<abs64> ; mov rdi,<cpu64> ; mov edx,width32 ;
 //   movabs r11,jit_load ; call r11 ; pop rdi ; mov [rdi+dst],rax
@@ -107,6 +123,23 @@ constexpr std::array<std::uint8_t, 53> kStoreSlot = {
 };
 // Holes: src32@5, base32@13, disp32@20, cpu64@26, width32@35,
 // helper64@41.
+// Indexed store: cumulative starts 0+1+8+8+8+4+3+7+10+5+10+3+1 = 68.
+constexpr std::array<std::uint8_t, 68> kStoreIdxSlot = {
+    0x57,                                     // @0: push rdi (1)
+    0x48, 0x8B, 0x8C, 0x27, 0, 0, 0, 0,       // @1: mov rcx,[rdi+src32] (8)
+    0x48, 0x8B, 0xB4, 0x27, 0, 0, 0, 0,       // @9: mov rsi,[rdi+base32] (8)
+    0x4C, 0x8B, 0x84, 0x27, 0, 0, 0, 0,       // @17: mov r8,[rdi+idx32] (8)
+    0x49, 0xC1, 0xE0, 0,                      // @25: shl r8,shift8 (4)
+    0x4C, 0x01, 0xC6,                         // @29: add rsi,r8 (3)
+    0x48, 0x81, 0xC6, 0,    0, 0, 0,          // @32: add rsi,disp32 (7)
+    0x48, 0xBF, 0,    0,    0, 0, 0, 0, 0, 0, // @39: mov rdi,cpu64 (10)
+    0xBA, 0,    0,    0,    0,                // @49: mov edx,width32 (5)
+    0x49, 0xBB, 0,    0,    0, 0, 0, 0, 0, 0, // @54: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                         // @64: call r11 (3)
+    0x5F,                                     // @67: pop rdi (1)
+};
+// Holes: src32@5, base32@13, idx32@21, shift8@28, disp32@35,
+// cpu64@41, width32@50, helper64@56; later holes shift by 8+4+3 = 15.
 // add qword [base+disp],src via helper (rdi=cpu, rsi=vaddr, rdx=value):
 //   push rdi ; mov rdx,[rdi+src] ; mov rsi,[rdi+base] ; add rsi,disp32 ;
 //   mov rdi,<cpu64> ; movabs r11,jit_add_mem ; call r11 ; pop rdi
@@ -123,29 +156,58 @@ constexpr std::array<std::uint8_t, 48> kAddMemSlot = {
 // Data holes: src32@5, base32@13, disp32@20 (four bytes each).
 // Relocations: cpu64@26 (8 bytes), helper64@36 (8 bytes).
 // add reg,imm via helper (helper updates the value and flags):
-//   push rdi ; mov esi,<slot32> ; mov edx,<imm32> ; mov rdi,<cpu64> ;
+//   push rdi ; mov esi,<slot32> ; mov edx,<imm32> ; mov ecx,<width32> ; mov rdi,<cpu64> ;
 //   movabs r11,jit_add ; call r11 ; pop rdi
-constexpr std::array<std::uint8_t, 35> kAddImmHelper = {
+constexpr std::array<std::uint8_t, 40> kAddImmHelper = {
     0x57,                                  // @0: push rdi (1)
     0xBE, 0,    0,    0, 0,                // @1: mov esi,slot32 (5)
     0xBA, 0,    0,    0, 0,                // @6: mov edx,imm32 (5)
-    0x48, 0xBF, 0,    0, 0, 0, 0, 0, 0, 0, // @11: mov rdi,cpu64 (10)
-    0x49, 0xBB, 0,    0, 0, 0, 0, 0, 0, 0, // @21: movabs r11,helper64 (10)
-    0x41, 0xFF, 0xD3,                      // @31: call r11 (3)
-    0x5F,                                  // @34: pop rdi (1)
+    0xB9, 0,    0,    0, 0,                // @11: mov ecx,width32 (5)
+    0x48, 0xBF, 0,    0, 0, 0, 0, 0, 0, 0, // @16: mov rdi,cpu64 (10)
+    0x49, 0xBB, 0,    0, 0, 0, 0, 0, 0, 0, // @26: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                      // @36: call r11 (3)
+    0x5F,                                  // @39: pop rdi (1)
 };
-// Holes: slot32@2, imm32@7, cpu64@13, helper64@23.
+// Holes: slot32@2, imm32@7, width32@12, cpu64@18, helper64@28.
 // ret
 constexpr std::array<std::uint8_t, 1> kRet = {
     0xC3,
 };
 
-/// Builds the two-hole patch set: register slot at disp32, immediate next.
-std::vector<JitPage::Patch> slot_imm_patches(std::size_t slot, std::uint32_t imm) {
-    return {
-        JitPage::Patch{.offset = 4, .size = 4, .value = slot},
-        JitPage::Patch{.offset = 8, .size = 4, .value = imm},
-    };
+// Keep the final slot write eight bytes long, preserving every existing hole.
+template <auto Code>
+std::span<const std::uint8_t> load_code(unsigned width) {
+    static constexpr auto byte = [] {
+        auto code = Code;
+        code[code.size() - 8] = 0x40; // REX ; mov byte [rdi+dst32],al
+        code[code.size() - 7] = 0x88;
+        return code;
+    }();
+    static constexpr auto word = [] {
+        auto code = Code;
+        code[code.size() - 8] = 0x66; // mov word [rdi+dst32],ax
+        return code;
+    }();
+    static constexpr auto wide = Code; // dword loads zero-extend into a full slot
+    if (width == 1) {
+        return byte;
+    }
+    if (width == 2) {
+        return word;
+    }
+    return wide;
+}
+
+bool memory_width(unsigned width) {
+    return width == 1 || width == 2 || width == 4 || width == 8;
+}
+
+std::optional<std::size_t> operand_slot(const Operand& op, bool rex) {
+    auto slot = reg_slot_offset(op.reg);
+    if (slot && op.size == 1 && !rex && *slot >= 32 && *slot <= 56) {
+        *slot = *slot - 32 + 1; // AH/CH/DH/BH: byte 1 of RAX/RCX/RDX/RBX
+    }
+    return slot;
 }
 
 } // namespace
@@ -231,14 +293,43 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
             .helper = JitHelper::kAddMem,
         };
     }
-    // mov [base+disp],reg: translated and written by the C++ helper.
+    // mov [base+index*scale+disp],reg: compute vaddr before calling the helper.
     if (insn.mnemonic == Mnemonic::kMov && insn.ops[0].kind == Operand::Kind::kMem &&
-        insn.ops[1].kind == Operand::Kind::kReg && insn.ops[0].has_base && !insn.ops[0].has_index &&
-        !insn.ops[0].rip_relative && insn.ops[1].size == 8) {
+        insn.ops[1].kind == Operand::Kind::kReg && insn.ops[0].has_base &&
+        !insn.ops[0].rip_relative && memory_width(insn.ops[0].size) &&
+        insn.ops[1].size == insn.ops[0].size && insn.addr_size == 8 && !insn.has_lock &&
+        insn.seg != arch::x86_64::Seg::kFs && insn.seg != arch::x86_64::Seg::kGs &&
+        insn.ops[0].disp >= INT32_MIN && insn.ops[0].disp <= INT32_MAX) {
         const auto base = reg_slot_offset(insn.ops[0].base);
-        const auto source = reg_slot_offset(insn.ops[1].reg);
+        const auto source = operand_slot(insn.ops[1], insn.rex_present);
         if (!base.has_value() || !source.has_value()) {
             return std::nullopt;
+        }
+        const auto& mem = insn.ops[0];
+        if (mem.has_index) {
+            const auto index = reg_slot_offset(mem.index);
+            if (!index || mem.scale > 8 || !std::has_single_bit(mem.scale)) {
+                return std::nullopt;
+            }
+            return TranslatedInsn{
+                .code = kStoreIdxSlot,
+                .patches =
+                    {
+                        {.offset = 5, .size = 4, .value = *source},
+                        {.offset = 13, .size = 4, .value = *base},
+                        {.offset = 21, .size = 4, .value = *index},
+                        {
+                            .offset = 28,
+                            .size = 1,
+                            .value = static_cast<unsigned>(std::countr_zero(mem.scale)),
+                        },
+                        {.offset = 35, .size = 4, .value = static_cast<std::uint32_t>(mem.disp)},
+                        {.offset = 50, .size = 4, .value = mem.size},
+                    },
+                .call_offset = 56,
+                .cpu_offset = 41,
+                .helper = JitHelper::kStore,
+            };
         }
         std::vector<JitPage::Patch> patches = {
             JitPage::Patch{
@@ -259,7 +350,7 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
             JitPage::Patch{
                 .offset = 35,
                 .size = 4,
-                .value = 8,
+                .value = mem.size,
             }, // width
         };
         return TranslatedInsn{
@@ -272,20 +363,49 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
     }
     // Stores have a memory destination; only the remaining forms share
     // the register-destination lookup.
-    if (insn.ops[0].kind != Operand::Kind::kReg || insn.ops[0].size != 8) {
+    if (insn.ops[0].kind != Operand::Kind::kReg || !memory_width(insn.ops[0].size)) {
         return std::nullopt;
     }
-    const auto slot = reg_slot_offset(insn.ops[0].reg);
+    const auto slot = operand_slot(insn.ops[0], insn.rex_present);
     if (!slot.has_value()) {
         return std::nullopt;
     }
-    // mov reg,[base+disp]: translated and read by the C++ helper.
+    // mov reg,[base+index*scale+disp]: compute vaddr before calling the helper.
     if (insn.mnemonic == Mnemonic::kMov && insn.ops[0].kind == Operand::Kind::kReg &&
-        insn.ops[1].kind == Operand::Kind::kMem && insn.ops[1].has_base && !insn.ops[1].has_index &&
-        !insn.ops[1].rip_relative && insn.ops[0].size == 8) {
+        insn.ops[1].kind == Operand::Kind::kMem && insn.ops[1].has_base &&
+        !insn.ops[1].rip_relative && insn.ops[0].size == insn.ops[1].size && insn.addr_size == 8 &&
+        !insn.has_lock && insn.seg != arch::x86_64::Seg::kFs &&
+        insn.seg != arch::x86_64::Seg::kGs && insn.ops[1].disp >= INT32_MIN &&
+        insn.ops[1].disp <= INT32_MAX) {
         const auto base = reg_slot_offset(insn.ops[1].base);
         if (!base.has_value()) {
             return std::nullopt;
+        }
+        const auto& mem = insn.ops[1];
+        if (mem.has_index) {
+            const auto index = reg_slot_offset(mem.index);
+            if (!index || mem.scale > 8 || !std::has_single_bit(mem.scale)) {
+                return std::nullopt;
+            }
+            return TranslatedInsn{
+                .code = load_code<kLoadIdxSlot>(mem.size),
+                .patches =
+                    {
+                        {.offset = 5, .size = 4, .value = *base},
+                        {.offset = 13, .size = 4, .value = *index},
+                        {
+                            .offset = 20,
+                            .size = 1,
+                            .value = static_cast<unsigned>(std::countr_zero(mem.scale)),
+                        },
+                        {.offset = 27, .size = 4, .value = static_cast<std::uint32_t>(mem.disp)},
+                        {.offset = 42, .size = 4, .value = mem.size},
+                        {.offset = 64, .size = 4, .value = *slot},
+                    },
+                .call_offset = 48,
+                .cpu_offset = 33,
+                .helper = JitHelper::kLoad,
+            };
         }
         std::vector<JitPage::Patch> patches = {
             JitPage::Patch{
@@ -301,7 +421,7 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
             JitPage::Patch{
                 .offset = 27,
                 .size = 4,
-                .value = 8,
+                .value = mem.size,
             }, // width
             JitPage::Patch{
                 .offset = 49,
@@ -311,7 +431,7 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
         };
         // cpu64 (offset 18) and helper64 (offset 33) are filled by the compiler.
         return TranslatedInsn{
-            .code = kLoadSlot,
+            .code = load_code<kLoadSlot>(mem.size),
             .patches = std::move(patches),
             .call_offset = 33,
             .cpu_offset = 18,
@@ -350,12 +470,11 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
         };
     }
     // add reg,imm32: helper updates the value and flags together.
-    // Kept behind its existing opt-in while the native backend evolves.
     if (insn.mnemonic == Mnemonic::kAdd && insn.ops[0].kind == Operand::Kind::kReg &&
-        insn.ops[1].kind == Operand::Kind::kImm && insn.ops[0].size == 8 &&
-        insn.ops[1].disp >= INT32_MIN && insn.ops[1].disp <= INT32_MAX &&
-        // NOLINTNEXTLINE(concurrency-mt-unsafe) -- single-threaded CPU
-        std::getenv("MICRO_FORGE_JIT_ADD") != nullptr) {
+        insn.ops[1].kind == Operand::Kind::kImm &&
+        (insn.ops[0].size == 4 || insn.ops[0].size == 8) && insn.ops[1].disp >= INT32_MIN &&
+        insn.ops[1].disp <=
+            (insn.ops[0].size == 4 ? static_cast<int64_t>(UINT32_MAX) : INT32_MAX)) {
         std::vector<JitPage::Patch> patches = {
             JitPage::Patch{
                 .offset = 2,
@@ -367,12 +486,13 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
                 .size = 4,
                 .value = static_cast<std::uint32_t>(insn.ops[1].disp),
             },
+            {.offset = 12, .size = 4, .value = insn.ops[0].size},
         };
         return TranslatedInsn{
             .code = kAddImmHelper,
             .patches = std::move(patches),
-            .call_offset = 23,
-            .cpu_offset = 13,
+            .call_offset = 28,
+            .cpu_offset = 18,
             .helper = JitHelper::kAdd,
         };
     }
@@ -430,17 +550,23 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
             .cpu_offset = std::nullopt,
         };
     }
-    // The template stores an imm32; anything wider (kernel high-half
-    // addresses) stays with the interpreter rather than being truncated.
-    if (insn.ops[1].kind != Operand::Kind::kImm || insn.ops[1].disp < INT32_MIN ||
-        insn.ops[1].disp > INT32_MAX) {
+    // Only guest imm32 forms are lowered; wider constants (kernel high-half
+    // addresses) stay with the interpreter rather than being truncated.
+    if ((insn.ops[0].size != 4 && insn.ops[0].size != 8) ||
+        insn.ops[1].kind != Operand::Kind::kImm || insn.ops[1].disp < INT32_MIN ||
+        insn.ops[1].disp > (insn.ops[0].size == 4 ? static_cast<int64_t>(UINT32_MAX) : INT32_MAX)) {
         return std::nullopt;
     }
-    const auto imm = static_cast<std::uint32_t>(insn.ops[1].disp);
+    const auto imm = insn.ops[0].size == 4 ? static_cast<std::uint32_t>(insn.ops[1].disp)
+                                           : static_cast<uint64_t>(insn.ops[1].disp);
     if (insn.mnemonic == Mnemonic::kMov) {
         return TranslatedInsn{
             .code = kMovSlotImm,
-            .patches = slot_imm_patches(*slot, imm),
+            .patches =
+                {
+                    {.offset = 2, .size = 8, .value = imm},
+                    {.offset = 14, .size = 4, .value = *slot},
+                },
             .call_offset = std::nullopt,
             .cpu_offset = std::nullopt,
         };
