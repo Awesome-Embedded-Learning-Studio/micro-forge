@@ -76,6 +76,8 @@ struct DiffCase {
     Reg index_reg = Reg::kRcx;
     unsigned jit_insns = 1;
     bool require_lowered = true;
+    Reg vec_reg = Reg::kXmm0;      ///< SSE case: seeded xmm register
+    std::array<uint64_t, 2> vec{}; ///< SSE case: seeded xmm halves
 };
 
 struct State {
@@ -87,6 +89,7 @@ struct State {
     std::size_t blocks;
     uint64_t insns;
     ExitStatus::Kind exit;
+    std::array<uint64_t, 2> vec; // final xmm halves (SSE diff)
 };
 
 inline void execute_case(const DiffCase& test, State& out) {
@@ -105,6 +108,7 @@ inline void execute_case(const DiffCase& test, State& out) {
             cpu.set_gpr(static_cast<Reg>(i), 0x1020304050607080ULL + i * 0x101U);
         }
         cpu.set_gpr(Reg::kRsp, 0xF000);
+        cpu.set_xmm(test.vec_reg, test.vec);
         cpu.set_gpr(test.result_reg, test.initial);
         cpu.set_gpr(test.source_reg, test.source);
         cpu.set_gpr(test.base_reg, test.base);
@@ -136,6 +140,7 @@ inline void execute_case(const DiffCase& test, State& out) {
     out.blocks = cpu.jit_block_count();
     out.insns = cpu.jit_insn_count();
     out.exit = cpu.exit_status().kind;
+    out.vec = cpu.xmm(test.vec_reg);
     EXPECT_EQ(test.expected, cpu.gpr(test.result_reg));
     EXPECT_EQ(test.flags, cpu.rflags() & kFlags);
     EXPECT_EQ(test.memory_expected.value_or(test.store ? kStored : kLoaded),

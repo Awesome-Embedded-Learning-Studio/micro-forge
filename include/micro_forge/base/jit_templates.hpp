@@ -213,6 +213,33 @@ constexpr std::array<std::uint8_t, 40> kAddImmHelper = {
     0x5F,                                  // @39: pop rdi (1)
 };
 // Holes: slot32@2, imm32@7, width32@12, cpu64@18, helper64@28.
+// movups family, xmm <- [base+disp] via helper (ABI: rdi=cpu, rsi=vaddr,
+// edx=xmm byte slot; helper writes both qword halves):
+//   push rdi ; mov rsi,[rdi+base] ; add rsi,disp32 ; mov rdi,<cpu64> ;
+//   mov edx,slot32 ; movabs r11,jit_load_xmm ; call r11 ; pop rdi
+constexpr std::array<std::uint8_t, 45> kMovxLoadSlot = {
+    0x57,                                     // @0: push rdi (1)
+    0x48, 0x8B, 0xB4, 0x27, 0, 0, 0, 0,       // @1: mov rsi,[rdi+base32] (8)
+    0x48, 0x81, 0xC6, 0,    0, 0, 0,          // @9: add rsi,disp32 (7)
+    0x48, 0xBF, 0,    0,    0, 0, 0, 0, 0, 0, // @16: mov rdi,cpu64 (10)
+    0xBA, 0,    0,    0,    0,                // @26: mov edx,slot32 (5)
+    0x49, 0xBB, 0,    0,    0, 0, 0, 0, 0, 0, // @31: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                         // @41: call r11 (3)
+    0x5F,                                     // @44: pop rdi (1)
+};
+// Holes: base32@5, disp32@12, cpu64@18, slot32@27, helper64@33.
+// movups family, [base+disp] <- xmm via helper (same ABI, reads both halves):
+constexpr std::array<std::uint8_t, 45> kMovxStoreSlot = {
+    0x57,                                     // @0: push rdi (1)
+    0x48, 0x8B, 0xB4, 0x27, 0, 0, 0, 0,       // @1: mov rsi,[rdi+base32] (8)
+    0x48, 0x81, 0xC6, 0,    0, 0, 0,          // @9: add rsi,disp32 (7)
+    0xBA, 0,    0,    0,    0,                // @16: mov edx,slot32 (5)
+    0x48, 0xBF, 0,    0,    0, 0, 0, 0, 0, 0, // @21: mov rdi,cpu64 (10)
+    0x49, 0xBB, 0,    0,    0, 0, 0, 0, 0, 0, // @31: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                         // @41: call r11 (3)
+    0x5F,                                     // @44: pop rdi (1)
+};
+// Holes: base32@5, disp32@12, slot32@17, cpu64@23, helper64@33.
 // ret
 constexpr std::array<std::uint8_t, 1> kRet = {
     0xC3,

@@ -40,6 +40,8 @@ extern "C" void mf_jit_cmov(void* cpu, uint64_t slot, uint64_t src_val, unsigned
 extern "C" void mf_jit_setcc(void* cpu, uint64_t slot, unsigned cc);
 extern "C" void mf_jit_push_val(void* cpu, uint64_t value);
 extern "C" void mf_jit_push_imm(void* cpu, uint64_t value);
+extern "C" void mf_jit_load_xmm(void* cpu, uint64_t vaddr, uint64_t slot);
+extern "C" void mf_jit_store_xmm(void* cpu, uint64_t vaddr, uint64_t slot);
 extern "C" void mf_jit_pop_reg(void* cpu, uint64_t slot);
 
 std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
@@ -172,6 +174,12 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
             case base::JitHelper::kPopReg:
                 helper = reinterpret_cast<std::uint64_t>(&mf_jit_pop_reg);
                 break;
+            case base::JitHelper::kLoadXmm:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_load_xmm);
+                break;
+            case base::JitHelper::kStoreXmm:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_store_xmm);
+                break;
             default:
                 return fail_compile();
             }
@@ -251,6 +259,14 @@ extern "C" void mf_jit_push_val(void* cpu, uint64_t value) {
 
 extern "C" void mf_jit_push_imm(void* cpu, uint64_t value) {
     static_cast<Cpu*>(cpu)->jit_push_imm(value);
+}
+
+extern "C" void mf_jit_load_xmm(void* cpu, uint64_t vaddr, uint64_t slot) {
+    static_cast<Cpu*>(cpu)->jit_load_xmm(vaddr, slot);
+}
+
+extern "C" void mf_jit_store_xmm(void* cpu, uint64_t vaddr, uint64_t slot) {
+    static_cast<Cpu*>(cpu)->jit_store_xmm(vaddr, slot);
 }
 
 extern "C" void mf_jit_pop_reg(void* cpu, uint64_t slot) {
@@ -336,6 +352,31 @@ void Cpu::jit_push_val(uint64_t value) {
 
 void Cpu::jit_push_imm(uint64_t value) {
     (void)push_value(value, 8);
+}
+
+void Cpu::jit_load_xmm(uint64_t vaddr, uint64_t slot) {
+    const auto idx = static_cast<std::size_t>(slot / 16U);
+    if (idx >= xmm_.size()) {
+        return;
+    }
+    const uint64_t low = jit_load(vaddr, 8);
+    if (!exception_injected_) {
+        const uint64_t high = jit_load(vaddr + 8U, 8);
+        if (!exception_injected_) {
+            xmm_[idx] = {low, high};
+        }
+    }
+}
+
+void Cpu::jit_store_xmm(uint64_t vaddr, uint64_t slot) {
+    const auto idx = static_cast<std::size_t>(slot / 16U);
+    if (idx >= xmm_.size()) {
+        return;
+    }
+    jit_store(vaddr, 8, xmm_[idx][0]);
+    if (!exception_injected_) {
+        jit_store(vaddr + 8U, 8, xmm_[idx][1]);
+    }
 }
 
 void Cpu::jit_pop_reg(uint64_t slot) {

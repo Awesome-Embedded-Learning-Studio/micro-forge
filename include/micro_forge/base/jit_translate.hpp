@@ -35,12 +35,14 @@ enum class JitHelper : std::uint8_t {
     kOr,
     kXor,
     kCmpMem,
-    kImul,    ///< two/three-operand imul: reg = reg * r/m, CF/OF from truncation
-    kCmov,    ///< cmovcc reg,reg: dst = src when the condition holds
-    kSetcc,   ///< setcc reg8: dst byte = 1 when the condition holds
-    kPushVal, ///< push reg64 value: stack write via rsp
-    kPushImm, ///< push imm64 (pre-extended)
-    kPopReg,  ///< pop reg64: stack read via rsp
+    kImul,     ///< two/three-operand imul: reg = reg * r/m, CF/OF from truncation
+    kCmov,     ///< cmovcc reg,reg: dst = src when the condition holds
+    kSetcc,    ///< setcc reg8: dst byte = 1 when the condition holds
+    kPushVal,  ///< push reg64 value: stack write via rsp
+    kLoadXmm,  ///< movups-family load: [base+disp] -> xmm
+    kStoreXmm, ///< movups-family store: xmm -> [base+disp]
+    kPushImm,  ///< push imm64 (pre-extended)
+    kPopReg,   ///< pop reg64: stack read via rsp
 };
 
 /**

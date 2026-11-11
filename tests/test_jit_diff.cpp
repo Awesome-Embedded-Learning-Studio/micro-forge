@@ -44,6 +44,8 @@ TEST_P(JitDiffTest, MatchesInterpreter) {
     EXPECT_EQ(1U, jit.blocks);
     EXPECT_EQ(test.jit_insns, jit.insns);
     EXPECT_EQ(interpreter.exit, jit.exit);
+    EXPECT_EQ(interpreter.vec[0], jit.vec[0]) << "XMM low";
+    EXPECT_EQ(interpreter.vec[1], jit.vec[1]) << "XMM high";
     EXPECT_EQ(interpreter.rip, jit.rip);
     EXPECT_EQ(interpreter.rflags, jit.rflags);
     for (unsigned i = 0; i < jit.gprs.size(); ++i) {

@@ -230,15 +230,20 @@ public:
     /// @param[in] cc Hardware condition code 0-15.
     void jit_setcc(uint64_t slot, unsigned cc);
 
-    /// @brief PUSH helper: stores @p value at rsp-8 and lowers rsp.
-    /// @param[in] value Register value or pre-extended immediate.
+    /// @brief PUSH helper: stores @p value (reg value or imm) at rsp-8.
+    /// @param[in] value Already extended to 64 bits.
     void jit_push_val(uint64_t value);
-    /// @brief PUSH imm helper: stores @p value at rsp-8 and lowers rsp.
-    /// @param[in] value Immediate value, already extended to 64 bits.
+    /// @brief PUSH imm helper: stores @p value (already 64-bit) at rsp-8.
     void jit_push_imm(uint64_t value);
-    /// @brief POP reg64 helper: loads from rsp into the slot and raises rsp.
-    /// @param[in] slot Byte offset of the destination register slot in regs_.
+    /// @brief POP reg64 helper: loads rsp into the slot and raises rsp.
+    /// @param[in] slot Byte offset of the destination register slot.
     void jit_pop_reg(uint64_t slot);
+    /// @brief movups-family: 16 bytes between memory and xmm_[slot/16].
+    /// @param[in] vaddr Guest address of the low qword.
+    /// @param[in] slot Byte offset of the xmm register in xmm_.
+    void jit_load_xmm(uint64_t vaddr, uint64_t slot);
+    /// @brief movups-family helper: 16 bytes from xmm_[slot/16] to memory.
+    void jit_store_xmm(uint64_t vaddr, uint64_t slot);
     /// @brief JIT OR: combine GPR[slot/8] with value, updating flags.
     void jit_or(uint64_t slot, uint64_t value, unsigned width);
     /// @brief JIT XOR: xor GPR[slot/8] with value, updating flags.
@@ -559,6 +564,7 @@ private:
     /// Raises #PF (vector 14) with its error code; false when no IDT.
     bool raise_page_fault(uint64_t error);
     /// Queued interrupt delivery (batch 6c).
+
     uint8_t pending_vector_ = 0;
     bool interrupt_pending_ = false;
     bool sti_shadow_ = false; // STI blocks delivery past the next retire
@@ -566,34 +572,28 @@ private:
     void deliver_interrupt();
     /// CR2 and the last #PF error code (read by the interrupt path).
     uint64_t cr2_ = 0, pf_error_ = 0;
-    /// Software MMU (pass-through until the boot shim enables paging).
-    Mmu mmu_{bus_};
-    /// SSE2 register file: 16 XMM registers, two 64-bit halves each.
+    Mmu mmu_{bus_}; // software MMU; pass-through until paging
+    /// SSE2 register file: 16 XMM regs, two 64-bit halves each.
     std::array<std::array<uint64_t, 2>, 16> xmm_{};
     /// MXCSR control/status word (FXSAVE carries it across switches).
     uint32_t mxcsr_ = 0x1F80U;
-    /// Deterministic RNG state (splitmix64 seed until batch 8 derives it).
+    /// RNG state (splitmix64; batch 8 derives it).
     uint64_t rng_state_ = 0x9E3779B97F4A7C15ULL;
-    /// Task/ldt selectors (0F 00 group; no descriptor semantics in v0).
-    uint16_t tss_selector_ = 0;
-    uint16_t ldt_selector_ = 0;
+    /// Task/ldt selectors (0F 00 group; no descriptors in v0).
+    uint16_t tss_selector_ = 0, ldt_selector_ = 0;
     /// Segment bases (FS/GS models; addressing arrives with the MMU).
-    uint64_t fs_base_ = 0;
-    uint64_t gs_base_ = 0, kernel_gs_base_ = 0;
+    uint64_t fs_base_ = 0, gs_base_ = 0, kernel_gs_base_ = 0;
     kernel::Tick icount_ = 0;
-    std::vector<char> console_;
-    std::function<void(uint64_t rip)> trace_;
-    /// Attached interrupt line (wiring only: snapshots re-attach it).
+    std::vector<char> console_; // serial bytes (diagnostics)
+    std::function<void(uint64_t)> trace_;
+    /// Interrupt line (wiring only; snapshots re-attach) + high hook.
     kernel::IrqLine* irq_line_ = nullptr;
-    /// Receiving hook fired while the line is high (batch-6: injection).
     std::function<void()> irq_hook_;
-    /// RIP of the instruction being executed (diagnostics and traces).
+    /// RIP and byte length of the executing instruction (traces).
     uint64_t insn_rip_ = 0;
-    /// Length in bytes of the instruction being executed.
     uint8_t cur_length_ = 0;
     ExitStatus exit_{};
-    std::array<uint8_t, 16> fetch_buf_{};
-    /// GPR array index of a register enum.
+    std::array<uint8_t, 16> fetch_buf_{}; // GPR array index of a register enum:
     [[nodiscard]] static unsigned index_of(Reg reg) { return static_cast<unsigned>(reg) & 0xFU; }
 };
 

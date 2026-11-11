@@ -298,6 +298,56 @@ std::vector<DiffCase> alu_cases() {
     pop_rsp.result_reg = Reg::kRsp;
     pop_rsp.jit_insns = 2;
     cases.push_back(pop_rsp);
+    // movups family xmm <-> [base+disp]: 16 bytes through both halves.
+    DiffCase movx_store{
+        .name = "movups_store_rax",
+        .code = {0x0F, 0x11, 0x00}, // movups [rax],xmm0
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = kFlags,
+        .store = true,
+        .memory_expected = kStored, // low qword of xmm0 lands at kData
+    };
+    movx_store.base_reg = Reg::kRax;
+    movx_store.base = kData;
+    movx_store.vec = {kStored, 0x1F2E3D4C5B6A7988ULL};
+    cases.push_back(movx_store);
+    DiffCase movx_load{
+        .name = "movups_load_rbx",
+        .code = {0x0F, 0x10, 0x03}, // movups xmm0,[rbx]
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = kFlags,
+    };
+    movx_load.base_reg = Reg::kRbx;
+    movx_load.base = kData;
+    movx_load.vec = {0x0102030405060708ULL, 0x1112131415161718ULL};
+    cases.push_back(movx_load);
+    DiffCase movx_store_disp{
+        .name = "movaps_store_disp",
+        .code = {0x0F, 0x29, 0x40, 0xF0}, // movaps [rax-0x10],xmm0
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = kFlags,
+        .store = true,
+        .memory_expected = kStored,
+    };
+    movx_store_disp.base_reg = Reg::kRax;
+    movx_store_disp.base = kData + 0x10;
+    movx_store_disp.vec = {kStored, kLoaded};
+    cases.push_back(movx_store_disp);
+    DiffCase movx_load_xmm5{
+        .name = "movdqa_load_xmm5",
+        .code = {0x66, 0x0F, 0x6F, 0x28}, // movdqa xmm5,[rax]
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = kFlags,
+    };
+    movx_load_xmm5.base_reg = Reg::kRax;
+    movx_load_xmm5.base = kData;
+    movx_load_xmm5.vec_reg = Reg::kXmm5;
+    movx_load_xmm5.vec = {0, 0};
+    cases.push_back(movx_load_xmm5);
     return cases;
 }
 } // namespace jit_diff_cases
