@@ -170,6 +170,7 @@ def render(templates: list[dict]) -> str:
         "",
         "#include <array>",
         "#include <micro_forge/base/jit.hpp>",
+        "#include <span>",
         "#include <cstddef>",
         "#include <cstdint>"
         "",
@@ -195,8 +196,8 @@ def render(templates: list[dict]) -> str:
         "/// @param[in] kind Which hole to fill.",
         "/// @param[in] value Value written at patch time.",
         "/// @return Patch site; offset/size stay zero when the kind is absent.",
-        "template <std::size_t N>",
-        "constexpr auto hole_patch(const Hole (&holes)[N], HoleKind kind, std::uint64_t value) {",
+        "constexpr auto hole_patch(std::span<const Hole> holes, HoleKind kind,",
+        "                          std::uint64_t value) {",
         "    for (const auto& hole : holes) {",
         "        if (hole.kind == kind) {",
         "            return JitPage::Patch{.offset = hole.offset, .size = hole.size, .value = value};",
