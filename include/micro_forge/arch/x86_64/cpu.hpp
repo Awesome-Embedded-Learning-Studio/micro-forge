@@ -242,8 +242,6 @@ public:
     void jit_grp3(uint64_t divisor, unsigned width, unsigned mn);
     /// @brief three-operand imul via execute_imul23 (rebuilt shape).
     void jit_imul23(unsigned dst, unsigned src, uint64_t imm, unsigned width);
-    /// @brief bt: CF = bit (src & bits-1) of the slot; others unchanged.
-    void jit_bt(unsigned slot, unsigned src, unsigned width);
     /// @brief cmov reg,[mem]: read always, write only when cc holds.
     void jit_cmov_mem(uint64_t vaddr, unsigned cc, unsigned slot, unsigned width);
     /// @brief ALU [mem],imm: load, combine, store (faulted load stops).
@@ -254,6 +252,12 @@ public:
     void jit_ports(unsigned mn, unsigned width);
     /// @brief one-operand grp3, divisor read from memory.
     void jit_grp3_mem(uint64_t vaddr, unsigned width, unsigned mn);
+    /// @brief movsx: sign-extend src_width bytes into the dst width.
+    void jit_movsx(uint64_t value, unsigned src_width, unsigned dst, unsigned dst_width);
+    /// @brief neg: complement and add one; flags follow alu_sub(0, value).
+    void jit_neg(unsigned slot, unsigned unused, unsigned width);
+    /// @brief bts/btr/btc: CF = tested bit, then set/clear/toggle.
+    void jit_bit_op(unsigned slot, unsigned index, unsigned width, unsigned op);
     /// @brief reg,reg ALU: alu_add/sub/logic with the interpreter's flags.
     void jit_alu_reg(unsigned slot, unsigned src, unsigned mn, unsigned width);
     /// @brief ALU reg,[mem]: load, combine, write; a fault skips the write.
@@ -312,13 +316,10 @@ public:
     [[nodiscard]] uint64_t page_fault_address() const { return cr2_; }
     /// @brief #PF error code of the last page fault.
     [[nodiscard]] uint64_t page_fault_error() const { return pf_error_; }
-    /// @brief Reads one model-specific register from the whitelist.
+    /// @brief Reads one whitelisted MSR.
     [[nodiscard]] std::optional<uint64_t> read_msr(uint32_t index) const;
-    /// @brief Writes one model-specific register.
-    ///
-    /// @param[in] index MSR index; must be whitelisted.
-    /// @param[in] value Full 64-bit value (EDX:EAX packed by the caller).
-    /// @return false when the index is not whitelisted (the executor reports a #GP-style fault).
+    /// @brief Writes one whitelisted MSR.
+    /// @return false when the index is not whitelisted.
     bool write_msr(uint32_t index, uint64_t value);
     /// @brief One CPUID answer.
     struct CpuidAnswer {
@@ -537,7 +538,7 @@ private:
         base::SetAssocCache<uint64_t, CachedInsn, kDecodeCacheCapacity, 2, DecodeHash>;
     /// Decode cache (vaddr -> instruction); rebuilt by configure_caches().
     DecodeCache decode_cache_;
-    /// Executed-page bitmap; stores to marked pages invalidate decoding.
+    /// Executed-page bitmap; stores to marked pages invalidate decode.
     std::vector<uint64_t> code_page_bits_;
     /// Marks @p paddr's page as an executed-from page.
     void mark_code_page(uint64_t paddr);
@@ -567,20 +568,19 @@ private:
     /// Invalidates the decode cache when @p paddr hits a code page.
     void note_store(uint64_t paddr);
     std::array<uint8_t, 16> last_fault_bytes_{};
-    unsigned last_fault_length_ = 0;
+    unsigned last_fault_length_ = 0; // probe: faulting instruction image
     /// Reads TSS.RSP0: ltr's selector indexes the GDT, offset 4 holds it.
     [[nodiscard]] uint64_t kernel_stack_top();
-    bool raise_page_fault(uint64_t error); // #PF vector 14; false if no IDT
-    uint8_t pending_vector_ = 0;           // queued interrupt delivery (batch 6c)
-    bool interrupt_pending_ = false;
-    bool sti_shadow_ = false;                       // STI blocks delivery past the next retire
-    void deliver_interrupt();                       // queued vector; needs IF && running
-    uint64_t cr2_ = 0, pf_error_ = 0;               // #PF address + error code
-    Mmu mmu_{bus_};                                 // software MMU; pass-through until paging
-    std::array<std::array<uint64_t, 2>, 16> xmm_{}; // SSE2: 16 XMM regs
-    uint32_t mxcsr_ = 0x1F80U;                      // MXCSR (FXSAVE carries it)
-    uint64_t rng_state_ = 0x9E3779B97F4A7C15ULL;    // splitmix64 seed
-    uint16_t tss_selector_ = 0, ldt_selector_ = 0;  // 0F 00 group; v0: none
+    bool raise_page_fault(uint64_t error);                // #PF vector 14; false if no IDT
+    uint8_t pending_vector_ = 0;                          // queued interrupt delivery (batch 6c)
+    bool interrupt_pending_ = false, sti_shadow_ = false; // STI blocks delivery
+    void deliver_interrupt();                             // queued vector; needs IF && running
+    uint64_t cr2_ = 0, pf_error_ = 0;                     // #PF address + error code
+    Mmu mmu_{bus_};                                       // software MMU; pass-through until paging
+    std::array<std::array<uint64_t, 2>, 16> xmm_{};       // SSE2: 16 XMM regs
+    uint32_t mxcsr_ = 0x1F80U;                            // MXCSR (FXSAVE carries it)
+    uint64_t rng_state_ = 0x9E3779B97F4A7C15ULL;          // splitmix64 seed
+    uint16_t tss_selector_ = 0, ldt_selector_ = 0;        // 0F 00 group; v0: none
     uint64_t fs_base_ = 0, gs_base_ = 0, kernel_gs_base_ = 0; // FS/GS bases
 
     kernel::Tick icount_ = 0;   // virtual time

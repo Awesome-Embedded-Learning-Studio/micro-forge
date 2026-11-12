@@ -425,8 +425,10 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
             };
         }
     }
-    // add reg,imm32: helper updates the value and flags together.
-    if (insn.mnemonic == Mnemonic::kAdd && insn.ops[0].kind == Operand::Kind::kReg &&
+    // add reg,imm32: helper updates the value and flags together. kImplicit
+    // covers the accumulator short form (48 05 imm32 = add rax,imm32).
+    if (insn.mnemonic == Mnemonic::kAdd &&
+        (insn.ops[0].kind == Operand::Kind::kReg || insn.ops[0].kind == Operand::Kind::kImplicit) &&
         insn.ops[1].kind == Operand::Kind::kImm &&
         (insn.ops[0].size == 4 || insn.ops[0].size == 8) && insn.ops[1].disp >= INT32_MIN &&
         insn.ops[1].disp <=

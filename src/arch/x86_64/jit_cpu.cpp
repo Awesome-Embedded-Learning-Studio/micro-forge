@@ -25,7 +25,7 @@ namespace micro_forge::arch::x86_64 {
 
 std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
     constexpr std::size_t max_insns = 64;
-    // Pass 1 lowers everything first: a shared page must not run dry.
+    // Pass 1 lowers everything first: a page must not run dry.
     std::vector<base::TranslatedInsn> items;
     std::size_t budget = 1; // trailing ret for unterminated blocks
     uint64_t covered = 0;
@@ -33,7 +33,7 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
     bool terminated = false;
     uint64_t pc = rip;
     const uint64_t saved_rip = rip_;
-    // fetch() can latch exception_injected_; keep it out of the fault path.
+    // fetch() can latch exception_injected_; keep it out of faults.
     const bool saved_exception = exception_injected_;
     const auto fail_compile =
         [&]() -> std::optional<JitBlock> { // NOLINT(readability-redundant-lambda-parameter-list)
@@ -94,8 +94,8 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
     if (count == 0) {
         return std::nullopt;
     }
-    // Pass 2: fill the current page while the block fits, else start a
-    // fresh one. The unseal/seal round trip is per compile, not per insn.
+    // Pass 2: fill the current page while the block fits, else start a new
+    // one; unseal/seal round trips happen once per compile.
     if (!jit_page_ || jit_page_->available() < budget) {
         auto fresh = base::JitPage::create();
         if (!fresh.has_value()) {
@@ -114,135 +114,10 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
         }
         if (lowered.call_offset.has_value() && lowered.cpu_offset.has_value()) {
             const auto cpu_arg = reinterpret_cast<std::uint64_t>(this);
-            std::uint64_t helper = 0;
-            switch (lowered.helper) {
-            case base::JitHelper::kAdd:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_add);
-                break;
-            case base::JitHelper::kAddMem:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_add_mem);
-                break;
-            case base::JitHelper::kStore:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_store);
-                break;
-            case base::JitHelper::kLoad:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_load);
-                break;
-            case base::JitHelper::kCmp:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_cmp);
-                break;
-            case base::JitHelper::kTest:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_test);
-                break;
-            case base::JitHelper::kSub:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_sub);
-                break;
-            case base::JitHelper::kAnd:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_and);
-                break;
-            case base::JitHelper::kOr:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_or);
-                break;
-            case base::JitHelper::kXor:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_xor);
-                break;
-            case base::JitHelper::kImul:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_imul);
-                break;
-            case base::JitHelper::kCmpMem:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_cmp_mem);
-                break;
-            case base::JitHelper::kCmov:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_cmov);
-                break;
-            case base::JitHelper::kSetcc:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_setcc);
-                break;
-            case base::JitHelper::kPushVal:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_push_val);
-                break;
-            case base::JitHelper::kPushImm:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_push_imm);
-                break;
-            case base::JitHelper::kPopReg:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_pop_reg);
-                break;
-            case base::JitHelper::kLoadXmm:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_load_xmm);
-                break;
-            case base::JitHelper::kStoreXmm:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_store_xmm);
-                break;
-            case base::JitHelper::kRet:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_ret);
-                break;
-            case base::JitHelper::kLeave:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_leave);
-                break;
-            case base::JitHelper::kCall:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_call);
-                break;
-            case base::JitHelper::kJmp:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_jmp);
-                break;
-            case base::JitHelper::kJcc:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_jcc);
-                break;
-            case base::JitHelper::kMovSlotW:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_mov_slot_w);
-                break;
-            case base::JitHelper::kShift:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_shift);
-                break;
-            case base::JitHelper::kAluReg:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_alu_reg);
-                break;
-            case base::JitHelper::kAluMem:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_alu_mem);
-                break;
-            case base::JitHelper::kShiftCl:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_shift);
-                break;
-            case base::JitHelper::kPxor:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_pxor);
-                break;
-            case base::JitHelper::kAluMemRip:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_alu_mem);
-                break;
-            case base::JitHelper::kLoadRip:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_load);
-                break;
-            case base::JitHelper::kGrp3:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_grp3);
-                break;
-            case base::JitHelper::kImul23:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_imul23);
-                break;
-            case base::JitHelper::kBt:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_bt);
-                break;
-            case base::JitHelper::kCmovMem:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_cmov_mem);
-                break;
-            case base::JitHelper::kNot:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_not);
-                break;
-            case base::JitHelper::kAluMemImm:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_alu_mem_imm);
-                break;
-            case base::JitHelper::kImulMem:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_imul_mem);
-                break;
-            case base::JitHelper::kPorts:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_ports);
-                break;
-            case base::JitHelper::kGrp3Mem:
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_grp3_mem);
-                break;
-            default:
+            const std::uint64_t helper = mf_jit_helper_address(lowered.helper);
+            if (helper == 0) {
                 return fail_compile();
             }
-
             // A half-patched template must never become a block.
             if (!page.patch(*offset + *lowered.cpu_offset, 8, cpu_arg) ||
                 !page.patch(*offset + *lowered.call_offset, 8, helper)) {

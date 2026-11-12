@@ -262,6 +262,31 @@ std::optional<TranslatedInsn> translate_move(const arch::x86_64::DecodedInsn& in
             };
         }
     }
+    // movsx/movsxd reg,reg: sign-extend the source into a wider register.
+    // The kMovSlotW byte layout already carries value/width/dst/width.
+    if (insn.mnemonic == Mnemonic::kMovsx && insn.ops[0].kind == Operand::Kind::kReg &&
+        insn.ops[1].kind == Operand::Kind::kReg && insn.addr_size == 8 && !insn.has_lock &&
+        (insn.ops[0].size == 4 || insn.ops[0].size == 8) &&
+        (insn.ops[1].size == 1 || insn.ops[1].size == 2 || insn.ops[1].size == 4) &&
+        insn.ops[1].size < insn.ops[0].size) {
+        const auto dst = operand_slot(insn.ops[0], insn.rex_present);
+        const auto src = reg_slot_offset(insn.ops[1].reg);
+        if (dst.has_value() && src.has_value()) {
+            return TranslatedInsn{
+                .code = kMovSlotW,
+                .patches =
+                    {
+                        {.offset = 4, .size = 4, .value = *src},
+                        {.offset = 9, .size = 4, .value = insn.ops[1].size},
+                        {.offset = 14, .size = 4, .value = *dst},
+                        {.offset = 20, .size = 4, .value = insn.ops[0].size},
+                    },
+                .call_offset = 36,
+                .cpu_offset = 26,
+                .helper = JitHelper::kMovsx,
+            };
+        }
+    }
     // cmov reg,[base+disp]: load the source, merge only when cc holds. The
     // helper reads memory after the condition test, so a false condition
     // costs nothing and a faulted read writes nothing.

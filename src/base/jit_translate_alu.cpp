@@ -41,6 +41,14 @@ JitHelper alu_helper(Mnemonic mnemonic) {
         return JitHelper::kBt;
     case Mnemonic::kNot:
         return JitHelper::kNot;
+    case Mnemonic::kNeg:
+        return JitHelper::kNeg;
+    case Mnemonic::kBts:
+        return JitHelper::kBts;
+    case Mnemonic::kBtr:
+        return JitHelper::kBtr;
+    case Mnemonic::kBtc:
+        return JitHelper::kBtc;
     default:
         return JitHelper::kNone;
     }
@@ -307,6 +315,24 @@ std::optional<TranslatedInsn> translate_alu(const arch::x86_64::DecodedInsn& ins
         (helper == JitHelper::kImul && insn.ops[2].kind != Operand::Kind::kNone)) {
         return std::nullopt;
     }
+    // bt reg,imm: the immediate is the bit index, which is exactly what
+    // jit_bt's second argument already is.
+    if ((helper == JitHelper::kBt || helper == JitHelper::kBts || helper == JitHelper::kBtr ||
+         helper == JitHelper::kBtc) &&
+        source.kind == Operand::Kind::kImm) {
+        return TranslatedInsn{
+            .code = kAluImmHelper,
+            .patches =
+                {
+                    {.offset = 2, .size = 4, .value = slot},
+                    {.offset = 8, .size = 8, .value = static_cast<uint64_t>(source.disp)},
+                    {.offset = 17, .size = 4, .value = width},
+                },
+            .call_offset = 33,
+            .cpu_offset = 23,
+            .helper = helper,
+        };
+    }
     if (source.kind == Operand::Kind::kImm && source.disp >= INT32_MIN &&
         source.disp <= (width == 4 ? static_cast<int64_t>(UINT32_MAX) : INT32_MAX)) {
         return TranslatedInsn{
@@ -322,9 +348,11 @@ std::optional<TranslatedInsn> translate_alu(const arch::x86_64::DecodedInsn& ins
             .helper = helper,
         };
     }
-    // Unary forms (not) have no second operand; the shared three-argument
+    // Unary forms (not, neg) have no second operand; the shared template
+    // carries the slot twice and the helper ignores the extra one.
     // template carries the slot twice and the helper ignores the extra one.
-    if (helper == JitHelper::kNot && source.kind == Operand::Kind::kNone) {
+    if ((helper == JitHelper::kNot || helper == JitHelper::kNeg) &&
+        source.kind == Operand::Kind::kNone) {
         return TranslatedInsn{
             .code = kAluRegHelper,
             .patches =

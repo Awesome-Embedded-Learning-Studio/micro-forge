@@ -47,6 +47,33 @@ extern "C" void mf_jit_imul23(void* cpu, unsigned dst, unsigned src, uint64_t im
     static_cast<Cpu*>(cpu)->jit_imul23(dst, src, imm, width);
 }
 
+/// @brief One thunk per bit operation; op selects the write-back flavour.
+extern "C" void mf_jit_bts(void* cpu, unsigned slot, unsigned index, unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_bit_op(slot, index, width, 1);
+}
+
+/// @brief btr thunk (op 2).
+extern "C" void mf_jit_btr(void* cpu, unsigned slot, unsigned index, unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_bit_op(slot, index, width, 2);
+}
+
+/// @brief btc thunk (op 3).
+extern "C" void mf_jit_btc(void* cpu, unsigned slot, unsigned index, unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_bit_op(slot, index, width, 3);
+}
+
+/// @brief C ABI bridge: rdi=cpu, esi=slot, edx=unused, ecx=width.
+extern "C" void mf_jit_neg(void* cpu, unsigned slot, unsigned unused, unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_neg(slot, unused, width);
+}
+
+/// @brief C ABI bridge: rdi=cpu, rsi=value, edx=src width, ecx=dst slot,
+///        r8d=dst width.
+extern "C" void mf_jit_movsx(void* cpu, uint64_t value, unsigned src_width, unsigned dst,
+                             unsigned dst_width) {
+    static_cast<Cpu*>(cpu)->jit_movsx(value, src_width, dst, dst_width);
+}
+
 /// @brief C ABI bridge: rdi=cpu, rsi=vaddr, edx=width, ecx=mnemonic.
 extern "C" void mf_jit_grp3_mem(void* cpu, uint64_t vaddr, unsigned width, unsigned mn) {
     static_cast<Cpu*>(cpu)->jit_grp3_mem(vaddr, width, mn);
@@ -85,12 +112,50 @@ extern "C" void mf_jit_cmov_mem(void* cpu, uint64_t vaddr, unsigned cc, unsigned
     static_cast<Cpu*>(cpu)->jit_cmov_mem(vaddr, cc, slot, width);
 }
 
-/// @brief C ABI bridge: rdi=cpu, esi=slot, edx=index slot, ecx=width.
+/// @brief C ABI bridge: rdi=cpu, esi=slot, edx=index, ecx=width. Plain bt is
+/// jit_bit_op with op 0 (no write-back).
 extern "C" void mf_jit_bt(void* cpu, unsigned slot, unsigned src, unsigned width) {
-    static_cast<Cpu*>(cpu)->jit_bt(slot, src, width);
+    static_cast<Cpu*>(cpu)->jit_bit_op(slot, src, width, 0);
 }
 
 } // namespace
+
+void Cpu::jit_bit_op(unsigned slot, unsigned index, unsigned width, unsigned op) {
+    auto& dst = regs_[slot / 8U];
+    const uint64_t mask = width_util::width_mask(width);
+    const unsigned bits = width * 8U;
+    const unsigned bit = index & (bits - 1U);
+    const uint64_t value = dst & mask;
+    cf_ = ((value >> bit) & 1U) != 0U;
+    if (op == 0U) {
+        return; // plain bt only touches CF
+    }
+    const uint64_t bitmask = 1ULL << bit;
+    uint64_t updated = value;
+    if (op == 1U) {
+        updated |= bitmask;
+    } else if (op == 2U) {
+        updated &= ~bitmask;
+    } else {
+        updated ^= bitmask;
+    }
+    dst = (dst & ~mask) | (updated & mask);
+}
+
+void Cpu::jit_neg(unsigned slot, unsigned unused, unsigned width) {
+    static_cast<void>(unused); // the shared three-argument template slot
+    auto& dst = regs_[slot / 8U];
+    const uint64_t mask = width_util::width_mask(width);
+    const uint64_t result = alu_sub(0, dst & mask, width, false);
+    dst = (dst & ~mask) | (result & mask);
+}
+
+void Cpu::jit_movsx(uint64_t value, unsigned src_width, unsigned dst, unsigned dst_width) {
+    const uint64_t raw = value & width_util::width_mask(src_width);
+    const auto extended = width_util::sign_extend(raw, src_width);
+    // A 32-bit destination zero-extends the sign-extended value.
+    regs_[dst / 8U] = dst_width == 4U ? static_cast<uint32_t>(extended) : extended;
+}
 
 void Cpu::jit_grp3_mem(uint64_t vaddr, unsigned width, unsigned mn) {
     uint64_t divisor = 0;
@@ -188,13 +253,6 @@ void Cpu::jit_cmov_mem(uint64_t vaddr, unsigned cc, unsigned slot, unsigned widt
     // write_gpr has the same width rules as the slot writes: 32-bit
     // zero-extends, narrower widths keep the high bytes.
     write_gpr(static_cast<Reg>(slot / 8U), width, true, value & width_util::width_mask(width));
-}
-
-void Cpu::jit_bt(unsigned slot, unsigned src, unsigned width) {
-    const auto value = read_gpr(static_cast<Reg>(slot / 8U), width, true);
-    const auto index = read_gpr(static_cast<Reg>(src / 8U), width, true);
-    const unsigned bits = width * 8U;
-    cf_ = ((value >> (index & (bits - 1U))) & 1U) != 0U;
 }
 
 void Cpu::jit_imul23(unsigned dst, unsigned src, uint64_t imm, unsigned width) {

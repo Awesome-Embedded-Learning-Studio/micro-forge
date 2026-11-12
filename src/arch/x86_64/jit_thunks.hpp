@@ -12,6 +12,8 @@
 
 #include <cstdint>
 
+#include <micro_forge/base/jit_translate.hpp>
+
 extern "C" std::uint64_t mf_jit_load(void* cpu, std::uint64_t vaddr, unsigned width);
 extern "C" void mf_jit_store(void* cpu, std::uint64_t vaddr, unsigned width, std::uint64_t value);
 extern "C" std::uint64_t mf_jit_add(void* cpu, std::uint64_t slot, std::uint64_t imm,
@@ -54,6 +56,21 @@ extern "C" void mf_jit_alu_mem_imm(void* cpu, uint64_t vaddr, uint64_t imm, unsi
 extern "C" void mf_jit_imul_mem(void* cpu, uint64_t vaddr, unsigned dst, unsigned width);
 extern "C" void mf_jit_ports(void* cpu, unsigned mn, unsigned width);
 extern "C" void mf_jit_grp3_mem(void* cpu, uint64_t vaddr, unsigned width, unsigned mn);
+extern "C" void mf_jit_movsx(void* cpu, uint64_t value, unsigned src_width, unsigned dst,
+                             unsigned dst_width);
+extern "C" void mf_jit_neg(void* cpu, unsigned slot, unsigned unused, unsigned width);
+extern "C" void mf_jit_bts(void* cpu, unsigned slot, unsigned index, unsigned width);
+extern "C" void mf_jit_btr(void* cpu, unsigned slot, unsigned index, unsigned width);
+extern "C" void mf_jit_btc(void* cpu, unsigned slot, unsigned index, unsigned width);
+
+namespace micro_forge::arch::x86_64 {
+
+/// @brief Returns the thunk address for a JitHelper id (jit_helpers.cpp).
+/// @param[in] id Helper id recorded by the translated instruction.
+/// @return Thunk address, or 0 when nothing matches.
+std::uint64_t mf_jit_helper_address(micro_forge::base::JitHelper id);
+
+} // namespace micro_forge::arch::x86_64
 
 /// @brief Coverage diagnostics (jit_stats.cpp): count and dump fallbacks.
 extern "C" void mf_jit_note_fail_hit(std::uint64_t rip);
