@@ -40,7 +40,10 @@ option(MICRO_FORGE_EMBEDDED "Freestanding-ish build: no exceptions, no RTTI" OFF
 find_program(MICRO_FORGE_PYTHON3 python3 REQUIRED)
 add_custom_target(
     jit_templates_gen ALL
-    COMMAND "${MICRO_FORGE_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen/gen_jit_templates.py"
+    COMMAND
+        "${CMAKE_COMMAND}" -E env
+        "JIT_TEMPLATES_OUT=${CMAKE_BINARY_DIR}/generated/micro_forge/base/jit_templates_generated.hpp"
+        "${MICRO_FORGE_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen/gen_jit_templates.py"
     COMMENT "Regenerating JIT templates from assembly"
     VERBATIM
 )
@@ -98,6 +101,7 @@ add_library(micro_forge
 # The generated header must exist before the library compiles.
 add_dependencies(micro_forge jit_templates_gen)
 target_include_directories(micro_forge PUBLIC
+    "$<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/generated>"
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/generated>
 )

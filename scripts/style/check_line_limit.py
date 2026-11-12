@@ -18,7 +18,10 @@ ROOTS = ("include", "src", "tools", "tests", "scripts", "bench")
 # micro-forge local: path prefixes the gate never scans. The emsdk
 # toolchain clone under tools/ is gitignored third-party tooling, not
 # our sources (batch 5).
+# Generated sources are exempt: their length is a function of how many
+# templates the assembler emitted, not of how much code a human wrote.
 SKIPPED_PREFIXES = ("tools/emsdk/",)
+SKIPPED_SUFFIXES = ("_generated.hpp",)
 EXTS = (".cpp", ".hpp", ".py")
 # Inherited verbatim from the parent repo (batch 1): splitting it here would
 # fork away from upstream. Revisit if the parent repo splits it.
@@ -41,7 +44,11 @@ def main() -> int:
             if path.suffix not in EXTS or not path.is_file():
                 continue
             rel = path.relative_to(repo).as_posix()
-            if rel in EXEMPT or rel.startswith(SKIPPED_PREFIXES):
+            if (
+                rel in EXEMPT
+                or rel.startswith(SKIPPED_PREFIXES)
+                or rel.endswith(SKIPPED_SUFFIXES)
+            ):
                 continue
             scanned += 1
             n = len(path.read_text(encoding="utf-8", errors="replace").splitlines())

@@ -145,7 +145,7 @@ TEST(JitLayoutTest, RejectsBadRelocationsAndPatches) {
     bad.cpu_offset.reset();
     EXPECT_FALSE(bad.has_valid_layout());
     bad = *good;
-    bad.patches[0].offset = 4; // SIB byte, not the displacement
+    bad.patches[0].offset = good->code.size() + 10; // never a patch site
     EXPECT_FALSE(bad.has_valid_layout());
     bad = *good;
     bad.patches[0].offset = std::numeric_limits<std::size_t>::max();
