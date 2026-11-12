@@ -510,6 +510,26 @@ std::vector<DiffCase> alu_cases() {
     };
     add_reg_reg.result_reg = Reg::kRax;
     cases.push_back(add_reg_reg);
+    DiffCase movzx_mem8{
+        .name = "movzx_mem8",
+        .code = {0x41, 0x0F, 0xB6, 0x04, 0x24, 0xF4}, // movzx eax,byte [r12]; hlt
+        .initial = kLoaded,
+        .expected = 0x10, // low byte of memory_initial (kLoaded)
+        .flags = kFlags,
+        .base = kData, // r12 must point at the seeded qword itself
+    };
+    movzx_mem8.result_reg = Reg::kRax;
+    cases.push_back(movzx_mem8);
+    DiffCase movzx_mem16_64{
+        .name = "movzx_mem16_64",
+        .code = {0x49, 0x0F, 0xB7, 0x04, 0x24, 0xF4}, // movzx rax,word [r12]; hlt
+        .initial = kLoaded,
+        .expected = 0x3210, // low word of kLoaded
+        .flags = kFlags,
+        .base = kData,
+    };
+    movzx_mem16_64.result_reg = Reg::kRax;
+    cases.push_back(movzx_mem16_64);
     // jcc not taken (JNE with ZF set falls through).
     DiffCase jcc_fall{
         .name = "jcc_jne_fall",

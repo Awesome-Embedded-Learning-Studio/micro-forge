@@ -61,6 +61,34 @@ std::optional<std::size_t> operand_slot(const Operand& op, bool rex) {
 
 std::optional<TranslatedInsn> translate_move(const arch::x86_64::DecodedInsn& insn,
                                              std::uint64_t rip) {
+    // movzx reg,[base+disp]: jit_load returns the zero-extended value and
+    // the untouched kLoadSlot write covers the whole slot, which is exactly
+    // movzx semantics at both 32- and 64-bit destinations.
+    if (insn.mnemonic == Mnemonic::kMovzx && insn.ops[0].kind == Operand::Kind::kReg &&
+        insn.ops[1].kind == Operand::Kind::kMem && insn.ops[1].has_base && !insn.ops[1].has_index &&
+        !insn.ops[1].rip_relative && (insn.ops[0].size == 4 || insn.ops[0].size == 8) &&
+        (insn.ops[1].size == 1 || insn.ops[1].size == 2) && insn.addr_size == 8 && !insn.has_lock &&
+        insn.seg != arch::x86_64::Seg::kFs && insn.seg != arch::x86_64::Seg::kGs &&
+        insn.ops[1].disp >= INT32_MIN && insn.ops[1].disp <= INT32_MAX) {
+        const auto slot = detail::operand_slot(insn.ops[0], insn.rex_present);
+        const auto base = reg_slot_offset(insn.ops[1].base);
+        const auto disp = static_cast<std::uint32_t>(insn.ops[1].disp);
+        if (slot.has_value() && base.has_value()) {
+            return TranslatedInsn{
+                .code = jit_templates::kLoadSlot,
+                .patches =
+                    {
+                        {.offset = 5, .size = 4, .value = *base},
+                        {.offset = 12, .size = 4, .value = disp},
+                        {.offset = 27, .size = 4, .value = insn.ops[1].size},
+                        {.offset = 49, .size = 4, .value = *slot},
+                    },
+                .call_offset = 33,
+                .cpu_offset = 18,
+                .helper = JitHelper::kLoad,
+            };
+        }
+    }
     // movabs r64,imm64: host-only movabs through rax; full 64-bit
     // immediates (kernel high-half addresses) need no helper at all.
     if (insn.mnemonic == Mnemonic::kMovabs && insn.ops[0].kind == Operand::Kind::kReg &&
