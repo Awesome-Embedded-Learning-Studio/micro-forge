@@ -175,6 +175,10 @@ void Cpu::jit_ports(unsigned mn, unsigned width) {
     arch::x86_64::DecodedInsn shape{};
     shape.mnemonic = static_cast<Mnemonic>(mn);
     shape.opsize = static_cast<std::uint8_t>(width);
+    if (shape.mnemonic == Mnemonic::kCli || shape.mnemonic == Mnemonic::kSti) {
+        (void)execute_system(shape, 0); // flag-only: the STI shadow lives there
+        return;
+    }
     const auto w8 = static_cast<std::uint8_t>(width);
     const auto dx = Operand{.kind = Operand::Kind::kImplicit, .size = 2, .reg = Reg::kRdx};
     const auto acc = Operand{.kind = Operand::Kind::kImplicit, .size = w8, .reg = Reg::kRax};

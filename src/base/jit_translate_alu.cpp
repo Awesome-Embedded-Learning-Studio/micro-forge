@@ -158,6 +158,22 @@ std::optional<TranslatedInsn> translate_alu_extra(const arch::x86_64::DecodedIns
             .helper = JitHelper::kPxor,
         };
     }
+    // Flag-only system instructions (cli/sti): the template carries just the
+    // mnemonic; execute_system keeps the STI-shadow rule in one place.
+    if ((insn.mnemonic == Mnemonic::kCli || insn.mnemonic == Mnemonic::kSti) &&
+        insn.ops[0].kind == Operand::Kind::kNone && insn.addr_size == 8 && !insn.has_lock) {
+        return TranslatedInsn{
+            .code = jit_templates::kPortsSlot,
+            .patches =
+                {
+                    {.offset = 2, .size = 4, .value = static_cast<unsigned>(insn.mnemonic)},
+                    {.offset = 7, .size = 4, .value = 8},
+                },
+            .call_offset = 23,
+            .cpu_offset = 13,
+            .helper = JitHelper::kPorts,
+        };
+    }
     // in/out with the port in dx (EE/EC and the 16/32-bit variants): the
     // accumulator operand width comes from opsize, the port from rdx.
     if ((insn.mnemonic == Mnemonic::kIn || insn.mnemonic == Mnemonic::kOut) &&
