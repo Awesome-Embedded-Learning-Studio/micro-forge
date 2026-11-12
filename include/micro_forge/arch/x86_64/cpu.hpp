@@ -238,13 +238,11 @@ public:
     void jit_load_xmm(uint64_t vaddr, uint64_t slot);
     /// @brief movups-family: xmm_[slot/16] -> memory, 16 bytes.
     void jit_store_xmm(uint64_t vaddr, uint64_t slot);
-    /// @brief ret helper: pops the target, records the block exit.
-    /// @param[in] sp rsp before the pop; @p my_rip the ret's own rip.
+    /// @brief ret helper: pop the target; sp pre-pop, my_rip for retry.
     void jit_ret(uint64_t sp, uint64_t my_rip);
     /// @brief leave helper: rsp=rbp, then pop rbp (faults latch).
     void jit_leave();
-    /// @brief call helper: pushes @p ret_addr, jumps to @p target.
-    /// @param[in] my_rip The call's own rip (fault re-entry).
+    /// @brief call helper: push ret addr, jump; my_rip for fault retry.
     void jit_call(uint64_t target, uint64_t my_rip, uint64_t ret_addr);
     /// @brief jmp helper: records @p target as the block exit.
     void jit_jmp(uint64_t target);
@@ -252,6 +250,8 @@ public:
     void jit_jcc(uint64_t taken, uint64_t fall, Cc cc);
     /// @brief movzx/narrow mov into a slot; zx=1 zero-extends, else keeps highs.
     void jit_mov_slot_w(uint64_t value, unsigned width, unsigned dst, unsigned zx);
+    /// @brief shift helper: alu_shift on the slot value, count 0 keeps flags.
+    void jit_shift(unsigned slot, uint64_t count, unsigned mn, unsigned width);
     /// @brief JIT OR: combine GPR[slot/8] with value, updating flags.
     void jit_or(uint64_t slot, uint64_t value, unsigned width);
     /// @brief JIT XOR: xor GPR[slot/8] with value, updating flags.

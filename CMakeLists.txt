@@ -59,6 +59,7 @@ add_library(micro_forge
     src/arch/x86_64/cpu.cpp
     src/arch/x86_64/memory.cpp
     src/arch/x86_64/fast_dispatch.cpp
+    src/arch/x86_64/jit_alu.cpp
     src/arch/x86_64/jit_control.cpp
     src/arch/x86_64/jit_cpu.cpp
     src/arch/x86_64/execute.cpp

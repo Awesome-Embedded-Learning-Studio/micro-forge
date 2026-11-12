@@ -48,6 +48,7 @@ extern "C" void mf_jit_jmp(void* cpu, uint64_t target);
 extern "C" void mf_jit_jcc(void* cpu, uint64_t taken, uint64_t fall, unsigned cc);
 extern "C" void mf_jit_mov_slot_w(void* cpu, uint64_t value, unsigned width, unsigned dst,
                                   unsigned zx);
+extern "C" void mf_jit_shift(void* cpu, unsigned slot, uint64_t count, unsigned mn, unsigned width);
 extern "C" void mf_jit_call(void* cpu, uint64_t target, uint64_t my_rip, uint64_t ret_addr);
 extern "C" void mf_jit_pop_reg(void* cpu, uint64_t slot);
 
@@ -92,10 +93,9 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
             // NOLINTNEXTLINE(concurrency-mt-unsafe) -- single-threaded CPU
             static const bool fstats = std::getenv("MICRO_FORGE_JIT_FAILSTATS") != nullptr;
             if (fstats) { // cold path: coverage diagnostics only
-                std::println(stderr, "jfail {} o{}k{} s{} k1_{} sz0_{}",
-                             mnemonic_name(decoded->mnemonic), decoded->opsize,
-                             static_cast<unsigned>(decoded->ops[0].kind), decoded->ops[0].size,
-                             static_cast<unsigned>(decoded->ops[1].kind), decoded->ops[0].size);
+                std::println(stderr, "jfail {} o{} k{} s{} k1_{}", mnemonic_name(decoded->mnemonic),
+                             decoded->opsize, static_cast<unsigned>(decoded->ops[0].kind),
+                             decoded->ops[0].size, static_cast<unsigned>(decoded->ops[1].kind));
             }
             break; // unsupported: end the block here, interpreter takes over
         }
@@ -230,6 +230,9 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
                 break;
             case base::JitHelper::kMovSlotW:
                 helper = reinterpret_cast<std::uint64_t>(&mf_jit_mov_slot_w);
+                break;
+            case base::JitHelper::kShift:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_shift);
                 break;
             default:
                 return fail_compile();

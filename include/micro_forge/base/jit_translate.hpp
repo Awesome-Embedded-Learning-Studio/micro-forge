@@ -46,6 +46,7 @@ enum class JitHelper : std::uint8_t {
     kJmp,      ///< jmp imm: record the exit target
     kJcc,      ///< jcc: pick taken/fallthrough by guest flags
     kMovSlotW, ///< movzx / narrow mov reg,reg via one width helper
+    kShift,    ///< shift reg,imm8 via the interpreter's alu_shift
     kLeave,    ///< leave: rsp=rbp then pop rbp
     kPushImm,  ///< push imm64 (pre-extended)
     kPopReg,   ///< pop reg64: stack read via rsp

@@ -305,6 +305,21 @@ constexpr std::array<std::uint8_t, 48> kMovSlotW = {
 };
 // Holes: src32@4, srcw32@9, dst32@14, zx32@20; cpu64@26, helper64@36.
 // Mid-block template: falls through, no host ret.
+// shift reg,imm8 via helper (rsi=value, edx=count, ecx=mnemonic, r8d=width):
+// the helper reuses the interpreter's alu_shift so flags stay exact.
+constexpr std::array<std::uint8_t, 46> kShiftImmSlot = {
+    0x57,                                  // @0: push rdi (1)
+    0xBE, 0,    0,    0, 0,                // @1: mov esi,slot32 (5)
+    0xBA, 0,    0,    0, 0,                // @6: mov edx,count32 (5)
+    0xB9, 0,    0,    0, 0,                // @11: mov ecx,mnem32 (5)
+    0x41, 0xB8, 0,    0, 0, 0,             // @16: mov r8d,width32 (6)
+    0x48, 0xBF, 0,    0, 0, 0, 0, 0, 0, 0, // @22: mov rdi,cpu64 (10)
+    0x49, 0xBB, 0,    0, 0, 0, 0, 0, 0, 0, // @32: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                      // @42: call r11 (3)
+    0x5F,                                  // @45: pop rdi (1)
+};
+// Holes: slot32@2, count32@7, mnem32@12, width32@18; cpu64@24, helper64@34.
+// Mid-block template: falls through, no host ret.
 // jmp imm via helper (rdi=cpu, rsi=target): records the exit target.
 constexpr std::array<std::uint8_t, 36> kJmpImmHelper = {
     0x57,                                  // @0: push rdi (1)

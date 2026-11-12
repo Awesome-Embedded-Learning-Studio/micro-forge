@@ -465,6 +465,42 @@ std::vector<DiffCase> alu_cases() {
         .flags = kFlags,
     };
     cases.push_back(movzx_r32r8);
+    DiffCase shl_r64_imm{
+        .name = "shl_r64_imm",
+        .code = {0x48, 0xC1, 0xE0, 0x03, 0xF4}, // shl rax,3; hlt
+        .initial = kLoaded,
+        .expected = kLoaded << 3U,
+        .flags = 2192,
+    };
+    shl_r64_imm.result_reg = Reg::kRax;
+    cases.push_back(shl_r64_imm);
+    DiffCase shr_r32_imm{
+        .name = "shr_r32_imm",
+        .code = {0xC1, 0xE8, 0x04, 0xF4}, // shr eax,4; hlt
+        .initial = kLoaded,
+        .expected = (kLoaded & 0xFFFFFFFFU) >> 4U,
+        .flags = 20,
+    };
+    shr_r32_imm.result_reg = Reg::kRax;
+    cases.push_back(shr_r32_imm);
+    DiffCase sar_r64_one{
+        .name = "sar_r64_one",
+        .code = {0x48, 0xD1, 0xF8, 0xF4}, // sar rax,1; hlt
+        .initial = kLoaded,
+        .expected = 0xFF6E5D4C3B2A1908ULL, // kLoaded >> 1, sign bit kept
+        .flags = 144,
+    };
+    sar_r64_one.result_reg = Reg::kRax;
+    cases.push_back(sar_r64_one);
+    DiffCase shl_count_zero{
+        .name = "shl_count_zero",
+        .code = {0x48, 0xC1, 0xE0, 0x00, 0xF4}, // shl rax,0: flags untouched
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = kFlags,
+    };
+    shl_count_zero.result_reg = Reg::kRax;
+    cases.push_back(shl_count_zero);
     // jcc not taken (JNE with ZF set falls through).
     DiffCase jcc_fall{
         .name = "jcc_jne_fall",

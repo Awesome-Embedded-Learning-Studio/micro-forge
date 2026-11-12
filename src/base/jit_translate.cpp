@@ -144,6 +144,33 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
         }
         return std::nullopt;
     }
+    // shift reg,imm8 (SHL/SHR/SAR/ROL/ROR/RCL/RCR): the helper runs the
+    // interpreter's alu_shift so every flag matches; count 0 keeps flags.
+    if (insn.mnemonic == Mnemonic::kShl || insn.mnemonic == Mnemonic::kShr ||
+        insn.mnemonic == Mnemonic::kSar || insn.mnemonic == Mnemonic::kRol ||
+        insn.mnemonic == Mnemonic::kRor || insn.mnemonic == Mnemonic::kRcl ||
+        insn.mnemonic == Mnemonic::kRcr) {
+        const auto slot = reg_slot_offset(insn.ops[0].reg);
+        if (insn.ops[0].kind == Operand::Kind::kReg && insn.ops[1].kind == Operand::Kind::kImm &&
+            slot.has_value() && insn.addr_size == 8 && !insn.has_lock &&
+            (insn.ops[0].size == 2 || insn.ops[0].size == 4 || insn.ops[0].size == 8)) {
+            const auto count = static_cast<uint64_t>(insn.ops[1].disp);
+            const auto mn = static_cast<unsigned>(insn.mnemonic);
+            return TranslatedInsn{
+                .code = jit_templates::kShiftImmSlot,
+                .patches =
+                    {
+                        {.offset = 2, .size = 4, .value = *slot},
+                        {.offset = 7, .size = 4, .value = count},
+                        {.offset = 12, .size = 4, .value = mn},
+                        {.offset = 18, .size = 4, .value = insn.ops[0].size},
+                    },
+                .call_offset = 34,
+                .cpu_offset = 24,
+                .helper = JitHelper::kShift,
+            };
+        }
+    }
     // jmp imm: record the patched target; the host ret ends the block.
     if (insn.mnemonic == Mnemonic::kJmp && insn.addr_size == 8 && !insn.has_lock &&
         insn.ops[0].kind == Operand::Kind::kImm) {
