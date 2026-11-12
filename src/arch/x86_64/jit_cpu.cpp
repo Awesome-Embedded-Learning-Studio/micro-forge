@@ -17,40 +17,11 @@
 #include "micro_forge/arch/x86_64/cpu.hpp"
 
 #include "internal.hpp"
+#include "jit_thunks.hpp"
 #include "micro_forge/arch/x86_64/decoder.hpp"
 #include "micro_forge/arch/x86_64/mul_wide.hpp"
 
 namespace micro_forge::arch::x86_64 {
-
-extern "C" std::uint64_t mf_jit_load(void* cpu, std::uint64_t vaddr, unsigned width);
-extern "C" void mf_jit_store(void* cpu, std::uint64_t vaddr, unsigned width, std::uint64_t value);
-extern "C" std::uint64_t mf_jit_add(void* cpu, std::uint64_t slot, std::uint64_t imm,
-                                    unsigned width);
-extern "C" void mf_jit_add_mem(void* cpu, std::uint64_t vaddr, std::uint64_t value);
-extern "C" void mf_jit_cmp(void* cpu, uint64_t slot, uint64_t value, unsigned width);
-extern "C" void mf_jit_test(void* cpu, uint64_t slot, uint64_t value, unsigned width);
-extern "C" void mf_jit_sub(void* cpu, uint64_t slot, uint64_t value, unsigned width);
-extern "C" void mf_jit_and(void* cpu, uint64_t slot, uint64_t value, unsigned width);
-extern "C" void mf_jit_or(void* cpu, uint64_t slot, uint64_t value, unsigned width);
-extern "C" void mf_jit_xor(void* cpu, uint64_t slot, uint64_t value, unsigned width);
-extern "C" void mf_jit_imul(void* cpu, uint64_t slot, uint64_t value, unsigned width);
-extern "C" void mf_jit_cmp_mem(void* cpu, uint64_t vaddr, uint64_t slot, unsigned width);
-extern "C" void mf_jit_cmov(void* cpu, uint64_t slot, uint64_t src_val, unsigned cc,
-                            unsigned width);
-extern "C" void mf_jit_setcc(void* cpu, uint64_t slot, unsigned cc);
-extern "C" void mf_jit_push_val(void* cpu, uint64_t value);
-extern "C" void mf_jit_push_imm(void* cpu, uint64_t value);
-extern "C" void mf_jit_load_xmm(void* cpu, uint64_t vaddr, uint64_t slot);
-extern "C" void mf_jit_store_xmm(void* cpu, uint64_t vaddr, uint64_t slot);
-extern "C" void mf_jit_ret(void* cpu, uint64_t sp, uint64_t my_rip);
-extern "C" void mf_jit_leave(void* cpu);
-extern "C" void mf_jit_jmp(void* cpu, uint64_t target);
-extern "C" void mf_jit_jcc(void* cpu, uint64_t taken, uint64_t fall, unsigned cc);
-extern "C" void mf_jit_mov_slot_w(void* cpu, uint64_t value, unsigned width, unsigned dst,
-                                  unsigned zx);
-extern "C" void mf_jit_shift(void* cpu, unsigned slot, uint64_t count, unsigned mn, unsigned width);
-extern "C" void mf_jit_call(void* cpu, uint64_t target, uint64_t my_rip, uint64_t ret_addr);
-extern "C" void mf_jit_pop_reg(void* cpu, uint64_t slot);
 
 std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
     constexpr std::size_t max_insns = 64;
@@ -233,6 +204,9 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
                 break;
             case base::JitHelper::kShift:
                 helper = reinterpret_cast<std::uint64_t>(&mf_jit_shift);
+                break;
+            case base::JitHelper::kAluReg:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_alu_reg);
                 break;
             default:
                 return fail_compile();

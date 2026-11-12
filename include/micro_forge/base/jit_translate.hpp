@@ -47,6 +47,7 @@ enum class JitHelper : std::uint8_t {
     kJcc,      ///< jcc: pick taken/fallthrough by guest flags
     kMovSlotW, ///< movzx / narrow mov reg,reg via one width helper
     kShift,    ///< shift reg,imm8 via the interpreter's alu_shift
+    kAluReg,   ///< add/sub/and/or/xor/cmp reg,reg via alu_add/alu_sub
     kLeave,    ///< leave: rsp=rbp then pop rbp
     kPushImm,  ///< push imm64 (pre-extended)
     kPopReg,   ///< pop reg64: stack read via rsp

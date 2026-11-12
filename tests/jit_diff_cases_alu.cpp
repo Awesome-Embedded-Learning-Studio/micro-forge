@@ -501,6 +501,15 @@ std::vector<DiffCase> alu_cases() {
     };
     shl_count_zero.result_reg = Reg::kRax;
     cases.push_back(shl_count_zero);
+    DiffCase add_reg_reg{
+        .name = "add_reg_reg",
+        .code = {0x48, 0x01, 0xD8, 0xF4}, // add rax,rbx; hlt
+        .initial = kLoaded,
+        .expected = 0x0EFCEAD8C6B4A593ULL, // carries out of bit 63
+        .flags = 5,                        // CF and PF set, rest clear
+    };
+    add_reg_reg.result_reg = Reg::kRax;
+    cases.push_back(add_reg_reg);
     // jcc not taken (JNE with ZF set falls through).
     DiffCase jcc_fall{
         .name = "jcc_jne_fall",

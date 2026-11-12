@@ -325,6 +325,31 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
     if (!slot.has_value()) {
         return std::nullopt;
     }
+    // add/adc/sub/sbb/and/or/xor/cmp reg,reg: one helper runs the same
+    // alu_add/alu_sub/alu_logic the interpreter uses, so flags cannot drift.
+    if (insn.ops[1].kind == Operand::Kind::kReg && insn.ops[0].size == insn.ops[1].size &&
+        insn.addr_size == 8 && !insn.has_lock) {
+        // add/adc/sbb are the only family members without a dedicated
+        // translate_alu path; and/or/xor/cmp/sub keep their shorter form.
+        const bool reg_alu = insn.mnemonic == Mnemonic::kAdd || insn.mnemonic == Mnemonic::kAdc ||
+                             insn.mnemonic == Mnemonic::kSbb;
+        const auto src_slot = reg_slot_offset(insn.ops[1].reg);
+        if (reg_alu && src_slot.has_value()) {
+            return TranslatedInsn{
+                .code = jit_templates::kAluRegSlot,
+                .patches =
+                    {
+                        {.offset = 2, .size = 4, .value = *slot},
+                        {.offset = 7, .size = 4, .value = *src_slot},
+                        {.offset = 12, .size = 4, .value = static_cast<unsigned>(insn.mnemonic)},
+                        {.offset = 18, .size = 4, .value = insn.ops[0].size},
+                    },
+                .call_offset = 34,
+                .cpu_offset = 24,
+                .helper = JitHelper::kAluReg,
+            };
+        }
+    }
     const auto helper = detail::alu_helper(insn.mnemonic);
     if (helper != JitHelper::kNone) {
         if (auto lowered = detail::translate_alu(insn, *slot, helper)) {

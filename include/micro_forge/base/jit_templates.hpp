@@ -320,6 +320,21 @@ constexpr std::array<std::uint8_t, 46> kShiftImmSlot = {
 };
 // Holes: slot32@2, count32@7, mnem32@12, width32@18; cpu64@24, helper64@34.
 // Mid-block template: falls through, no host ret.
+// Generic reg,reg ALU (rsi=slot, edx=src slot, ecx=mnemonic, r8d=width):
+// same byte shape as the shift template, but the second hole names the
+// source slot instead of a count.
+constexpr std::array<std::uint8_t, 46> kAluRegSlot = {
+    0x57,                                  // @0: push rdi (1)
+    0xBE, 0,    0,    0, 0,                // @1: mov esi,slot32 (5)
+    0xBA, 0,    0,    0, 0,                // @6: mov edx,src32 (5)
+    0xB9, 0,    0,    0, 0,                // @11: mov ecx,mnem32 (5)
+    0x41, 0xB8, 0,    0, 0, 0,             // @16: mov r8d,width32 (6)
+    0x48, 0xBF, 0,    0, 0, 0, 0, 0, 0, 0, // @22: mov rdi,cpu64 (10)
+    0x49, 0xBB, 0,    0, 0, 0, 0, 0, 0, 0, // @32: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                      // @42: call r11 (3)
+    0x5F,                                  // @45: pop rdi (1)
+};
+// Holes: slot32@2, src32@7, mnem32@12, width32@18; cpu64@24, helper64@34.
 // jmp imm via helper (rdi=cpu, rsi=target): records the exit target.
 constexpr std::array<std::uint8_t, 36> kJmpImmHelper = {
     0x57,                                  // @0: push rdi (1)

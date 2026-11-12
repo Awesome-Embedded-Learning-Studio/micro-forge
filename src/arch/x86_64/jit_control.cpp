@@ -5,6 +5,8 @@
 
 #include <micro_forge/base/jit.hpp>
 
+#include "jit_thunks.hpp"
+
 namespace micro_forge::arch::x86_64 {
 namespace {
 // Thunks keep the JIT ABI 1:1 with the helper declarations in jit_templates.

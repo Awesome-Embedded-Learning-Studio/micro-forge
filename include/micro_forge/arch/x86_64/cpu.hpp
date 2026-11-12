@@ -222,12 +222,10 @@ public:
     /// @param[in] slot Dest slot offset; @p width bytes, high bytes kept.
     void jit_cmov(uint64_t slot, uint64_t src_val, unsigned cc, unsigned width);
 
-    /// @brief SETCC helper: writes 1/0 into the slot's low byte.
-    /// @param[in] cc Hardware condition code 0-15.
+    /// @brief SETCC: write 1/0 into the slot's low byte (cc 0-15).
     void jit_setcc(uint64_t slot, unsigned cc);
 
-    /// @brief PUSH helper: stores @p value (reg value or imm) at rsp-8.
-    /// @param[in] value Already extended to 64 bits.
+    /// @brief PUSH: store @p value (already 64-bit) at rsp-8.
     void jit_push_val(uint64_t value);
     /// @brief PUSH imm helper: stores @p value (already 64-bit) at rsp-8.
     void jit_push_imm(uint64_t value);
@@ -250,8 +248,10 @@ public:
     void jit_jcc(uint64_t taken, uint64_t fall, Cc cc);
     /// @brief movzx/narrow mov into a slot; zx=1 zero-extends, else keeps highs.
     void jit_mov_slot_w(uint64_t value, unsigned width, unsigned dst, unsigned zx);
-    /// @brief shift helper: alu_shift on the slot value, count 0 keeps flags.
+    /// @brief shift helper: alu_shift on the slot; count 0 keeps flags.
     void jit_shift(unsigned slot, uint64_t count, unsigned mn, unsigned width);
+    /// @brief reg,reg ALU helper: alu_add/sub/logic with exact flags.
+    void jit_alu_reg(unsigned slot, unsigned src, unsigned mn, unsigned width);
     /// @brief JIT OR: combine GPR[slot/8] with value, updating flags.
     void jit_or(uint64_t slot, uint64_t value, unsigned width);
     /// @brief JIT XOR: xor GPR[slot/8] with value, updating flags.
