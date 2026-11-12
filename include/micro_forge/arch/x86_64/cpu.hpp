@@ -172,11 +172,9 @@ public:
     [[nodiscard]] bool irq_pending() const { return irq_line_ != nullptr && irq_line_->pending(); }
     /// @brief Queues one interrupt vector for delivery (batch 6c).
     ///
-    /// The vector is delivered at the next retire boundary when IF is
-    /// set and the machine is running: the IDT gate is looked up, the
-    /// five-qword interrupt frame is pushed (SS, RSP, RFLAGS, CS, RIP
-    /// in 64-bit mode), IF is cleared for interrupt gates, and RIP jumps
-    /// to the handler. A missing IDT (base 0) drops the request.
+    /// Delivered at the next retire boundary when IF is set and the machine
+    /// is running: gate lookup, five-qword frame push, IF cleared for
+    /// interrupt gates, RIP to the handler. A missing IDT drops it.
     ///
     /// @param[in] vector IDT vector to deliver (0..255).
     void request_interrupt(uint8_t vector) {
@@ -224,9 +222,9 @@ public:
     /// @brief SETCC: write 1/0 into the slot's low byte (cc 0-15).
     void jit_setcc(uint64_t slot, unsigned cc);
 
-    /// @brief PUSH: store @p value (already 64-bit) at rsp-8.
+    /// @brief PUSH: store @p value (reg or imm, 64-bit) at rsp-8.
     void jit_push_val(uint64_t value);
-    /// @brief PUSH imm: store @p value (already 64-bit) at rsp-8.
+    /// @brief PUSH imm: template entry for the immediate form.
     void jit_push_imm(uint64_t value);
     /// @brief POP reg64: load [rsp] into the slot, then raise rsp.
     void jit_pop_reg(uint64_t slot);
@@ -252,6 +250,8 @@ public:
     void jit_alu_reg(unsigned slot, unsigned src, unsigned mn, unsigned width);
     /// @brief ALU reg,[mem]: load then combine; faulted load writes nothing.
     void jit_alu_mem(unsigned slot, uint64_t vaddr, unsigned mn, unsigned width);
+    /// @brief pxor: xor two 16-byte xmm slots, store the result in the first.
+    void jit_pxor(unsigned dst, unsigned src);
     /// @brief JIT OR: combine GPR[slot/8] with value, updating flags.
     void jit_or(uint64_t slot, uint64_t value, unsigned width);
     /// @brief JIT XOR: xor GPR[slot/8] with value, updating flags.

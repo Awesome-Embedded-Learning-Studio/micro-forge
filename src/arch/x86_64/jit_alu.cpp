@@ -26,6 +26,17 @@ extern "C" void mf_jit_alu_mem(void* cpu, unsigned slot, uint64_t vaddr, unsigne
     static_cast<Cpu*>(cpu)->jit_alu_mem(slot, vaddr, mn, width);
 }
 
+/// @brief pxor helper: the public xmm accessors are enough, so this stays a
+/// free function instead of another Cpu member.
+extern "C" void mf_jit_pxor(void* cpu, unsigned dst, unsigned src) {
+    auto* const c = static_cast<Cpu*>(cpu);
+    const auto d = static_cast<Reg>(16U + (dst / 16U));
+    const auto s = static_cast<Reg>(16U + (src / 16U));
+    const auto a = c->xmm(d);
+    const auto b = c->xmm(s);
+    c->set_xmm(d, {a[0] ^ b[0], a[1] ^ b[1]});
+}
+
 } // namespace
 
 void Cpu::jit_alu_mem(unsigned slot, uint64_t vaddr, unsigned mn, unsigned width) {

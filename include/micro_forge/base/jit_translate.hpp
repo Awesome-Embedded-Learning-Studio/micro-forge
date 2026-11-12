@@ -49,6 +49,8 @@ enum class JitHelper : std::uint8_t {
     kShift,    ///< shift reg,imm8 via the interpreter's alu_shift
     kAluReg,   ///< add/adc/sbb reg,reg via alu_add/alu_sub
     kAluMem,   ///< ALU reg,[base+disp] via the same alu helpers
+    kShiftCl,  ///< shift reg,cl: same helper, count read at run time
+    kPxor,     ///< pxor xmm,xmm through a 16-byte helper
     kLeave,    ///< leave: rsp=rbp then pop rbp
     kPushImm,  ///< push imm64 (pre-extended)
     kPopReg,   ///< pop reg64: stack read via rsp

@@ -17,6 +17,7 @@ namespace micro_forge::base::detail {
 
 using arch::x86_64::Mnemonic;
 using arch::x86_64::Operand;
+using arch::x86_64::Reg;
 
 JitHelper alu_helper(Mnemonic mnemonic) {
     switch (mnemonic) {
@@ -93,6 +94,56 @@ std::optional<TranslatedInsn> cmp_mem(const arch::x86_64::DecodedInsn& insn, std
 }
 
 } // namespace
+
+std::optional<TranslatedInsn> translate_alu_extra(const arch::x86_64::DecodedInsn& insn) {
+    // shift reg,cl: the template reads the cl slot at run time into rdx and
+    // the existing jit_shift masks it exactly like the interpreter.
+    if ((insn.mnemonic == Mnemonic::kShl || insn.mnemonic == Mnemonic::kShr ||
+         insn.mnemonic == Mnemonic::kSar || insn.mnemonic == Mnemonic::kRol ||
+         insn.mnemonic == Mnemonic::kRor || insn.mnemonic == Mnemonic::kRcl ||
+         insn.mnemonic == Mnemonic::kRcr) &&
+        insn.ops[0].kind == Operand::Kind::kReg && insn.ops[1].kind == Operand::Kind::kImplicit &&
+        insn.addr_size == 8 && !insn.has_lock &&
+        (insn.ops[0].size == 2 || insn.ops[0].size == 4 || insn.ops[0].size == 8)) {
+        const auto slot = reg_slot_offset(insn.ops[0].reg);
+        const auto clslot = reg_slot_offset(Reg::kRcx);
+        if (slot.has_value() && clslot.has_value()) {
+            return TranslatedInsn{
+                .code = jit_templates::kShiftClSlot,
+                .patches =
+                    {
+                        {.offset = 2, .size = 4, .value = *slot},
+                        {.offset = 9, .size = 4, .value = *clslot},
+                        {.offset = 14, .size = 4, .value = static_cast<unsigned>(insn.mnemonic)},
+                        {.offset = 20, .size = 4, .value = insn.ops[0].size},
+                    },
+                .call_offset = 36,
+                .cpu_offset = 26,
+                .helper = JitHelper::kShiftCl,
+            };
+        }
+    }
+    // pxor xmm,xmm: one helper xors both 16-byte halves of the slots.
+    if (insn.mnemonic == Mnemonic::kPxor && insn.ops[0].kind == Operand::Kind::kReg &&
+        insn.ops[1].kind == Operand::Kind::kReg && insn.addr_size == 8 && !insn.has_lock &&
+        static_cast<unsigned>(insn.ops[0].reg) >= 16U &&
+        static_cast<unsigned>(insn.ops[1].reg) >= 16U) {
+        const auto dst = static_cast<std::uint64_t>(static_cast<unsigned>(insn.ops[0].reg) - 16U);
+        const auto src = static_cast<std::uint64_t>(static_cast<unsigned>(insn.ops[1].reg) - 16U);
+        return TranslatedInsn{
+            .code = jit_templates::kPxorSlot,
+            .patches =
+                {
+                    {.offset = 2, .size = 4, .value = dst * 16U},
+                    {.offset = 7, .size = 4, .value = src * 16U},
+                },
+            .call_offset = 23,
+            .cpu_offset = 13,
+            .helper = JitHelper::kPxor,
+        };
+    }
+    return std::nullopt;
+}
 
 std::optional<TranslatedInsn> translate_alu(const arch::x86_64::DecodedInsn& insn, std::size_t slot,
                                             JitHelper helper) {
