@@ -61,14 +61,6 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
         }
         auto lowered = base::translate_insn(*decoded, pc);
         if (!lowered) {
-            // NOLINTNEXTLINE(concurrency-mt-unsafe) -- single-threaded CPU
-            static const bool fstats = std::getenv("MICRO_FORGE_JIT_FAILSTATS") != nullptr;
-            if (fstats) { // cold path: coverage diagnostics only
-                std::println(stderr, "jfail {} o{} k0_{} s0_{} k1_{} @0x{:x}",
-                             mnemonic_name(decoded->mnemonic), decoded->opsize,
-                             static_cast<unsigned>(decoded->ops[0].kind), decoded->ops[0].size,
-                             static_cast<unsigned>(decoded->ops[1].kind), pc);
-            }
             break; // unsupported: end the block here, interpreter takes over
         }
         // Runtime structural assertions, before emit_multi fills any hole:
@@ -229,6 +221,12 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
                 break;
             case base::JitHelper::kImul23:
                 helper = reinterpret_cast<std::uint64_t>(&mf_jit_imul23);
+                break;
+            case base::JitHelper::kBt:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_bt);
+                break;
+            case base::JitHelper::kCmovMem:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_cmov_mem);
                 break;
             default:
                 return fail_compile();
@@ -573,6 +571,7 @@ bool Cpu::run_jit_block() {
     }
     const auto it = jit_blocks_.find(rip_);
     if (it == jit_blocks_.end()) {
+        mf_jit_note_fail_hit(rip_); // diagnostics: which rip falls back
         return false;
     }
     // NOLINTNEXTLINE(concurrency-mt-unsafe) -- single-threaded CPU

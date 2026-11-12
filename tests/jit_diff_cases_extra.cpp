@@ -115,6 +115,28 @@ std::vector<DiffCase> extra_cases() {
     };
     imul23.result_reg = Reg::kRax;
     cases.push_back(imul23);
+    // bt rax,rbx: the tested bit is (rbx & 63) = 3, and bit 3 of kLoaded
+    // (low byte 0x10) is clear, so CF drops while the other flags stay.
+    DiffCase bt_reg{
+        .name = "bt_reg",
+        .code = {0x48, 0x0F, 0xA3, 0xD8, 0xF4}, // bt rax,rbx
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = 0x8D4, // CF cleared, the rest unchanged
+    };
+    bt_reg.result_reg = Reg::kRax;
+    cases.push_back(bt_reg);
+    // cmovne rcx,[r12] with ZF set: the read happens, the write does not.
+    DiffCase cmov_mem_false{
+        .name = "cmov_mem_false",
+        .code = {0x48, 0x0F, 0x45, 0x0C, 0x24, 0xF4}, // cmovne rcx,[r12]
+        .initial = kLoaded,
+        .expected = kLoaded, // condition false: rcx keeps its seeded value
+        .flags = kFlags,
+        .base = kData,
+    };
+    cmov_mem_false.result_reg = Reg::kRcx;
+    cases.push_back(cmov_mem_false);
     return cases;
 }
 

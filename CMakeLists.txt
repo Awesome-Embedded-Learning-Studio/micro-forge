@@ -62,6 +62,7 @@ add_library(micro_forge
     src/arch/x86_64/jit_alu.cpp
     src/arch/x86_64/jit_control.cpp
     src/arch/x86_64/jit_cpu.cpp
+    src/arch/x86_64/jit_stats.cpp
     src/arch/x86_64/execute.cpp
     src/arch/x86_64/dispatch.cpp
     src/arch/x86_64/interrupt.cpp

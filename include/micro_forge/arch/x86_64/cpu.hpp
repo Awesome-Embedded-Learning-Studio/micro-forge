@@ -169,10 +169,7 @@ public:
     }
     /// @brief Whether the attached IRQ line is high.
     [[nodiscard]] bool irq_pending() const { return irq_line_ != nullptr && irq_line_->pending(); }
-    /// @brief Queues one interrupt vector for delivery (batch 6c).
-    ///
-    /// Delivered at the next retire boundary when IF is set: gate lookup,
-    /// frame push, IF cleared, RIP to the handler.
+    /// @brief Queue one interrupt vector (delivered at the next retire).
     /// @param[in] vector IDT vector to deliver (0..255).
     void request_interrupt(uint8_t vector) {
         pending_vector_ = vector;
@@ -241,12 +238,16 @@ public:
     void jit_jcc(uint64_t taken, uint64_t fall, Cc cc);
     /// @brief movzx/narrow mov into a slot; zx=1 zero-extends, else keeps highs.
     void jit_mov_slot_w(uint64_t value, unsigned width, unsigned dst, unsigned zx);
-    /// @brief shift helper: alu_shift on the slot; count 0 keeps flags.
+    /// @brief shift: alu_shift on the slot; count 0 keeps flags.
     void jit_shift(unsigned slot, uint64_t count, unsigned mn, unsigned width);
-    /// @brief one-operand grp3: execute_grp3 with a rebuilt shape.
+    /// @brief one-operand grp3 via execute_grp3 (rebuilt shape).
     void jit_grp3(uint64_t divisor, unsigned width, unsigned mn);
     /// @brief three-operand imul via execute_imul23 (rebuilt shape).
     void jit_imul23(unsigned dst, unsigned src, uint64_t imm, unsigned width);
+    /// @brief bt: CF = bit (@p src & bits-1) of the slot, others unchanged.
+    void jit_bt(unsigned slot, unsigned src, unsigned width);
+    /// @brief cmov reg,[mem]: read always, write only when cc holds.
+    void jit_cmov_mem(uint64_t vaddr, unsigned cc, unsigned slot, unsigned width);
     /// @brief reg,reg ALU: alu_add/sub/logic with the interpreter's flags.
     void jit_alu_reg(unsigned slot, unsigned src, unsigned mn, unsigned width);
     /// @brief ALU reg,[mem]: load, combine, write; a fault skips the write.
@@ -311,8 +312,7 @@ public:
     ///
     /// @param[in] index MSR index; must be whitelisted.
     /// @param[in] value Full 64-bit value (EDX:EAX packed by the caller).
-    /// @return false when the index is not whitelisted (the executor
-    ///         reports a #GP-style fault).
+    /// @return false when the index is not whitelisted (the executor reports a #GP-style fault).
     bool write_msr(uint32_t index, uint64_t value);
     /// @brief One CPUID answer.
     struct CpuidAnswer {

@@ -3,6 +3,8 @@
 
 #include <cstring>
 #include <micro_forge/arch/x86_64/decoder.hpp>
+/// @brief Coverage diagnostics exported from the core (env gated).
+extern "C" void mf_jit_dump_fail_hits();
 #include <micro_forge/base/jit_translate.hpp>
 #include <micro_forge/loader/cinux_loader.hpp>
 #include <micro_forge/machine.hpp>
@@ -175,6 +177,7 @@ int main(int argc, const char* const* argv) {
             std::println(stderr, "win icount={} rip=0x{:x}", ic, rip);
         }
     }
+    mf_jit_dump_fail_hits();
     return output.good() &&
                    cpu.exit_status().kind == micro_forge::arch::x86_64::ExitStatus::Kind::kHalt
                ? 0

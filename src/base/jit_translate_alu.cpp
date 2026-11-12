@@ -37,6 +37,8 @@ JitHelper alu_helper(Mnemonic mnemonic) {
         return JitHelper::kXor;
     case Mnemonic::kImul:
         return JitHelper::kImul;
+    case Mnemonic::kBt:
+        return JitHelper::kBt;
     default:
         return JitHelper::kNone;
     }

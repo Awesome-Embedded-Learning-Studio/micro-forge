@@ -47,7 +47,40 @@ extern "C" void mf_jit_imul23(void* cpu, unsigned dst, unsigned src, uint64_t im
     static_cast<Cpu*>(cpu)->jit_imul23(dst, src, imm, width);
 }
 
+/// @brief C ABI bridge: rdi=cpu, rsi=vaddr, edx=cc, ecx=slot, r8d=width.
+extern "C" void mf_jit_cmov_mem(void* cpu, uint64_t vaddr, unsigned cc, unsigned slot,
+                                unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_cmov_mem(vaddr, cc, slot, width);
+}
+
+/// @brief C ABI bridge: rdi=cpu, esi=slot, edx=index slot, ecx=width.
+extern "C" void mf_jit_bt(void* cpu, unsigned slot, unsigned src, unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_bt(slot, src, width);
+}
+
 } // namespace
+
+void Cpu::jit_cmov_mem(uint64_t vaddr, unsigned cc, unsigned slot, unsigned width) {
+    // x86 cmov reads the source unconditionally (a faulting read still
+    // raises #PF); only the write is conditional on the flags.
+    uint64_t value = 0;
+    if (!load(vaddr, width, value)) {
+        return; // faulted: the interpreter re-runs this instruction
+    }
+    if (!condition(static_cast<Cc>(cc))) {
+        return;
+    }
+    // write_gpr has the same width rules as the slot writes: 32-bit
+    // zero-extends, narrower widths keep the high bytes.
+    write_gpr(static_cast<Reg>(slot / 8U), width, true, value & width_util::width_mask(width));
+}
+
+void Cpu::jit_bt(unsigned slot, unsigned src, unsigned width) {
+    const auto value = read_gpr(static_cast<Reg>(slot / 8U), width, true);
+    const auto index = read_gpr(static_cast<Reg>(src / 8U), width, true);
+    const unsigned bits = width * 8U;
+    cf_ = ((value >> (index & (bits - 1U))) & 1U) != 0U;
+}
 
 void Cpu::jit_imul23(unsigned dst, unsigned src, uint64_t imm, unsigned width) {
     // execute_imul23 reads the two source operands and their sizes; the
