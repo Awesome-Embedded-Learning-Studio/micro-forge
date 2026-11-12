@@ -662,3 +662,38 @@ tpl_cmp_mem_call:
     pop    rdi
 .globl tpl_cmp_mem_call_end
 tpl_cmp_mem_call_end:
+
+/* cmp [base+disp], slot: the load address prefix plus the cmp helper tail.
+ * These used to be built by cmp_memory_code<kLoadSlot, 16>(), splicing the
+ * first 16 bytes of the load template; the assembler expresses the same
+ * thing directly and owns the offsets. */
+.globl tpl_cmp_mem_slot
+tpl_cmp_mem_slot:
+    push rdi
+    mov rsi, [rdi + 0x6B415365]
+    add rsi, 0x6B415367
+    mov edx, 0x6B41536A
+    mov ecx, 0x6B415369
+    movabs rdi, 0x1B4153A5000000C1
+    movabs r11, 0x2B4153A5000000C2
+    call r11
+    pop rdi
+.globl tpl_cmp_mem_slot_end
+tpl_cmp_mem_slot_end:
+
+.globl tpl_cmp_mem_idx_slot
+tpl_cmp_mem_idx_slot:
+    push rdi
+    mov rsi, [rdi + 0x6B415365]
+    mov r8, [rdi + 0x6B415370]
+    shl r8, 0x5B
+    add rsi, r8
+    add rsi, 0x6B415367
+    mov edx, 0x6B41536A
+    mov ecx, 0x6B415369
+    movabs rdi, 0x1B4153A5000000C1
+    movabs r11, 0x2B4153A5000000C2
+    call r11
+    pop rdi
+.globl tpl_cmp_mem_idx_slot_end
+tpl_cmp_mem_idx_slot_end:
