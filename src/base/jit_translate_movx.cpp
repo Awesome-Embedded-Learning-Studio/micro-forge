@@ -53,12 +53,15 @@ std::optional<TranslatedInsn> translate_movx(const arch::x86_64::DecodedInsn& in
                             {
                                 jg::hole_patch(jg::kMovxIdxSlotHoles, jg::HoleKind::kBase32, *base),
                                 jg::hole_patch(jg::kMovxIdxSlotHoles, jg::HoleKind::kIdx32, *index),
-                                jg::hole_patch(jg::kMovxIdxSlotHoles, jg::HoleKind::kShift8, ishift),
+                                jg::hole_patch(jg::kMovxIdxSlotHoles, jg::HoleKind::kShift8,
+                                               ishift),
                                 jg::hole_patch(jg::kMovxIdxSlotHoles, jg::HoleKind::kDisp32, idisp),
-                                jg::hole_patch(jg::kMovxIdxSlotHoles, jg::HoleKind::kSlot32, *xslot),
+                                jg::hole_patch(jg::kMovxIdxSlotHoles, jg::HoleKind::kSlot32,
+                                               *xslot),
                             },
                         .call_offset =
-                            jg::hole_patch(jg::kMovxIdxSlotHoles, jg::HoleKind::kHelper64, 0).offset,
+                            jg::hole_patch(jg::kMovxIdxSlotHoles, jg::HoleKind::kHelper64, 0)
+                                .offset,
                         .cpu_offset =
                             jg::hole_patch(jg::kMovxIdxSlotHoles, jg::HoleKind::kCpu64, 0).offset,
                         .helper = to_xmm ? JitHelper::kLoadXmm : JitHelper::kStoreXmm,
@@ -74,12 +77,16 @@ std::optional<TranslatedInsn> translate_movx(const arch::x86_64::DecodedInsn& in
                         .code = jg::kMovxLoadSlot,
                         .patches =
                             {
-                                jg::hole_patch(jg::kMovxLoadSlotHoles, jg::HoleKind::kBase32, *base),
-                                jg::hole_patch(jg::kMovxLoadSlotHoles, jg::HoleKind::kDisp32, disp32),
-                                jg::hole_patch(jg::kMovxLoadSlotHoles, jg::HoleKind::kSlot32, *xslot),
+                                jg::hole_patch(jg::kMovxLoadSlotHoles, jg::HoleKind::kBase32,
+                                               *base),
+                                jg::hole_patch(jg::kMovxLoadSlotHoles, jg::HoleKind::kDisp32,
+                                               disp32),
+                                jg::hole_patch(jg::kMovxLoadSlotHoles, jg::HoleKind::kSlot32,
+                                               *xslot),
                             },
                         .call_offset =
-                            jg::hole_patch(jg::kMovxLoadSlotHoles, jg::HoleKind::kHelper64, 0).offset,
+                            jg::hole_patch(jg::kMovxLoadSlotHoles, jg::HoleKind::kHelper64, 0)
+                                .offset,
                         .cpu_offset =
                             jg::hole_patch(jg::kMovxLoadSlotHoles, jg::HoleKind::kCpu64, 0).offset,
                         .helper = JitHelper::kLoadXmm,

@@ -17,6 +17,11 @@ namespace micro_forge::base::detail {
 
 namespace jg = micro_forge::base::jit_gen;
 
+// Every entry here is `inline`, so each TU gets one definition and the
+// anonymous namespace only keeps the names local; the lint's concern (ODR
+// trouble) does not apply. Kept here rather than in the .cpp because that
+// file is at the 600-line limit.
+// NOLINTNEXTLINE(misc-anonymous-namespace-in-header)
 namespace {
 
 /// @brief Template bytes for a mov-load at the given write-back width.
