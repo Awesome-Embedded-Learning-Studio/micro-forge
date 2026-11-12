@@ -108,6 +108,37 @@ function upload(engine: EngineExports, bytes: Uint8Array): number {
  * Boots the kernel with its ext2 volume. Throws when the boot shim refuses
  * the image (bad header, oversized kernel).
  */
+/**
+ * Uploads one image into the engine heap and returns the wasm pointer. The
+ * caller owns it and must engine.free() it (or hand it to bootWithPointers).
+ */
+export function uploadImage(engine: EngineExports, bytes: Uint8Array): number {
+  return upload(engine, bytes);
+}
+
+/**
+ * Boots with images already in the engine heap. Kept separate from
+ * bootCinux so the page can yield between the two uploads: moving ~600 MiB
+ * of disk image on one turn freezes the tab.
+ */
+export function bootWithPointers(
+  engine: EngineExports,
+  kernelPtr: number,
+  kernelLen: number,
+  diskPtr: number,
+  diskLen: number,
+): void {
+  try {
+    const ok = engine.mf_boot_cinux(kernelPtr, kernelLen, diskPtr, diskLen);
+    if (ok !== 1) {
+      throw new Error('boot_cinux refused the image');
+    }
+  } finally {
+    engine.free(kernelPtr);
+    engine.free(diskPtr);
+  }
+}
+
 export function bootCinux(engine: EngineExports, images: CinuxImages): void {
   const kernelPtr = upload(engine, images.kernel);
   const diskPtr = upload(engine, images.disk);
@@ -156,6 +187,9 @@ export function readConsole(
 ): { text: string; printed: number } {
   const cap = 1 << 16;
   const dst = engine.malloc(cap);
+  if (dst === 0) {
+    throw new Error(`readConsole: malloc(${cap}) failed`);
+  }
   try {
     const n = Number(engine.mf_read_console(dst, cap));
     if (n <= printed) {

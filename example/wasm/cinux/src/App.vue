@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref, shallowRef } from 'vue';
 import TermConsole from './TermConsole.vue';
 import {
-  bootCinux,
+  bootWithPointers,
   compileBlock,
   ExitKind,
   icount,
@@ -10,6 +10,7 @@ import {
   loadEngine,
   readConsole,
   run,
+  uploadImage,
   type EngineExports,
 } from './engine';
 
@@ -130,11 +131,23 @@ const pump = (): void => {
       return;
     }
     status.value = `运行中 · ${(icount(active) / 1e6).toFixed(1)}M 条指令`;
+  } catch (error) {
+    // A wasm trap would otherwise kill the rAF chain and freeze the page.
+    running.value = false;
+    busy = false;
+    status.value = `引擎中断：${error instanceof Error ? error.message : String(error)}`;
+    return;
   } finally {
     busy = false;
   }
   turnHandle = requestAnimationFrame(pump);
 };
+
+/** One repaint worth of slack for the status line above. */
+const yieldToPaint = (): Promise<void> =>
+  new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
 
 const boot = async (): Promise<void> => {
   if (!kernelFile.value || !diskFile.value || booting.value) return;
@@ -148,10 +161,21 @@ const boot = async (): Promise<void> => {
         status.value = `下载引擎 ${Math.round((100 * loaded) / total)}%`;
       },
     });
+    status.value = '读取内核镜像…';
     const kernel = await readFileBytes(kernelFile.value);
+    status.value = `读取磁盘映像（${(diskFile.value.size / 1048576).toFixed(0)} MiB）…`;
     const disk = await readFileBytes(diskFile.value);
-    status.value = `引导中（kernel ${kernel.length}B · disk ${(disk.length / 1048576).toFixed(0)}MiB）…`;
-    bootCinux(engine.value, { kernel, disk });
+    // Yield between the two uploads: each moves hundreds of MiB and would
+    // otherwise freeze the tab with the status line stuck on the old text.
+    status.value = `上传内核（${(kernel.length / 1024).toFixed(0)} KiB）…`;
+    await yieldToPaint();
+    const kernelPtr = uploadImage(engine.value, kernel);
+    status.value = `上传磁盘映像（${(disk.length / 1048576).toFixed(0)} MiB）…`;
+    await yieldToPaint();
+    const diskPtr = uploadImage(engine.value, disk);
+    status.value = '加载镜像并设置入口…';
+    await yieldToPaint();
+    bootWithPointers(engine.value, kernelPtr, kernel.length, diskPtr, disk.length);
     running.value = true;
     status.value = `引导中 · ${(icount(engine.value) / 1e6).toFixed(1)}M 条指令`;
     term.value?.focus(); // terminal takes keystrokes from here on
