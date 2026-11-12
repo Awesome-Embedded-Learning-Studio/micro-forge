@@ -28,6 +28,23 @@ configure_file(
 # Engine library: the shared machine kernel, grown batch by batch.
 option(MICRO_FORGE_EMBEDDED "Freestanding-ish build: no exceptions, no RTTI" OFF)
 
+# ---------------------------------------------------------------------------
+# JIT template generation.
+#
+# The templates live in src/arch/x86_64/jit_templates.S; the generator
+# assembles them, scans the hole magics and writes the header. Regenerating
+# unconditionally is deliberate: a stale header means every hole offset in
+# the block compiler is silently wrong, and the cost is a fraction of a
+# second per build.
+# ---------------------------------------------------------------------------
+find_program(MICRO_FORGE_PYTHON3 python3 REQUIRED)
+add_custom_target(
+    jit_templates_gen ALL
+    COMMAND "${MICRO_FORGE_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen/gen_jit_templates.py"
+    COMMENT "Regenerating JIT templates from assembly"
+    VERBATIM
+)
+
 add_library(micro_forge
     src/loader/cinux_loader.cpp
     src/machine.cpp
@@ -77,6 +94,9 @@ add_library(micro_forge
     src/arch/x86_64/syscall_impl.cpp
     src/arch/x86_64/mmu.cpp
 )
+
+# The generated header must exist before the library compiles.
+add_dependencies(micro_forge jit_templates_gen)
 target_include_directories(micro_forge PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/generated>

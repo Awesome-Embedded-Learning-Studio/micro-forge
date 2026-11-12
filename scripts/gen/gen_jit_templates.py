@@ -39,11 +39,22 @@ HOLES32 = {
     0x6B41536F: "kImm32",
     0x6B415370: "kIdx32",
     0x6B415371: "kShift32",
+    0x6B415372: "kDst32",
+    0x6B415373: "kAbs32",
+    0x6B415374: "kRsp32",
+    0x6B415375: "kReg32",
+    0x6B415376: "kSrcw32",
+    0x6B415377: "kZx32",
 }
+HOLES8 = {0x5A: "kShift8"}
 HOLES64 = {
     0x1B4153A5000000C1: "kCpu64",
     0x2B4153A5000000C2: "kHelper64",
     0x3B4153A5000000C3: "kImm64",
+    0x4B4153A5000000C4: "kAbs64",
+    0x5B4153A5000000C5: "kMyRip64",
+    0x6B4153A5000000C6: "kRetAddr64",
+    0x7B4153A5000000C7: "kTarget64",
 }
 
 
@@ -124,6 +135,15 @@ def scan_holes(code: bytes, name: str) -> list[dict]:
                 for i in range(pos, pos + 4):
                     taken[i] = True
             pos = code.find(needle, pos + 4)
+    for magic, kind in HOLES8.items():
+        needle = struct.pack("<B", magic)
+        pos = code.find(needle)
+        while pos != -1:
+            if not any(taken[pos : pos + 1]):
+                holes.append({"kind": kind, "offset": pos, "size": 1})
+                taken[pos] = True
+                break  # one shift hole per template by construction
+            pos = code.find(needle, pos + 1)
     holes.sort(key=lambda h: h["offset"])
     # Overlap check: two holes must not share a byte.
     for a, b in zip(holes, holes[1:]):
