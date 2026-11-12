@@ -121,6 +121,22 @@ INSTANTIATE_TEST_SUITE_P(Alu, JitDiffTest, ::testing::ValuesIn(alu_cases()),
                              return info.param.name;
                          });
 
+TEST(JitLayoutTest, PushRegHelperAddressesRegisterFileThroughRdi) {
+    // The block ABI hands the register file to RDI; a template that reads
+    // [rax+disp] works only while rax happens to still hold the same pointer,
+    // which is why the differential test alone cannot catch it. Assert the
+    // encoding instead: 48 8B B7 <disp32> is `mov rsi,[rdi+disp32]`.
+    namespace jg = micro_forge::base::jit_gen;
+    const auto& code = jg::kPushRegHelper;
+    ASSERT_GE(code.size(), 8U);
+    EXPECT_EQ(0x57, code[0]); // push rdi
+    EXPECT_EQ(0x48, code[1]);
+    EXPECT_EQ(0x8B, code[2]);
+    EXPECT_EQ(0xB7, code[3]); // modrm: mod=10, reg=rsi, rm=rdi
+    // pop passes the slot offset directly (57 BE <slot32>), so it needs no
+    // base-register load and is not asserted here.
+}
+
 TEST(JitLayoutTest, RejectsBadRelocationsAndPatches) {
     const auto decoded = micro_forge::arch::x86_64::decode_one(
         std::array<uint8_t, 4>{0x48, 0x8B, 0x48, 8}); // mov rcx,[rax+8]

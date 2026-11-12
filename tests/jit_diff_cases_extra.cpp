@@ -188,6 +188,18 @@ std::vector<DiffCase> extra_cases() {
         .vec = {0x1122334455667788ULL, 0x99AABBCCDDEEFF00ULL},
     };
     cases.push_back(movups_idx);
+    // push rax / pop rbx: the helper must address the register file through
+    // RDI. The template used to read [rax+disp], i.e. a guest register as a
+    // pointer, and no case covered it -- the fix shipped unverified.
+    DiffCase push_rax{
+        .name = "push_rax",
+        .code = {0x50},
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = kFlags,
+        .result_reg = Reg::kRax,
+    };
+    cases.push_back(push_rax);
     return cases;
 }
 
