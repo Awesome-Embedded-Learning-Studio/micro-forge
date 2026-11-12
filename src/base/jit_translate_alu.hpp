@@ -17,9 +17,11 @@ namespace micro_forge::base::detail {
  * @brief Lowers the shift-by-cl and pxor forms, which need their own
  *        templates but no generic ALU helper.
  * @param insn decoded guest instruction.
+ * @param rip Instruction address, needed by the rip-relative lea form.
  * @return Translated form, or nullopt when the shape is not handled.
  */
-std::optional<TranslatedInsn> translate_alu_extra(const arch::x86_64::DecodedInsn& insn);
+std::optional<TranslatedInsn> translate_alu_extra(const arch::x86_64::DecodedInsn& insn,
+                                                  uint64_t rip = 0);
 
 /**
  * @brief Maps an ALU mnemonic to its JIT helper id.

@@ -550,26 +550,8 @@ std::vector<DiffCase> alu_cases() {
     };
     sub_reg_mem32.result_reg = Reg::kRax;
     cases.push_back(sub_reg_mem32);
-    // pxor on a non-zero source proves the helper really xors both halves.
-    DiffCase pxor_mixed{
-        .name = "pxor_mixed",
-        .code = {0x66, 0x0F, 0xEF, 0xC1, 0xF4}, // pxor xmm0,xmm1; hlt
-        .initial = kLoaded,
-        .expected = kLoaded,
-        .flags = kFlags,
-        .vec_reg = Reg::kXmm0,
-        .vec = {0x0123456789ABCDEFULL, 0xFEDCBA9876543210ULL},
-    };
-    cases.push_back(pxor_mixed);
-    DiffCase shl_r64_cl{
-        .name = "shl_r64_cl",
-        .code = {0x48, 0xD3, 0xE0, 0xF4}, // shl rax,cl (cl masked to 1)
-        .initial = kLoaded,
-        .expected = kLoaded << 1U,
-        .flags = 2192, // AF, SF and OF set; matches the interpreter
-    };
-    shl_r64_cl.result_reg = Reg::kRax;
-    cases.push_back(shl_r64_cl);
+    auto extra = extra_cases();
+    cases.insert(cases.end(), extra.begin(), extra.end());
     // jcc not taken (JNE with ZF set falls through).
     DiffCase jcc_fall{
         .name = "jcc_jne_fall",

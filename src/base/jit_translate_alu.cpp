@@ -7,6 +7,8 @@
 
 #include "jit_translate_alu.hpp"
 
+#include "jit_translate_mov.hpp"
+
 #include "micro_forge/base/jit_templates.hpp"
 
 #include <bit>
@@ -95,7 +97,8 @@ std::optional<TranslatedInsn> cmp_mem(const arch::x86_64::DecodedInsn& insn, std
 
 } // namespace
 
-std::optional<TranslatedInsn> translate_alu_extra(const arch::x86_64::DecodedInsn& insn) {
+std::optional<TranslatedInsn> translate_alu_extra(const arch::x86_64::DecodedInsn& insn,
+                                                  uint64_t rip) {
     // shift reg,cl: the template reads the cl slot at run time into rdx and
     // the existing jit_shift masks it exactly like the interpreter.
     if ((insn.mnemonic == Mnemonic::kShl || insn.mnemonic == Mnemonic::kShr ||
@@ -141,6 +144,27 @@ std::optional<TranslatedInsn> translate_alu_extra(const arch::x86_64::DecodedIns
             .cpu_offset = 13,
             .helper = JitHelper::kPxor,
         };
+    }
+    // lea reg,[rip+disp]: the result is rip+length+disp, a compile-time
+    // constant, so the host-only movabs template writes it directly.
+    if (insn.mnemonic == Mnemonic::kLea && insn.ops[1].kind == Operand::Kind::kMem &&
+        insn.ops[1].rip_relative && insn.ops[0].kind == Operand::Kind::kReg &&
+        insn.ops[0].size == 8 && insn.addr_size == 8 && !insn.has_lock) {
+        const auto slot = detail::operand_slot(insn.ops[0], insn.rex_present);
+        if (slot.has_value()) {
+            const uint64_t value = rip + insn.length + static_cast<uint64_t>(insn.ops[1].disp);
+            return TranslatedInsn{
+                .code = jit_templates::kMovAbsSlot,
+                .patches =
+                    {
+                        {.offset = 2, .size = 8, .value = value},
+                        {.offset = 13, .size = 4, .value = *slot},
+                    },
+                .call_offset = std::nullopt,
+                .cpu_offset = std::nullopt,
+                .helper = JitHelper::kNone,
+            };
+        }
     }
     return std::nullopt;
 }

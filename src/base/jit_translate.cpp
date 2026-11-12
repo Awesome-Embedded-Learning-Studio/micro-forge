@@ -319,7 +319,7 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
     }
     // shift-by-cl and pxor need their own templates; pxor's destination is
     // an xmm register, so this must run before the GPR-only guard below.
-    if (auto extra = detail::translate_alu_extra(insn)) {
+    if (auto extra = detail::translate_alu_extra(insn, rip)) {
         return extra;
     }
     // Stores have a memory destination; remaining forms share the reg lookup.

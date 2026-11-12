@@ -121,6 +121,58 @@ std::optional<TranslatedInsn> translate_move(const arch::x86_64::DecodedInsn& in
             };
         }
     }
+    // ALU reg,[rip+disp]: the effective address is rip+length+disp, known at
+    // compile time, so the template carries it as one imm64.
+    if (insn.ops[0].kind == Operand::Kind::kReg && insn.ops[1].kind == Operand::Kind::kMem &&
+        insn.ops[1].rip_relative && insn.ops[0].size == insn.ops[1].size && insn.addr_size == 8 &&
+        !insn.has_lock && insn.seg != arch::x86_64::Seg::kFs &&
+        insn.seg != arch::x86_64::Seg::kGs &&
+        (insn.mnemonic == Mnemonic::kAdd || insn.mnemonic == Mnemonic::kAdc ||
+         insn.mnemonic == Mnemonic::kSub || insn.mnemonic == Mnemonic::kSbb ||
+         insn.mnemonic == Mnemonic::kAnd || insn.mnemonic == Mnemonic::kOr ||
+         insn.mnemonic == Mnemonic::kXor)) {
+        const auto slot = operand_slot(insn.ops[0], insn.rex_present);
+        const auto mn = static_cast<std::uint64_t>(insn.mnemonic);
+        const auto vaddr = rip + insn.length + static_cast<std::uint64_t>(insn.ops[1].disp);
+        if (slot.has_value()) {
+            return TranslatedInsn{
+                .code = kAluMemRipSlot,
+                .patches =
+                    {
+                        {.offset = 2, .size = 4, .value = *slot},
+                        {.offset = 8, .size = 8, .value = vaddr},
+                        {.offset = 17, .size = 4, .value = mn},
+                        {.offset = 23, .size = 4, .value = insn.ops[0].size},
+                    },
+                .call_offset = 39,
+                .cpu_offset = 29,
+                .helper = JitHelper::kAluMemRip,
+            };
+        }
+    }
+    // movzx reg,[rip+disp]: same constant-address load as the base form.
+    if (insn.mnemonic == Mnemonic::kMovzx && insn.ops[0].kind == Operand::Kind::kReg &&
+        insn.ops[1].kind == Operand::Kind::kMem && insn.ops[1].rip_relative &&
+        (insn.ops[0].size == 4 || insn.ops[0].size == 8) &&
+        (insn.ops[1].size == 1 || insn.ops[1].size == 2) && insn.addr_size == 8 && !insn.has_lock &&
+        insn.seg != arch::x86_64::Seg::kFs && insn.seg != arch::x86_64::Seg::kGs) {
+        const auto slot = operand_slot(insn.ops[0], insn.rex_present);
+        const auto vaddr = rip + insn.length + static_cast<std::uint64_t>(insn.ops[1].disp);
+        if (slot.has_value()) {
+            return TranslatedInsn{
+                .code = kLoadRipSlot,
+                .patches =
+                    {
+                        {.offset = 3, .size = 8, .value = vaddr},
+                        {.offset = 22, .size = 4, .value = insn.ops[1].size},
+                        {.offset = 44, .size = 4, .value = *slot},
+                    },
+                .call_offset = 28,
+                .cpu_offset = 13,
+                .helper = JitHelper::kLoadRip,
+            };
+        }
+    }
     // movabs r64,imm64: host-only movabs through rax; full 64-bit
     // immediates (kernel high-half addresses) need no helper at all.
     if (insn.mnemonic == Mnemonic::kMovabs && insn.ops[0].kind == Operand::Kind::kReg &&

@@ -218,6 +218,12 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
             case base::JitHelper::kPxor:
                 helper = reinterpret_cast<std::uint64_t>(&mf_jit_pxor);
                 break;
+            case base::JitHelper::kAluMemRip:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_alu_mem);
+                break;
+            case base::JitHelper::kLoadRip:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_load);
+                break;
             default:
                 return fail_compile();
             }

@@ -335,6 +335,34 @@ constexpr std::array<std::uint8_t, 46> kAluRegSlot = {
     0x5F,                                  // @45: pop rdi (1)
 };
 // Holes: slot32@2, src32@7, mnem32@12, width32@18; cpu64@24, helper64@34.
+// ALU reg,[rip+disp] (rsi=slot, rdx=constant address, ecx=mnemonic,
+// r8d=width): the address is known at compile time, so one movabs replaces
+// the base+disp arithmetic of kAluMemSlot.
+constexpr std::array<std::uint8_t, 51> kAluMemRipSlot = {
+    0x57,                                  // @0: push rdi (1)
+    0xBE, 0,    0,    0, 0,                // @1: mov esi,slot32 (5)
+    0x48, 0xBA, 0,    0, 0, 0, 0, 0, 0, 0, // @6: movabs rdx,vaddr64 (10)
+    0xB9, 0,    0,    0, 0,                // @16: mov ecx,mnem32 (5)
+    0x41, 0xB8, 0,    0, 0, 0,             // @21: mov r8d,width32 (6)
+    0x48, 0xBF, 0,    0, 0, 0, 0, 0, 0, 0, // @27: mov rdi,cpu64 (10)
+    0x49, 0xBB, 0,    0, 0, 0, 0, 0, 0, 0, // @37: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                      // @47: call r11 (3)
+    0x5F,                                  // @50: pop rdi (1)
+};
+// Holes: slot32@2, vaddr64@8, mnem32@17, width32@23; cpu64@29, helper64@39.
+// movzx reg,[rip+disp]: constant address in rsi, zero-extending load, then
+// a whole-slot write (rsi=vaddr64, edx=width32).
+constexpr std::array<std::uint8_t, 48> kLoadRipSlot = {
+    0x57,                                     // @0: push rdi (1)
+    0x48, 0xBE, 0,    0,    0, 0, 0, 0, 0, 0, // @1: movabs rsi,vaddr64 (10)
+    0x48, 0xBF, 0,    0,    0, 0, 0, 0, 0, 0, // @11: mov rdi,cpu64 (10)
+    0xBA, 0,    0,    0,    0,                // @21: mov edx,width32 (5)
+    0x49, 0xBB, 0,    0,    0, 0, 0, 0, 0, 0, // @26: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                         // @36: call r11 (3)
+    0x5F,                                     // @39: pop rdi (1)
+    0x48, 0x89, 0x84, 0x27, 0, 0, 0, 0,       // @40: mov [rdi+dst32],rax (8)
+};
+// Holes: vaddr64@3, width32@22; cpu64@13, helper64@28, dst32@44.
 // shift reg,cl via the same helper: the count arrives in rdx read from
 // the cl slot at run time, so no second helper is needed.
 constexpr std::array<std::uint8_t, 48> kShiftClSlot = {

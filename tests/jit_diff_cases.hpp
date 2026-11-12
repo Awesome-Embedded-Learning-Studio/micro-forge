@@ -29,4 +29,7 @@ std::vector<DiffCase> width_cases();
 /// @brief ALU-family cases (add/sub/and/or/xor/cmp/test/imul/lea forms).
 std::vector<DiffCase> alu_cases();
 
+/// @brief Cases for the later lowering rounds (pxor, shifts, rip-relative).
+std::vector<DiffCase> extra_cases();
+
 } // namespace jit_diff_cases

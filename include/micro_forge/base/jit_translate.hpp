@@ -35,25 +35,27 @@ enum class JitHelper : std::uint8_t {
     kOr,
     kXor,
     kCmpMem,
-    kImul,     ///< two/three-operand imul: reg = reg * r/m, CF/OF from truncation
-    kCmov,     ///< cmovcc reg,reg: dst = src when the condition holds
-    kSetcc,    ///< setcc reg8: dst byte = 1 when the condition holds
-    kPushVal,  ///< push reg64 value: stack write via rsp
-    kLoadXmm,  ///< movups-family load: [base+disp] -> xmm
-    kStoreXmm, ///< movups-family store: xmm -> [base+disp]
-    kRet,      ///< ret C3: pop rip into the block exit target
-    kCall,     ///< call: push ret addr, jump via the block exit target
-    kJmp,      ///< jmp imm: record the exit target
-    kJcc,      ///< jcc: pick taken/fallthrough by guest flags
-    kMovSlotW, ///< movzx / narrow mov reg,reg via one width helper
-    kShift,    ///< shift reg,imm8 via the interpreter's alu_shift
-    kAluReg,   ///< add/adc/sbb reg,reg via alu_add/alu_sub
-    kAluMem,   ///< ALU reg,[base+disp] via the same alu helpers
-    kShiftCl,  ///< shift reg,cl: same helper, count read at run time
-    kPxor,     ///< pxor xmm,xmm through a 16-byte helper
-    kLeave,    ///< leave: rsp=rbp then pop rbp
-    kPushImm,  ///< push imm64 (pre-extended)
-    kPopReg,   ///< pop reg64: stack read via rsp
+    kImul,      ///< two/three-operand imul: reg = reg * r/m, CF/OF from truncation
+    kCmov,      ///< cmovcc reg,reg: dst = src when the condition holds
+    kSetcc,     ///< setcc reg8: dst byte = 1 when the condition holds
+    kPushVal,   ///< push reg64 value: stack write via rsp
+    kLoadXmm,   ///< movups-family load: [base+disp] -> xmm
+    kStoreXmm,  ///< movups-family store: xmm -> [base+disp]
+    kRet,       ///< ret C3: pop rip into the block exit target
+    kCall,      ///< call: push ret addr, jump via the block exit target
+    kJmp,       ///< jmp imm: record the exit target
+    kJcc,       ///< jcc: pick taken/fallthrough by guest flags
+    kMovSlotW,  ///< movzx / narrow mov reg,reg via one width helper
+    kShift,     ///< shift reg,imm8 via the interpreter's alu_shift
+    kAluReg,    ///< add/adc/sbb reg,reg via alu_add/alu_sub
+    kAluMem,    ///< ALU reg,[base+disp] via the same alu helpers
+    kShiftCl,   ///< shift reg,cl: same helper, count read at run time
+    kPxor,      ///< pxor xmm,xmm through a 16-byte helper
+    kAluMemRip, ///< ALU reg,[rip+disp]: constant address, same helper
+    kLoadRip,   ///< movzx reg,[rip+disp]: constant address load
+    kLeave,     ///< leave: rsp=rbp then pop rbp
+    kPushImm,   ///< push imm64 (pre-extended)
+    kPopReg,    ///< pop reg64: stack read via rsp
 };
 
 /**
