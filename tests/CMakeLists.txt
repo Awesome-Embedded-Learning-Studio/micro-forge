@@ -82,10 +82,10 @@ gtest_discover_tests(test_mmu)
 add_custom_command(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/bare-client.bin
     COMMAND as --64 -o ${CMAKE_CURRENT_BINARY_DIR}/bare-client.o
-            ${CMAKE_CURRENT_SOURCE_DIR}/data/bare-client.s
+            ${CMAKE_CURRENT_SOURCE_DIR}/arch/x86_64/bare-client.s
     COMMAND objcopy -O binary -j .text ${CMAKE_CURRENT_BINARY_DIR}/bare-client.o
             ${CMAKE_CURRENT_BINARY_DIR}/bare-client.bin
-    DEPENDS data/bare-client.s
+    DEPENDS arch/x86_64/bare-client.s
     COMMENT "assembling bare client corpus"
     VERBATIM
 )
