@@ -7,6 +7,7 @@
 
 #include "micro_forge/base/jit_templates.hpp"
 
+#include <bit>
 #include <cstdint>
 #include <optional>
 #include <span>

@@ -107,7 +107,16 @@ const pump = (): void => {
     term.value?.push(drained.text);
     if (exit.kind !== ExitKind.Running) {
       running.value = false;
-      status.value = `guest stopped (kind=${exit.kind}, code=${exit.code})`;
+      const rip = (exit.code >>> 0).toString(16);
+      if (exit.kind === ExitKind.DecodeError) {
+        // The engine artifact carries its own decoder; an older
+        // public/engine.wasm cannot know instructions the kernel now uses.
+        status.value =
+          `引擎不认识 0x${rip} 处的指令：engine.wasm 可能比内核旧，` +
+          '请重新执行 scripts/build-wasm.sh 并复制产物后刷新页面';
+      } else {
+        status.value = `guest stopped (kind=${exit.kind}, code=0x${rip})`;
+      }
       return;
     }
     if (drained.text === '') {
