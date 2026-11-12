@@ -21,9 +21,9 @@
 #include "micro_forge/base/jit.hpp"
 #include "micro_forge/base/jit_translate.hpp"
 #include "micro_forge/kernel/bit.hpp"
-#include "micro_forge/kernel/bus.hpp"
-#include "micro_forge/kernel/irq_line.hpp"
-#include "micro_forge/kernel/port_space.hpp"
+#include "micro_forge/kernel/bus/bus.hpp"
+#include "micro_forge/kernel/bus/irq_line.hpp"
+#include "micro_forge/kernel/bus/port_space.hpp"
 #include "micro_forge/kernel/scheduler.hpp"
 #include "micro_forge/kernel/snapshot.hpp"
 

@@ -49,7 +49,7 @@ mkdir -p "$(dirname "${OUT}")"
 em++ -std=c++23 -O3 "${OPT_FLAGS[@]}" -fno-exceptions -fno-rtti \
     -DGUEST_RAM_MB=${GUEST_RAM_MB} \
     -Iinclude -Ibuild/generated -Isrc \
-    src/machine.cpp src/engine.cpp src/base/jit.cpp src/base/jit_translate*.cpp src/base/wasm_emit.cpp src/base/wasm_block.cpp src/presets/cinux/cinux_machine.cpp src/kernel/*.cpp src/arch/x86_64/*.cpp \
+    src/machine.cpp src/engine.cpp src/base/jit.cpp src/base/jit_translate*.cpp src/base/wasm_emit.cpp src/base/wasm_block.cpp src/presets/cinux/cinux_machine.cpp src/kernel/*.cpp src/kernel/*/*.cpp src/arch/x86_64/*.cpp \
     src/loader/*.cpp \
     src/wasm/exports.cpp \
     -o "${OUT}" \

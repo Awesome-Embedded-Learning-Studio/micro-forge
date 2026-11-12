@@ -6,13 +6,13 @@
 
 #include <cstring>
 
-#include <micro_forge/kernel/acpi_tables.hpp>
-#include <micro_forge/kernel/io_apic.hpp>
-#include <micro_forge/kernel/lapic.hpp>
-#include <micro_forge/kernel/pic_8259.hpp>
-#include <micro_forge/kernel/pit_8254.hpp>
-#include <micro_forge/kernel/rtc.hpp>
-#include <micro_forge/kernel/serial_16550.hpp>
+#include <micro_forge/kernel/device/acpi_tables.hpp>
+#include <micro_forge/kernel/device/io_apic.hpp>
+#include <micro_forge/kernel/device/lapic.hpp>
+#include <micro_forge/kernel/device/pic_8259.hpp>
+#include <micro_forge/kernel/device/pit_8254.hpp>
+#include <micro_forge/kernel/device/rtc.hpp>
+#include <micro_forge/kernel/device/serial_16550.hpp>
 
 namespace {
 

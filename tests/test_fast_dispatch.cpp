@@ -5,7 +5,7 @@
 
 #include "cpu_fixture.hpp"
 
-#include <micro_forge/kernel/register_region.hpp>
+#include <micro_forge/kernel/memory/register_region.hpp>
 
 #include <array>
 #include <string>

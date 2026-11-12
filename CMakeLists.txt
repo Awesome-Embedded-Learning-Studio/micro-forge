@@ -60,19 +60,19 @@ add_library(micro_forge
     src/base/wasm_emit.cpp
     src/base/wasm_block.cpp
     src/presets/cinux/cinux_machine.cpp
-    src/kernel/bus.cpp
-    src/kernel/acpi_tables.cpp
-    src/kernel/ahci.cpp
-    src/kernel/io_apic.cpp
-    src/kernel/lapic.cpp
-    src/kernel/pic_8259.cpp
-    src/kernel/pci_config.cpp
-    src/kernel/pit_8254.cpp
-    src/kernel/port_space.cpp
-    src/kernel/register_region.cpp
-    src/kernel/rtc.cpp
-    src/kernel/ram_region.cpp
-    src/kernel/serial_16550.cpp
+    src/kernel/bus/bus.cpp
+    src/kernel/device/acpi_tables.cpp
+    src/kernel/device/ahci.cpp
+    src/kernel/device/io_apic.cpp
+    src/kernel/device/lapic.cpp
+    src/kernel/device/pic_8259.cpp
+    src/kernel/device/pci_config.cpp
+    src/kernel/device/pit_8254.cpp
+    src/kernel/bus/port_space.cpp
+    src/kernel/memory/register_region.cpp
+    src/kernel/device/rtc.cpp
+    src/kernel/memory/ram_region.cpp
+    src/kernel/device/serial_16550.cpp
     src/kernel/scheduler.cpp
     src/arch/x86_64/decoder.cpp
     src/arch/x86_64/tables.cpp

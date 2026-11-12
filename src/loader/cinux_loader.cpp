@@ -16,9 +16,9 @@
 #include <expected>
 
 #include "micro_forge/arch/x86_64/cpu.hpp"
-#include "micro_forge/kernel/acpi_tables.hpp"
+#include "micro_forge/kernel/device/acpi_tables.hpp"
 #include "micro_forge/kernel/le_access.hpp"
-#include "micro_forge/kernel/ram_region.hpp"
+#include "micro_forge/kernel/memory/ram_region.hpp"
 
 namespace micro_forge::loader {
 

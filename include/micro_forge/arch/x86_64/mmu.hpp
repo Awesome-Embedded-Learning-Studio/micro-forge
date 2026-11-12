@@ -23,7 +23,7 @@
 #include <array>
 #include <cstdint>
 
-#include "micro_forge/kernel/bus.hpp"
+#include "micro_forge/kernel/bus/bus.hpp"
 
 namespace micro_forge::arch::x86_64 {
 

@@ -7,8 +7,8 @@
 #include <gtest/gtest.h>
 
 #include <micro_forge/arch/x86_64/cpu.hpp>
-#include <micro_forge/kernel/bus.hpp>
-#include <micro_forge/kernel/ram_region.hpp>
+#include <micro_forge/kernel/bus/bus.hpp>
+#include <micro_forge/kernel/memory/ram_region.hpp>
 #include <micro_forge/kernel/scheduler.hpp>
 
 #include <cstdint>

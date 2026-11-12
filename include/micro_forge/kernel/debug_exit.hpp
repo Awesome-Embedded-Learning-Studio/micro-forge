@@ -10,8 +10,8 @@
 #include <expected>
 #include <functional>
 
-#include "micro_forge/kernel/bus_error.hpp"
-#include "micro_forge/kernel/region.hpp"
+#include "micro_forge/kernel/bus/bus_error.hpp"
+#include "micro_forge/kernel/memory/region.hpp"
 
 namespace micro_forge::kernel {
 
