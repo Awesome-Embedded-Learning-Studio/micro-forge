@@ -5,14 +5,14 @@ MAGIC32 = {
  'src32':'0x6B41536B','mnem32':'0x6B41536C','cc32':'0x6B41536D','op32':'0x6B41536E',
  'imm32':'0x6B41536F','idx32':'0x6B415370','dst32':'0x6B415372','abs32':'0x6B415373',
  'rsp32':'0x6B415374','reg32':'0x6B415375','srcw32':'0x6B415376','zx32':'0x6B415377',
- 'shift32':'0x6B415378',
+ 'shift32':'0x6B415378','clsl32':'0x6B41537A','count32':'0x6B415379',
 }
 MAGIC64 = {
  'cpu64':'0x1B4153A5000000C1','helper64':'0x2B4153A5000000C2','imm64':'0x3B4153A5000000C3',
  'abs64':'0x4B4153A5000000C4','my_rip64':'0x5B4153A5000000C5','ret_addr64':'0x6B4153A5000000C6',
- 'target64':'0x7B4153A5000000C7',
+ 'target64':'0x7B4153A5000000C7','fall64':'0xAB4153A5000000CA','taken64':'0x9B4153A5000000C9','vaddr64':'0x8B4153A5000000C8',
 }
-MAGIC8 = {'shift8':'0x5A'}
+MAGIC8 = {'shift8':'0x5A','scale8':'0x5B'}
 
 def size_of(kind):
     if kind in MAGIC64: return 8
@@ -21,7 +21,7 @@ def size_of(kind):
 
 def parse(path):
     src = open(path).read()
-    pat = re.compile(r'constexpr std::array<std::uint8_t, (\d+)> (k\w+) = \{(.*?)\};\n((?://[^\n]*\n)*)', re.S)
+    pat = re.compile(r'constexpr std::array<std::uint8_t, (\d+)> (k\w+) = \{(.*?)\n\};((?:\n(?://[^\n]*)?)*)', re.S)
     out = []
     for m in pat.finditer(src):
         size, name, body, comment = int(m.group(1)), m.group(2), m.group(3), m.group(4)

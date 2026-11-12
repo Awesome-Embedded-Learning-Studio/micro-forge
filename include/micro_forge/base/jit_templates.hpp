@@ -22,26 +22,38 @@ namespace micro_forge::base::jit_templates {
 constexpr std::array<std::uint8_t, 18> kMovSlotImm = {
     0x48, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0x48, 0x89, 0x84, 0x27, 0, 0, 0, 0,
 };
+// Holes: imm64@2, dst32@14.
+
 // add qword [rdi+disp32], imm32                 (48 81 84 27 <disp32> <imm32>)
 constexpr std::array<std::uint8_t, 12> kAddSlotImm = {
     0x48, 0x81, 0x84, 0x27, 0, 0, 0, 0, 0, 0, 0, 0,
 };
+// Holes: disp32@4, imm32@8.
+
 // sub qword [rdi+disp32], imm32                 (48 81 AC 27 <disp32> <imm32>)
 constexpr std::array<std::uint8_t, 12> kSubSlotImm = {
     0x48, 0x81, 0xAC, 0x27, 0, 0, 0, 0, 0, 0, 0, 0,
 };
+// Holes: disp32@4, imm32@8.
+
 // and qword [rdi+disp32], imm32                 (48 81 A4 27 <disp32> <imm32>)
 constexpr std::array<std::uint8_t, 12> kAndSlotImm = {
     0x48, 0x81, 0xA4, 0x27, 0, 0, 0, 0, 0, 0, 0, 0,
 };
+// Holes: disp32@4, imm32@8.
+
 // or qword [rdi+disp32], imm32                  (48 81 8C 27 <disp32> <imm32>)
 constexpr std::array<std::uint8_t, 12> kOrSlotImm = {
     0x48, 0x81, 0x8C, 0x27, 0, 0, 0, 0, 0, 0, 0, 0,
 };
+// Holes: disp32@4, imm32@8.
+
 // xor qword [rdi+disp32], imm32                 (48 81 B4 27 <disp32> <imm32>)
 constexpr std::array<std::uint8_t, 12> kXorSlotImm = {
     0x48, 0x81, 0xB4, 0x27, 0, 0, 0, 0, 0, 0, 0, 0,
 };
+// Holes: disp32@4, imm32@8.
+
 // mov rax, [rdi+src] ; mov [rdi+dst], rax   (reg-to-reg slot copy)
 // 48 8B 84 27 <src32>  48 89 84 27 <dst32>
 constexpr std::array<std::uint8_t, 16> kMovSlotSlot = {
@@ -190,7 +202,7 @@ constexpr std::array<std::uint8_t, 55> kCmovMemSlot = {
     0x5F,                                  // @54: pop rdi (1)
 };
 // Holes: base32@4, disp32@11, cc32@16, slot32@21, width32@27;
-// cpu64@33, helper64@41.
+// cpu64@33, helper64@43.
 // ALU [base+disp],imm (rsi=vaddr, rdx=imm64, ecx=mnemonic, r8d=width): the
 // helper loads the memory operand, combines it with the immediate and
 // stores it back, so read-modify-write stays one memory operation pair.
