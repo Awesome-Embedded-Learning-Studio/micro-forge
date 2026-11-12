@@ -21,13 +21,13 @@ target_compile_definitions(test_smoke PRIVATE
 )
 gtest_discover_tests(test_smoke)
 
-add_executable(test_bus test_bus.cpp)
+add_executable(test_bus kernel/test_bus.cpp)
 target_link_libraries(test_bus
     PRIVATE micro_forge GTest::gtest_main
 )
 gtest_discover_tests(test_bus)
 
-add_executable(test_scheduler test_scheduler.cpp)
+add_executable(test_scheduler kernel/test_scheduler.cpp)
 target_link_libraries(test_scheduler
     PRIVATE micro_forge GTest::gtest_main
 )
@@ -39,35 +39,35 @@ target_link_libraries(test_bench
 )
 gtest_discover_tests(test_bench)
 
-add_executable(test_decode test_decode.cpp)
+add_executable(test_decode arch/x86_64/test_decode.cpp)
 target_link_libraries(test_decode
     PRIVATE micro_forge GTest::gtest_main
 )
 gtest_discover_tests(test_decode)
 
-add_executable(test_cpu test_cpu.cpp)
+add_executable(test_cpu arch/x86_64/test_cpu.cpp)
 target_link_libraries(test_cpu
     PRIVATE micro_forge GTest::gtest_main
 )
 gtest_discover_tests(test_cpu)
 
-add_executable(test_fast_dispatch test_fast_dispatch.cpp)
+add_executable(test_fast_dispatch arch/x86_64/test_fast_dispatch.cpp)
 target_link_libraries(test_fast_dispatch PRIVATE micro_forge GTest::gtest_main)
 gtest_discover_tests(test_fast_dispatch)
 
-add_executable(test_system test_system.cpp)
+add_executable(test_system arch/x86_64/test_system.cpp)
 target_link_libraries(test_system
     PRIVATE micro_forge GTest::gtest_main
 )
 gtest_discover_tests(test_system)
 
-add_executable(test_interrupt test_interrupt.cpp)
+add_executable(test_interrupt arch/x86_64/test_interrupt.cpp)
 target_link_libraries(test_interrupt
     PRIVATE micro_forge GTest::gtest_main
 )
 gtest_discover_tests(test_interrupt)
 
-add_executable(test_mmu test_mmu.cpp)
+add_executable(test_mmu arch/x86_64/test_mmu.cpp)
 target_link_libraries(test_mmu
     PRIVATE micro_forge GTest::gtest_main
 )
@@ -102,7 +102,7 @@ add_dependencies(test_bare_client bare_client_bin)
 gtest_discover_tests(test_bare_client)
 
 # Batch-3 acceptance: the same corpus, executed end to end.
-add_executable(test_execute test_execute.cpp)
+add_executable(test_execute arch/x86_64/test_execute.cpp)
 target_link_libraries(test_execute
     PRIVATE micro_forge GTest::gtest_main
 )
@@ -117,26 +117,26 @@ add_executable(test_engine test_engine.cpp)
 target_link_libraries(test_engine PRIVATE micro_forge GTest::gtest_main)
 gtest_discover_tests(test_engine)
 
-add_executable(test_wasm_block test_wasm_block.cpp)
+add_executable(test_wasm_block base/test_wasm_block.cpp)
 target_link_libraries(test_wasm_block PRIVATE micro_forge GTest::gtest_main)
 gtest_discover_tests(test_wasm_block)
 
-add_executable(test_wasm_emit test_wasm_emit.cpp)
+add_executable(test_wasm_emit base/test_wasm_emit.cpp)
 target_link_libraries(test_wasm_emit PRIVATE micro_forge GTest::gtest_main)
 gtest_discover_tests(test_wasm_emit)
 
-add_executable(test_jit test_jit.cpp)
+add_executable(test_jit jit/test_jit.cpp)
 target_link_libraries(test_jit PRIVATE micro_forge GTest::gtest_main)
 gtest_discover_tests(test_jit)
 
-add_executable(test_jit_diff test_jit_diff.cpp jit_diff_cases.cpp jit_diff_cases_alu.cpp
-                       jit_diff_cases_extra.cpp test_jit_alu_layout.cpp)
+add_executable(test_jit_diff jit/test_jit_diff.cpp jit/jit_diff_cases.cpp jit/jit_diff_cases_alu.cpp
+                       jit/jit_diff_cases_extra.cpp jit/test_jit_alu_layout.cpp)
 target_link_libraries(test_jit_diff PRIVATE micro_forge GTest::gtest_main)
 # Keep the native differential baseline non-PIE; PIE also supports helpers.
 target_link_options(test_jit_diff PRIVATE -no-pie)
 gtest_discover_tests(test_jit_diff)
 
-add_executable(test_cache test_cache.cpp)
+add_executable(test_cache base/test_cache.cpp)
 target_link_libraries(test_cache PRIVATE micro_forge GTest::gtest_main)
 gtest_discover_tests(test_cache)
 
@@ -151,13 +151,13 @@ add_dependencies(test_machine bare_client_bin)
 gtest_discover_tests(test_machine)
 
 # Batch-4 acceptance: interrupt line and snapshot round-trip.
-add_executable(test_irq test_irq.cpp)
+add_executable(test_irq kernel/test_irq.cpp)
 target_link_libraries(test_irq
     PRIVATE micro_forge GTest::gtest_main
 )
 gtest_discover_tests(test_irq)
 
-add_executable(test_snapshot test_snapshot.cpp)
+add_executable(test_snapshot kernel/test_snapshot.cpp)
 target_link_libraries(test_snapshot
     PRIVATE micro_forge GTest::gtest_main
 )
