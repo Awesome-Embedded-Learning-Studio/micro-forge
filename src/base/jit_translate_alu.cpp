@@ -165,7 +165,8 @@ std::optional<TranslatedInsn> translate_alu_extra(const arch::x86_64::DecodedIns
         insn.mnemonic == Mnemonic::kClac || insn.mnemonic == Mnemonic::kStac ||
         insn.mnemonic == Mnemonic::kFninit || insn.mnemonic == Mnemonic::kRdmsr ||
         insn.mnemonic == Mnemonic::kWrmsr || insn.mnemonic == Mnemonic::kRdtsc ||
-        insn.mnemonic == Mnemonic::kCpuid || insn.mnemonic == Mnemonic::kRdrand;
+        insn.mnemonic == Mnemonic::kCpuid || insn.mnemonic == Mnemonic::kRdrand ||
+        insn.mnemonic == Mnemonic::kPushfq || insn.mnemonic == Mnemonic::kPopfq;
     if (operandless && insn.ops[0].kind == Operand::Kind::kNone && insn.addr_size == 8 &&
         !insn.has_lock) {
         return TranslatedInsn{

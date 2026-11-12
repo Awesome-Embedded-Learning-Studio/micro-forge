@@ -228,6 +228,8 @@ void Cpu::jit_ports(unsigned mn, unsigned width) {
     case Mnemonic::kRdtsc:
     case Mnemonic::kCpuid:
     case Mnemonic::kRdrand:
+    case Mnemonic::kPushfq:
+    case Mnemonic::kPopfq:
         (void)execute_system(shape, 0); // iret/lgdt need control flow or memory
         return;
     default:
