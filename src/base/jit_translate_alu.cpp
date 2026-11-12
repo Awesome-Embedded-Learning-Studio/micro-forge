@@ -9,7 +9,6 @@
 
 #include "jit_translate_mov.hpp"
 
-#include "micro_forge/base/jit_templates.hpp"
 #include "micro_forge/base/jit_templates_generated.hpp"
 
 #include <bit>
@@ -57,7 +56,6 @@ JitHelper alu_helper(Mnemonic mnemonic) {
 
 namespace {
 
-using namespace jit_templates;
 namespace jg = micro_forge::base::jit_gen;
 
 /// Width gate: imul keeps the 4/8 forms (its CF/OF need mul_wide paths);
@@ -82,29 +80,44 @@ std::optional<TranslatedInsn> cmp_mem(const arch::x86_64::DecodedInsn& insn, std
     if (!base) {
         return std::nullopt;
     }
-    std::vector<JitPage::Patch> patches = {{.offset = 5, .size = 4, .value = *base}};
-    const std::size_t extra = source.has_index ? 15 : 0;
+    // The indexed and plain forms are different templates with different
+    // hole tables; `extra` used to shift every literal offset by 15.
+    const auto cdisp = static_cast<std::uint32_t>(source.disp);
+    const auto cwidth = static_cast<std::uint64_t>(insn.ops[0].size);
     if (source.has_index) {
         const auto index = reg_slot_offset(source.index);
         if (!index || source.scale > 8 || !std::has_single_bit(source.scale)) {
             return std::nullopt;
         }
-        patches.push_back({.offset = 13, .size = 4, .value = *index});
-        patches.push_back({
-            .offset = 20,
-            .size = 1,
-            .value = static_cast<unsigned>(std::countr_zero(source.scale)),
-        });
+        const auto cshift = static_cast<std::uint64_t>(std::countr_zero(source.scale));
+        return TranslatedInsn{
+            .code = jg::kCmpMemIdxSlot,
+            .patches =
+                {
+                    jg::hole_patch(jg::kCmpMemIdxSlotHoles, jg::HoleKind::kBase32, *base),
+                    jg::hole_patch(jg::kCmpMemIdxSlotHoles, jg::HoleKind::kIdx32, *index),
+                    jg::hole_patch(jg::kCmpMemIdxSlotHoles, jg::HoleKind::kScale8, cshift),
+                    jg::hole_patch(jg::kCmpMemIdxSlotHoles, jg::HoleKind::kDisp32, cdisp),
+                    jg::hole_patch(jg::kCmpMemIdxSlotHoles, jg::HoleKind::kSlot32, slot),
+                    jg::hole_patch(jg::kCmpMemIdxSlotHoles, jg::HoleKind::kWidth32, cwidth),
+                },
+            .call_offset =
+                jg::hole_patch(jg::kCmpMemIdxSlotHoles, jg::HoleKind::kHelper64, 0).offset,
+            .cpu_offset = jg::hole_patch(jg::kCmpMemIdxSlotHoles, jg::HoleKind::kCpu64, 0).offset,
+            .helper = JitHelper::kCmpMem,
+        };
     }
-    patches.push_back(
-        {.offset = 12 + extra, .size = 4, .value = static_cast<uint32_t>(source.disp)});
-    patches.push_back({.offset = 17 + extra, .size = 4, .value = slot});
-    patches.push_back({.offset = 22 + extra, .size = 4, .value = insn.ops[0].size});
     return TranslatedInsn{
-        .code = source.has_index ? std::span<const uint8_t>(kCmpMemIdxSlot) : kCmpMemSlot,
-        .patches = std::move(patches),
-        .call_offset = 38 + extra,
-        .cpu_offset = 28 + extra,
+        .code = jg::kCmpMemSlot,
+        .patches =
+            {
+                jg::hole_patch(jg::kCmpMemSlotHoles, jg::HoleKind::kBase32, *base),
+                jg::hole_patch(jg::kCmpMemSlotHoles, jg::HoleKind::kDisp32, cdisp),
+                jg::hole_patch(jg::kCmpMemSlotHoles, jg::HoleKind::kSlot32, slot),
+                jg::hole_patch(jg::kCmpMemSlotHoles, jg::HoleKind::kWidth32, cwidth),
+            },
+        .call_offset = jg::hole_patch(jg::kCmpMemSlotHoles, jg::HoleKind::kHelper64, 0).offset,
+        .cpu_offset = jg::hole_patch(jg::kCmpMemSlotHoles, jg::HoleKind::kCpu64, 0).offset,
         .helper = JitHelper::kCmpMem,
     };
 }
@@ -227,19 +240,24 @@ std::optional<TranslatedInsn> translate_alu_extra(const arch::x86_64::DecodedIns
             const auto src = is_test ? *src_slot : static_cast<std::size_t>(insn.ops[1].disp);
             const auto shift = static_cast<std::uint64_t>(std::countr_zero(mem.scale));
             return TranslatedInsn{
-                .code = kAluMemIdxSlot,
+                .code = jg::kAluMemIdxSlot,
                 .patches =
                     {
-                        {.offset = 5, .size = 4, .value = *base},
-                        {.offset = 13, .size = 4, .value = *index},
-                        {.offset = 20, .size = 1, .value = shift},
-                        {.offset = 27, .size = 4, .value = static_cast<std::uint32_t>(mem.disp)},
-                        {.offset = 32, .size = 4, .value = src},
-                        {.offset = 37, .size = 4, .value = static_cast<unsigned>(insn.mnemonic)},
-                        {.offset = 43, .size = 4, .value = insn.ops[0].size},
+                        jg::hole_patch(jg::kAluMemIdxSlotHoles, jg::HoleKind::kBase32, *base),
+                        jg::hole_patch(jg::kAluMemIdxSlotHoles, jg::HoleKind::kIdx32, *index),
+                        jg::hole_patch(jg::kAluMemIdxSlotHoles, jg::HoleKind::kShift8, shift),
+                        jg::hole_patch(jg::kAluMemIdxSlotHoles, jg::HoleKind::kDisp32,
+                                       static_cast<std::uint32_t>(mem.disp)),
+                        jg::hole_patch(jg::kAluMemIdxSlotHoles, jg::HoleKind::kSrc32, src),
+                        jg::hole_patch(jg::kAluMemIdxSlotHoles, jg::HoleKind::kMnem32,
+                                       static_cast<unsigned>(insn.mnemonic)),
+                        jg::hole_patch(jg::kAluMemIdxSlotHoles, jg::HoleKind::kWidth32,
+                                       insn.ops[0].size),
                     },
-                .call_offset = 59,
-                .cpu_offset = 49,
+                .call_offset =
+                    jg::hole_patch(jg::kAluMemIdxSlotHoles, jg::HoleKind::kHelper64, 0).offset,
+                .cpu_offset =
+                    jg::hole_patch(jg::kAluMemIdxSlotHoles, jg::HoleKind::kCpu64, 0).offset,
                 .helper = JitHelper::kAluMemIdx,
             };
         }
@@ -298,16 +316,17 @@ std::optional<TranslatedInsn> translate_alu_extra(const arch::x86_64::DecodedIns
         const auto immv = static_cast<std::uint64_t>(insn.ops[2].disp);
         if (dst.has_value() && src.has_value()) {
             return TranslatedInsn{
-                .code = jit_templates::kImul23Slot,
+                .code = jg::kImul23Slot,
                 .patches =
                     {
-                        {.offset = 2, .size = 4, .value = *dst},
-                        {.offset = 7, .size = 4, .value = *src},
-                        {.offset = 13, .size = 8, .value = immv},
-                        {.offset = 23, .size = 4, .value = insn.opsize},
+                        jg::hole_patch(jg::kImul23SlotHoles, jg::HoleKind::kDst32, *dst),
+                        jg::hole_patch(jg::kImul23SlotHoles, jg::HoleKind::kSrc32, *src),
+                        jg::hole_patch(jg::kImul23SlotHoles, jg::HoleKind::kImm64, immv),
+                        jg::hole_patch(jg::kImul23SlotHoles, jg::HoleKind::kWidth32, insn.opsize),
                     },
-                .call_offset = 39,
-                .cpu_offset = 29,
+                .call_offset =
+                    jg::hole_patch(jg::kImul23SlotHoles, jg::HoleKind::kHelper64, 0).offset,
+                .cpu_offset = jg::hole_patch(jg::kImul23SlotHoles, jg::HoleKind::kCpu64, 0).offset,
                 .helper = JitHelper::kImul23,
             };
         }
@@ -325,16 +344,18 @@ std::optional<TranslatedInsn> translate_alu_extra(const arch::x86_64::DecodedIns
         const auto smn = static_cast<unsigned>(insn.mnemonic);
         if (base.has_value()) {
             return TranslatedInsn{
-                .code = jit_templates::kGrp3MemSlot,
+                .code = jg::kGrp3MemSlot,
                 .patches =
                     {
-                        {.offset = 4, .size = 4, .value = *base},
-                        {.offset = 11, .size = 4, .value = sdisp},
-                        {.offset = 16, .size = 4, .value = insn.ops[0].size},
-                        {.offset = 21, .size = 4, .value = smn},
+                        jg::hole_patch(jg::kGrp3MemSlotHoles, jg::HoleKind::kBase32, *base),
+                        jg::hole_patch(jg::kGrp3MemSlotHoles, jg::HoleKind::kDisp32, sdisp),
+                        jg::hole_patch(jg::kGrp3MemSlotHoles, jg::HoleKind::kWidth32,
+                                       insn.ops[0].size),
+                        jg::hole_patch(jg::kGrp3MemSlotHoles, jg::HoleKind::kMnem32, smn),
                     },
-                .call_offset = 37,
-                .cpu_offset = 27,
+                .call_offset =
+                    jg::hole_patch(jg::kGrp3MemSlotHoles, jg::HoleKind::kHelper64, 0).offset,
+                .cpu_offset = jg::hole_patch(jg::kGrp3MemSlotHoles, jg::HoleKind::kCpu64, 0).offset,
                 .helper = JitHelper::kSysMem,
             };
         }
@@ -352,16 +373,18 @@ std::optional<TranslatedInsn> translate_alu_extra(const arch::x86_64::DecodedIns
         const auto gmn = static_cast<unsigned>(insn.mnemonic);
         if (base.has_value()) {
             return TranslatedInsn{
-                .code = jit_templates::kGrp3MemSlot,
+                .code = jg::kGrp3MemSlot,
                 .patches =
                     {
-                        {.offset = 4, .size = 4, .value = *base},
-                        {.offset = 11, .size = 4, .value = gdisp},
-                        {.offset = 16, .size = 4, .value = insn.ops[0].size},
-                        {.offset = 21, .size = 4, .value = gmn},
+                        jg::hole_patch(jg::kGrp3MemSlotHoles, jg::HoleKind::kBase32, *base),
+                        jg::hole_patch(jg::kGrp3MemSlotHoles, jg::HoleKind::kDisp32, gdisp),
+                        jg::hole_patch(jg::kGrp3MemSlotHoles, jg::HoleKind::kWidth32,
+                                       insn.ops[0].size),
+                        jg::hole_patch(jg::kGrp3MemSlotHoles, jg::HoleKind::kMnem32, gmn),
                     },
-                .call_offset = 37,
-                .cpu_offset = 27,
+                .call_offset =
+                    jg::hole_patch(jg::kGrp3MemSlotHoles, jg::HoleKind::kHelper64, 0).offset,
+                .cpu_offset = jg::hole_patch(jg::kGrp3MemSlotHoles, jg::HoleKind::kCpu64, 0).offset,
                 .helper = JitHelper::kGrp3Mem,
             };
         }
@@ -377,15 +400,17 @@ std::optional<TranslatedInsn> translate_alu_extra(const arch::x86_64::DecodedIns
         const auto src = reg_slot_offset(insn.ops[0].reg);
         if (src.has_value()) {
             return TranslatedInsn{
-                .code = jit_templates::kGrp3Slot,
+                .code = jg::kGrp3Slot,
                 .patches =
                     {
-                        {.offset = 4, .size = 4, .value = *src},
-                        {.offset = 9, .size = 4, .value = insn.opsize},
-                        {.offset = 14, .size = 4, .value = static_cast<unsigned>(insn.mnemonic)},
+                        jg::hole_patch(jg::kGrp3SlotHoles, jg::HoleKind::kSrc32, *src),
+                        jg::hole_patch(jg::kGrp3SlotHoles, jg::HoleKind::kWidth32, insn.opsize),
+                        jg::hole_patch(jg::kGrp3SlotHoles, jg::HoleKind::kMnem32,
+                                       static_cast<unsigned>(insn.mnemonic)),
                     },
-                .call_offset = 30,
-                .cpu_offset = 20,
+                .call_offset =
+                    jg::hole_patch(jg::kGrp3SlotHoles, jg::HoleKind::kHelper64, 0).offset,
+                .cpu_offset = jg::hole_patch(jg::kGrp3SlotHoles, jg::HoleKind::kCpu64, 0).offset,
                 .helper = JitHelper::kGrp3,
             };
         }
