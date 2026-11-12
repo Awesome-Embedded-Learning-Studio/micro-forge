@@ -20,6 +20,11 @@ extern "C" void mf_jit_jmp(void* cpu, uint64_t target) {
     static_cast<Cpu*>(cpu)->jit_jmp(target);
 }
 
+extern "C" void mf_jit_mov_slot_w(void* cpu, uint64_t value, unsigned width, unsigned dst,
+                                  unsigned zx) {
+    static_cast<Cpu*>(cpu)->jit_mov_slot_w(value, width, dst, zx);
+}
+
 extern "C" void mf_jit_jcc(void* cpu, uint64_t taken, uint64_t fall, unsigned cc) {
     static_cast<Cpu*>(cpu)->jit_jcc(taken, fall, static_cast<Cc>(cc));
 }
@@ -47,6 +52,17 @@ void Cpu::jit_call(uint64_t target, uint64_t my_rip, uint64_t ret_addr) {
     jit_next_rip_ = ok ? target : my_rip;
     jit_suspend_ = !ok; // retry in the interpreter on a faulted push
     jit_next_set_ = true;
+}
+
+void Cpu::jit_mov_slot_w(uint64_t value, unsigned width, unsigned dst, unsigned zx) {
+    uint64_t& slot = regs_[dst / 8U];
+    if (zx != 0U) { // movzx: the destination is zero-extended at full width
+        slot = value & ((1ULL << (width * 8U)) - 1U);
+        return;
+    }
+    // plain narrow mov: only the low bytes are replaced, highs are kept
+    const uint64_t mask = (1ULL << (width * 8U)) - 1U;
+    slot = (slot & ~mask) | (value & mask);
 }
 
 void Cpu::jit_jmp(uint64_t target) {

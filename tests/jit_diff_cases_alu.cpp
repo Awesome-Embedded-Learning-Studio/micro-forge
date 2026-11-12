@@ -433,6 +433,38 @@ std::vector<DiffCase> alu_cases() {
         .flags = kFlags,
     };
     cases.push_back(jcc_taken);
+    DiffCase mb_nop{
+        .name = "mb_nop",
+        .code = {0x0F, 0x1F, 0x40, 0x00, 0xF4}, // 7-byte nop padding; hlt
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = kFlags,
+    };
+    cases.push_back(mb_nop);
+    DiffCase movabs64{
+        .name = "movabs64",
+        .code = {0x48, 0xB8, 0x34, 0x12, 0x00, 0x00, 0x80, 0xFF, 0xFF, 0xFF, 0xF4},
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = kFlags,
+    };
+    cases.push_back(movabs64);
+    DiffCase mov_r16{
+        .name = "mov_r16",
+        .code = {0x66, 0x89, 0xC8, 0xF4}, // mov ax,cx; hlt
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = kFlags,
+    };
+    cases.push_back(mov_r16);
+    DiffCase movzx_r32r8{
+        .name = "movzx_r32r8",
+        .code = {0x0F, 0xB6, 0xC1, 0xF4}, // movzx eax,cl; hlt
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = kFlags,
+    };
+    cases.push_back(movzx_r32r8);
     // jcc not taken (JNE with ZF set falls through).
     DiffCase jcc_fall{
         .name = "jcc_jne_fall",

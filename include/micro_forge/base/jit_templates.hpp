@@ -283,6 +283,28 @@ constexpr std::array<std::uint8_t, 56> kCallImmHelper = {
     0xC3,                                  // @55: ret (1)
 };
 // Holes: target64@3, my_rip64@13, ret_addr64@23; cpu64@33, helper64@43.
+// pure host nop: guest nops (incl. 0F 1F multi-byte padding) do nothing.
+constexpr std::array<std::uint8_t, 1> kNopJit = {0x90};
+// mov r64,imm64 into a slot: host-only, no helper, no flags.
+constexpr std::array<std::uint8_t, 17> kMovAbsSlot = {
+    0x48, 0xB8, 0,    0, 0, 0, 0, 0, 0, 0, // @0: movabs rax,imm64 (10)
+    0x48, 0x89, 0x87, 0, 0, 0, 0,          // @10: mov [rdi+dst32],rax (7)
+};
+// Holes: imm64@2, dst32@13.
+// movzx/mov-r16 reg,reg via helper (rsi=value, edx=width, ecx=dst, r8d=zx).
+constexpr std::array<std::uint8_t, 48> kMovSlotW = {
+    0x57,                                  // @0: push rdi (1)
+    0x48, 0x8B, 0xB7, 0, 0, 0, 0,          // @1: mov rsi,[rdi+src32] (7)
+    0xBA, 0,    0,    0, 0,                // @8: mov edx,srcw32 (5)
+    0xB9, 0,    0,    0, 0,                // @13: mov ecx,dst32 (5)
+    0x41, 0xB8, 0,    0, 0, 0,             // @18: mov r8d,zx32 (6)
+    0x48, 0xBF, 0,    0, 0, 0, 0, 0, 0, 0, // @24: mov rdi,cpu64 (10)
+    0x49, 0xBB, 0,    0, 0, 0, 0, 0, 0, 0, // @34: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                      // @44: call r11 (3)
+    0x5F,                                  // @47: pop rdi (1)
+};
+// Holes: src32@4, srcw32@9, dst32@14, zx32@20; cpu64@26, helper64@36.
+// Mid-block template: falls through, no host ret.
 // jmp imm via helper (rdi=cpu, rsi=target): records the exit target.
 constexpr std::array<std::uint8_t, 36> kJmpImmHelper = {
     0x57,                                  // @0: push rdi (1)

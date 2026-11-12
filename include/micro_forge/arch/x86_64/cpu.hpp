@@ -234,10 +234,9 @@ public:
     /// @brief POP reg64 helper: loads rsp into the slot and raises rsp.
     /// @param[in] slot Byte offset of the destination register slot.
     void jit_pop_reg(uint64_t slot);
-    /// @brief movups-family: memory -> xmm_[slot/16] (16 bytes).
-    /// @param[in] vaddr Guest address of the low qword.
+    /// @brief movups-family: memory -> xmm_[slot/16], 16 bytes.
     void jit_load_xmm(uint64_t vaddr, uint64_t slot);
-    /// @brief movups-family helper: 16 bytes from xmm_[slot/16] to memory.
+    /// @brief movups-family: xmm_[slot/16] -> memory, 16 bytes.
     void jit_store_xmm(uint64_t vaddr, uint64_t slot);
     /// @brief ret helper: pops the target, records the block exit.
     /// @param[in] sp rsp before the pop; @p my_rip the ret's own rip.
@@ -251,6 +250,8 @@ public:
     void jit_jmp(uint64_t target);
     /// @brief jcc helper: picks @p taken or @p fall by condition(@p cc).
     void jit_jcc(uint64_t taken, uint64_t fall, Cc cc);
+    /// @brief movzx/narrow mov into a slot; zx=1 zero-extends, else keeps highs.
+    void jit_mov_slot_w(uint64_t value, unsigned width, unsigned dst, unsigned zx);
     /// @brief JIT OR: combine GPR[slot/8] with value, updating flags.
     void jit_or(uint64_t slot, uint64_t value, unsigned width);
     /// @brief JIT XOR: xor GPR[slot/8] with value, updating flags.

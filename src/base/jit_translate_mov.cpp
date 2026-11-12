@@ -61,6 +61,51 @@ std::optional<std::size_t> operand_slot(const Operand& op, bool rex) {
 
 std::optional<TranslatedInsn> translate_move(const arch::x86_64::DecodedInsn& insn,
                                              std::uint64_t rip) {
+    // movabs r64,imm64: host-only movabs through rax; full 64-bit
+    // immediates (kernel high-half addresses) need no helper at all.
+    if (insn.mnemonic == Mnemonic::kMovabs && insn.ops[0].kind == Operand::Kind::kReg &&
+        insn.ops[1].kind == Operand::Kind::kImm && insn.opsize == 8) {
+        const auto slot = reg_slot_offset(insn.ops[0].reg);
+        const auto imm64 = static_cast<std::uint64_t>(insn.ops[1].disp);
+        if (slot.has_value()) {
+            return TranslatedInsn{
+                .code = kMovAbsSlot,
+                .patches =
+                    {
+                        {.offset = 2, .size = 8, .value = imm64},
+                        {.offset = 13, .size = 4, .value = *slot},
+                    },
+                .call_offset = std::nullopt,
+                .cpu_offset = std::nullopt,
+                .helper = JitHelper::kNone,
+            };
+        }
+    }
+    // movzx reg,reg and mov r16,r16 share one helper; zx picks the write.
+    if ((insn.mnemonic == Mnemonic::kMovzx || insn.mnemonic == Mnemonic::kMov) &&
+        insn.ops[0].kind == Operand::Kind::kReg && insn.ops[1].kind == Operand::Kind::kReg &&
+        insn.addr_size == 8 && !insn.has_lock) {
+        const bool movzx = insn.mnemonic == Mnemonic::kMovzx;
+        if (movzx || insn.ops[0].size == 2) {
+            const auto dst = reg_slot_offset(insn.ops[0].reg);
+            const auto src = reg_slot_offset(insn.ops[1].reg);
+            if (dst.has_value() && src.has_value()) {
+                return TranslatedInsn{
+                    .code = kMovSlotW,
+                    .patches =
+                        {
+                            {.offset = 4, .size = 4, .value = *src},
+                            {.offset = 9, .size = 4, .value = movzx ? insn.ops[1].size : 2U},
+                            {.offset = 14, .size = 4, .value = *dst},
+                            {.offset = 20, .size = 4, .value = movzx ? 1U : 0U},
+                        },
+                    .call_offset = 36,
+                    .cpu_offset = 26,
+                    .helper = JitHelper::kMovSlotW,
+                };
+            }
+        }
+    }
     // mov [base+index*scale+disp],reg: compute vaddr before calling the helper.
     if (insn.mnemonic == Mnemonic::kMov && insn.ops[0].kind == Operand::Kind::kMem &&
         insn.ops[1].kind == Operand::Kind::kReg && insn.ops[0].has_base &&

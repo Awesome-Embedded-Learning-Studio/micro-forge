@@ -46,6 +46,8 @@ extern "C" void mf_jit_ret(void* cpu, uint64_t sp, uint64_t my_rip);
 extern "C" void mf_jit_leave(void* cpu);
 extern "C" void mf_jit_jmp(void* cpu, uint64_t target);
 extern "C" void mf_jit_jcc(void* cpu, uint64_t taken, uint64_t fall, unsigned cc);
+extern "C" void mf_jit_mov_slot_w(void* cpu, uint64_t value, unsigned width, unsigned dst,
+                                  unsigned zx);
 extern "C" void mf_jit_call(void* cpu, uint64_t target, uint64_t my_rip, uint64_t ret_addr);
 extern "C" void mf_jit_pop_reg(void* cpu, uint64_t slot);
 
@@ -57,6 +59,7 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
     std::size_t budget = 1; // trailing ret for unterminated blocks
     uint64_t covered = 0;
     unsigned count = 0;
+    bool terminated = false;
     uint64_t pc = rip;
     const uint64_t saved_rip = rip_;
     // fetch() can latch exception_injected_ when a translation fails; the
@@ -66,6 +69,11 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
         [&]() -> std::optional<JitBlock> { // NOLINT(readability-redundant-lambda-parameter-list)
         rip_ = saved_rip;
         exception_injected_ = saved_exception;
+        // A half-emitted page must go back to read-execute: blocks already
+        // sealed on it are live and would fault on the next dispatch.
+        if (jit_page_) {
+            (void)jit_page_->seal(); // idempotent: false when already sealed
+        }
         jit_failed_.insert(rip);
         return std::nullopt;
     };
@@ -81,6 +89,14 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
         }
         auto lowered = base::translate_insn(*decoded, pc);
         if (!lowered) {
+            // NOLINTNEXTLINE(concurrency-mt-unsafe) -- single-threaded CPU
+            static const bool fstats = std::getenv("MICRO_FORGE_JIT_FAILSTATS") != nullptr;
+            if (fstats) { // cold path: coverage diagnostics only
+                std::println(stderr, "jfail {} o{}k{} s{} k1_{} sz0_{}",
+                             mnemonic_name(decoded->mnemonic), decoded->opsize,
+                             static_cast<unsigned>(decoded->ops[0].kind), decoded->ops[0].size,
+                             static_cast<unsigned>(decoded->ops[1].kind), decoded->ops[0].size);
+            }
             break; // unsupported: end the block here, interpreter takes over
         }
         // Runtime structural assertions, before emit_multi fills any hole:
@@ -95,17 +111,20 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
         covered += decoded->length;
         ++count;
         pc += decoded->length;
-        switch (decoded->mnemonic) { // templates ending in their own ret
+        // Templates ending in their own host ret close the block: anything
+        // past them would be emitted but never executed.
+        switch (decoded->mnemonic) {
         case Mnemonic::kRet:
         case Mnemonic::kCall:
         case Mnemonic::kJmp:
         case Mnemonic::kJcc:
             --budget;
+            terminated = true;
             break;
         default:
             break;
         }
-        if (budget == 0) {
+        if (terminated) {
             break;
         }
     }
@@ -208,6 +227,9 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
                 break;
             case base::JitHelper::kJcc:
                 helper = reinterpret_cast<std::uint64_t>(&mf_jit_jcc);
+                break;
+            case base::JitHelper::kMovSlotW:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_mov_slot_w);
                 break;
             default:
                 return fail_compile();

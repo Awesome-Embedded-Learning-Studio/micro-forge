@@ -74,6 +74,17 @@ std::optional<std::size_t> reg_slot_offset(Reg reg) {
 }
 
 std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& insn, uint64_t rip) {
+    // Guest nops (single, xchg ax,ax, 0F 1F padding) lower to one host nop:
+    // no flags, no memory, nothing to model.
+    if (insn.mnemonic == arch::x86_64::Mnemonic::kNop && insn.addr_size == 8 && !insn.has_lock) {
+        return TranslatedInsn{
+            .code = jit_templates::kNopJit,
+            .patches = {},
+            .call_offset = std::nullopt,
+            .cpu_offset = std::nullopt,
+            .helper = JitHelper::kNone,
+        };
+    }
     // ret C3: the helper pops [rsp] into the block exit target; the host
     // ret terminates the block. imm16 cleanup (C2) stays interpreter-only.
     if (insn.mnemonic == Mnemonic::kRet && insn.addr_size == 8 && !insn.has_lock &&
