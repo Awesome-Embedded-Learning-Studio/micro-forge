@@ -60,6 +60,27 @@ std::vector<DiffCase> extra_cases() {
     };
     lea_rip.result_reg = Reg::kRax;
     cases.push_back(lea_rip);
+    // Accumulator short form: the register is in the opcode, so ops[0] is
+    // kImplicit rather than kReg.
+    DiffCase cmp_accum{
+        .name = "cmp_accum",
+        .code = {0x48, 0x3D, 0x00, 0x01, 0x00, 0x00, 0xF4}, // cmp rax,0x100
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = 0x80, // SF only: the difference stays negative
+    };
+    cmp_accum.result_reg = Reg::kRax;
+    cases.push_back(cmp_accum);
+    // lea with a 32-bit destination: the whole slot is rewritten, highs zeroed.
+    DiffCase lea_r32{
+        .name = "lea_r32",
+        .code = {0x8D, 0x79, 0x01, 0xF4}, // lea edi,[rcx+1]
+        .initial = kLoaded,
+        .expected = 0x50607182ULL, // (rcx seed 0x1020304050607181) + 1, 32-bit
+        .flags = kFlags,
+    };
+    lea_r32.result_reg = Reg::kRdi;
+    cases.push_back(lea_r32);
     return cases;
 }
 

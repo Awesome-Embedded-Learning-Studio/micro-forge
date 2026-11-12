@@ -145,6 +145,29 @@ std::optional<TranslatedInsn> translate_alu_extra(const arch::x86_64::DecodedIns
             .helper = JitHelper::kPxor,
         };
     }
+    // lea r32,[base+disp]: 32-bit arithmetic, whole-slot write zero-extends.
+    if (insn.mnemonic == Mnemonic::kLea && insn.ops[1].kind == Operand::Kind::kMem &&
+        insn.ops[1].has_base && !insn.ops[1].has_index && !insn.ops[1].rip_relative &&
+        insn.ops[0].size == 4 && insn.addr_size == 8 && !insn.has_lock &&
+        insn.ops[1].disp >= INT32_MIN && insn.ops[1].disp <= INT32_MAX) {
+        const auto base = reg_slot_offset(insn.ops[1].base);
+        const auto dst = operand_slot(insn.ops[0], insn.rex_present);
+        const auto ldisp = static_cast<std::uint32_t>(insn.ops[1].disp);
+        if (base.has_value() && dst.has_value()) {
+            return TranslatedInsn{
+                .code = jit_templates::kLeaSlot32,
+                .patches =
+                    {
+                        {.offset = 3, .size = 4, .value = *base},
+                        {.offset = 8, .size = 4, .value = ldisp},
+                        {.offset = 16, .size = 4, .value = *dst},
+                    },
+                .call_offset = std::nullopt,
+                .cpu_offset = std::nullopt,
+                .helper = JitHelper::kNone,
+            };
+        }
+    }
     // lea reg,[rip+disp]: the result is rip+length+disp, a compile-time
     // constant, so the host-only movabs template writes it directly.
     if (insn.mnemonic == Mnemonic::kLea && insn.ops[1].kind == Operand::Kind::kMem &&

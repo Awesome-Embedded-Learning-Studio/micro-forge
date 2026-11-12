@@ -323,7 +323,10 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
         return extra;
     }
     // Stores have a memory destination; remaining forms share the reg lookup.
-    if (insn.ops[0].kind != Operand::Kind::kReg || !detail::memory_width(insn.ops[0].size)) {
+    // kImplicit covers the accumulator short forms (48 3D cmp rax,imm32 and
+    // friends), where the register is encoded in the opcode rather than modrm.
+    if ((insn.ops[0].kind != Operand::Kind::kReg && insn.ops[0].kind != Operand::Kind::kImplicit) ||
+        !detail::memory_width(insn.ops[0].size)) {
         return std::nullopt;
     }
     const auto slot = detail::operand_slot(insn.ops[0], insn.rex_present);

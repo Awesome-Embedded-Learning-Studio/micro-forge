@@ -52,6 +52,14 @@ constexpr std::array<std::uint8_t, 22> kLeaSlot = {
     0x48, 0x8B, 0x84, 0x27, 0, 0, 0, 0, 0x48, 0x05, 0, 0, 0, 0, 0x48, 0x89, 0x84, 0x27, 0, 0, 0, 0,
 };
 // Holes: base32@4, disp32@10, dst32@18 (the final mov starts at 14).
+// lea r32,[base+disp]: 32-bit read and add, then a whole-slot write that
+// zero-extends into the destination.
+constexpr std::array<std::uint8_t, 20> kLeaSlot32 = {
+    0x8B, 0x84, 0x27, 0,    0, 0, 0,    // @0: mov eax,[rdi+base32] (7)
+    0x05, 0,    0,    0,    0,          // @7: add eax,disp32 (5)
+    0x48, 0x89, 0x84, 0x27, 0, 0, 0, 0, // @12: mov [rdi+dst32],rax (8)
+};
+// Holes: base32@3, disp32@8, dst32@16 (48 89 84 27 occupies @12..15).
 // lea dst,[base+index*scale+disp]:
 //   mov rax,[rdi+base] ; mov r8,[rdi+idx] ; shl r8,log2(scale) ;
 //   add rax,r8 ; add rax,disp32 ; mov [rdi+dst],rax
