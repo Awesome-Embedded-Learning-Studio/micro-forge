@@ -64,9 +64,10 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
             // NOLINTNEXTLINE(concurrency-mt-unsafe) -- single-threaded CPU
             static const bool fstats = std::getenv("MICRO_FORGE_JIT_FAILSTATS") != nullptr;
             if (fstats) { // cold path: coverage diagnostics only
-                std::println(stderr, "jfail {} o{} k{} s{} k1_{}", mnemonic_name(decoded->mnemonic),
-                             decoded->opsize, static_cast<unsigned>(decoded->ops[0].kind),
-                             decoded->ops[0].size, static_cast<unsigned>(decoded->ops[1].kind));
+                std::println(stderr, "jfail {} o{} k0_{} s0_{} k1_{}",
+                             mnemonic_name(decoded->mnemonic), decoded->opsize,
+                             static_cast<unsigned>(decoded->ops[0].kind), decoded->ops[0].size,
+                             static_cast<unsigned>(decoded->ops[1].kind));
             }
             break; // unsupported: end the block here, interpreter takes over
         }
@@ -207,6 +208,9 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
                 break;
             case base::JitHelper::kAluReg:
                 helper = reinterpret_cast<std::uint64_t>(&mf_jit_alu_reg);
+                break;
+            case base::JitHelper::kAluMem:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_alu_mem);
                 break;
             default:
                 return fail_compile();

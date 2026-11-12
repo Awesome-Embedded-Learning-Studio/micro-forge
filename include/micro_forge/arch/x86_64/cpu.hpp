@@ -218,8 +218,7 @@ public:
     void jit_sub(uint64_t slot, uint64_t value, unsigned width);
     /// @brief JIT AND: mask GPR[slot/8] with value, updating flags.
     void jit_and(uint64_t slot, uint64_t value, unsigned width);
-    /// @brief CMOV: merge @p src_val into the slot when @p cc holds.
-    /// @param[in] slot Dest slot offset; @p width bytes, high bytes kept.
+    /// @brief CMOV: merge src_val into the slot when cc holds (highs kept).
     void jit_cmov(uint64_t slot, uint64_t src_val, unsigned cc, unsigned width);
 
     /// @brief SETCC: write 1/0 into the slot's low byte (cc 0-15).
@@ -227,12 +226,11 @@ public:
 
     /// @brief PUSH: store @p value (already 64-bit) at rsp-8.
     void jit_push_val(uint64_t value);
-    /// @brief PUSH imm helper: stores @p value (already 64-bit) at rsp-8.
+    /// @brief PUSH imm: store @p value (already 64-bit) at rsp-8.
     void jit_push_imm(uint64_t value);
-    /// @brief POP reg64 helper: loads rsp into the slot and raises rsp.
-    /// @param[in] slot Byte offset of the destination register slot.
+    /// @brief POP reg64: load [rsp] into the slot, then raise rsp.
     void jit_pop_reg(uint64_t slot);
-    /// @brief movups-family: memory -> xmm_[slot/16], 16 bytes.
+    /// @brief movups-family: memory <-> xmm_[slot/16], 16 bytes.
     void jit_load_xmm(uint64_t vaddr, uint64_t slot);
     /// @brief movups-family: xmm_[slot/16] -> memory, 16 bytes.
     void jit_store_xmm(uint64_t vaddr, uint64_t slot);
@@ -250,8 +248,10 @@ public:
     void jit_mov_slot_w(uint64_t value, unsigned width, unsigned dst, unsigned zx);
     /// @brief shift helper: alu_shift on the slot; count 0 keeps flags.
     void jit_shift(unsigned slot, uint64_t count, unsigned mn, unsigned width);
-    /// @brief reg,reg ALU helper: alu_add/sub/logic with exact flags.
+    /// @brief reg,reg ALU: alu_add/sub/logic with the interpreter's flags.
     void jit_alu_reg(unsigned slot, unsigned src, unsigned mn, unsigned width);
+    /// @brief ALU reg,[mem]: load then combine; faulted load writes nothing.
+    void jit_alu_mem(unsigned slot, uint64_t vaddr, unsigned mn, unsigned width);
     /// @brief JIT OR: combine GPR[slot/8] with value, updating flags.
     void jit_or(uint64_t slot, uint64_t value, unsigned width);
     /// @brief JIT XOR: xor GPR[slot/8] with value, updating flags.

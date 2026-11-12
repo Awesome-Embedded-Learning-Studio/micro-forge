@@ -335,6 +335,23 @@ constexpr std::array<std::uint8_t, 46> kAluRegSlot = {
     0x5F,                                  // @45: pop rdi (1)
 };
 // Holes: slot32@2, src32@7, mnem32@12, width32@18; cpu64@24, helper64@34.
+// ALU reg,[base+disp] (rsi=slot, rdx=source address, ecx=mnemonic,
+// r8d=width): the helper loads the memory operand, applies the same
+// alu_add/alu_sub/alu_logic the interpreter uses, then writes the slot.
+constexpr std::array<std::uint8_t, 55> kAluMemSlot = {
+    0x57,                                  // @0: push rdi (1)
+    0xBE, 0,    0,    0, 0,                // @1: mov esi,slot32 (5)
+    0x48, 0x8B, 0x97, 0, 0, 0, 0,          // @6: mov rdx,[rdi+base32] (7)
+    0x48, 0x81, 0xC2, 0, 0, 0, 0,          // @13: add rdx,disp32 (7)
+    0xB9, 0,    0,    0, 0,                // @20: mov ecx,mnem32 (5)
+    0x41, 0xB8, 0,    0, 0, 0,             // @25: mov r8d,width32 (6)
+    0x48, 0xBF, 0,    0, 0, 0, 0, 0, 0, 0, // @31: mov rdi,cpu64 (10)
+    0x49, 0xBB, 0,    0, 0, 0, 0, 0, 0, 0, // @41: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                      // @51: call r11 (3)
+    0x5F,                                  // @54: pop rdi (1)
+};
+// Holes: slot32@2, base32@9, disp32@16, mnem32@21, width32@27;
+// cpu64@33, helper64@43.
 // jmp imm via helper (rdi=cpu, rsi=target): records the exit target.
 constexpr std::array<std::uint8_t, 36> kJmpImmHelper = {
     0x57,                                  // @0: push rdi (1)

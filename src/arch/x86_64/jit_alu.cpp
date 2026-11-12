@@ -20,7 +20,55 @@ extern "C" void mf_jit_alu_reg(void* cpu, unsigned slot, unsigned src, unsigned 
     static_cast<Cpu*>(cpu)->jit_alu_reg(slot, src, mn, width);
 }
 
+/// @brief C ABI bridge: rdi=cpu, esi=slot, rdx=vaddr, ecx=mnemonic, r8d=width.
+extern "C" void mf_jit_alu_mem(void* cpu, unsigned slot, uint64_t vaddr, unsigned mn,
+                               unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_alu_mem(slot, vaddr, mn, width);
+}
+
 } // namespace
+
+void Cpu::jit_alu_mem(unsigned slot, uint64_t vaddr, unsigned mn, unsigned width) {
+    uint64_t vb = 0;
+    if (!load(vaddr, width, vb)) {
+        return; // faulted: the interpreter re-runs this instruction
+    }
+    const auto dst = static_cast<Reg>(slot / 8U);
+    const uint64_t va = read_gpr(dst, width, true);
+    uint64_t result = 0;
+    bool writes = true;
+    // Keep in step with jit_alu_reg: same mnemonics, same flag helpers.
+    switch (static_cast<Mnemonic>(mn)) {
+    case Mnemonic::kAdd:
+        result = alu_add(va, vb, width, false);
+        break;
+    case Mnemonic::kAdc:
+        result = alu_add(va, vb, width, cf_);
+        break;
+    case Mnemonic::kSub:
+        result = alu_sub(va, vb, width, false);
+        break;
+    case Mnemonic::kSbb:
+        result = alu_sub(va, vb, width, cf_);
+        break;
+    case Mnemonic::kAnd:
+        result = alu_logic(va & vb, width);
+        break;
+    case Mnemonic::kOr:
+        result = alu_logic(va | vb, width);
+        break;
+    case Mnemonic::kXor:
+        result = alu_logic(va ^ vb, width);
+        break;
+    default: // kCmp: flags only, no write-back
+        result = alu_sub(va, vb, width, false);
+        writes = false;
+        break;
+    }
+    if (writes) {
+        write_gpr(dst, width, true, result);
+    }
+}
 
 void Cpu::jit_alu_reg(unsigned slot, unsigned src, unsigned mn, unsigned width) {
     const auto dst = static_cast<Reg>(slot / 8U);

@@ -530,6 +530,26 @@ std::vector<DiffCase> alu_cases() {
     };
     movzx_mem16_64.result_reg = Reg::kRax;
     cases.push_back(movzx_mem16_64);
+    DiffCase add_reg_mem{
+        .name = "add_reg_mem",
+        .code = {0x49, 0x03, 0x04, 0x24, 0xF4}, // add rax,qword [r12]; hlt
+        .initial = kLoaded,
+        .expected = kLoaded + kLoaded, // rax += [r12] (memory holds kLoaded)
+        .flags = 0x81,                 // CF and SF set (low byte 0x20 is odd)
+        .base = kData,
+    };
+    add_reg_mem.result_reg = Reg::kRax;
+    cases.push_back(add_reg_mem);
+    DiffCase sub_reg_mem32{
+        .name = "sub_reg_mem32",
+        .code = {0x41, 0x2B, 0x04, 0x24, 0xF4}, // sub eax,dword [r12]; hlt
+        .initial = kLoaded,
+        .expected = 0, // eax - [r12], both halves equal
+        .flags = 0x44, // ZF and PF (zero has even parity)
+        .base = kData,
+    };
+    sub_reg_mem32.result_reg = Reg::kRax;
+    cases.push_back(sub_reg_mem32);
     // jcc not taken (JNE with ZF set falls through).
     DiffCase jcc_fall{
         .name = "jcc_jne_fall",

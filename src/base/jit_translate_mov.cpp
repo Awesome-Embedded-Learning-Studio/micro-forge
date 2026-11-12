@@ -89,6 +89,38 @@ std::optional<TranslatedInsn> translate_move(const arch::x86_64::DecodedInsn& in
             };
         }
     }
+    // add/adc/sbb/sub/and/or/xor reg,[base+disp]: load then combine; the
+    // helper refuses to write back when the load faults.
+    if (insn.ops[0].kind == Operand::Kind::kReg && insn.ops[1].kind == Operand::Kind::kMem &&
+        insn.ops[1].has_base && !insn.ops[1].has_index && !insn.ops[1].rip_relative &&
+        insn.ops[0].size == insn.ops[1].size && insn.addr_size == 8 && !insn.has_lock &&
+        insn.seg != arch::x86_64::Seg::kFs && insn.seg != arch::x86_64::Seg::kGs &&
+        insn.ops[1].disp >= INT32_MIN && insn.ops[1].disp <= INT32_MAX &&
+        (insn.mnemonic == Mnemonic::kAdd || insn.mnemonic == Mnemonic::kAdc ||
+         insn.mnemonic == Mnemonic::kSub || insn.mnemonic == Mnemonic::kSbb ||
+         insn.mnemonic == Mnemonic::kAnd || insn.mnemonic == Mnemonic::kOr ||
+         insn.mnemonic == Mnemonic::kXor)) {
+        const auto slot = operand_slot(insn.ops[0], insn.rex_present);
+        const auto base = reg_slot_offset(insn.ops[1].base);
+        const auto adisp = static_cast<std::uint32_t>(insn.ops[1].disp);
+        const auto amn = static_cast<unsigned>(insn.mnemonic);
+        if (slot.has_value() && base.has_value()) {
+            return TranslatedInsn{
+                .code = kAluMemSlot,
+                .patches =
+                    {
+                        {.offset = 2, .size = 4, .value = *slot},
+                        {.offset = 9, .size = 4, .value = *base},
+                        {.offset = 16, .size = 4, .value = adisp},
+                        {.offset = 21, .size = 4, .value = amn},
+                        {.offset = 27, .size = 4, .value = insn.ops[0].size},
+                    },
+                .call_offset = 43,
+                .cpu_offset = 33,
+                .helper = JitHelper::kAluMem,
+            };
+        }
+    }
     // movabs r64,imm64: host-only movabs through rax; full 64-bit
     // immediates (kernel high-half addresses) need no helper at all.
     if (insn.mnemonic == Mnemonic::kMovabs && insn.ops[0].kind == Operand::Kind::kReg &&
