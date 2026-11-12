@@ -207,7 +207,14 @@ def render(templates: list[dict]) -> str:
         "",
     ]
     for t in templates:
-        code = ", ".join(f"0x{b:02X}" for b in t["code"])
+        # Hole bytes must read as zero in the emitted array: the layout
+        # validator rejects a template whose patch sites are pre-filled, and
+        # the block compiler writes the real value at patch time.
+        body = bytearray(t["code"])
+        for hole in t["holes"]:
+            for i in range(hole["offset"], hole["offset"] + hole["size"]):
+                body[i] = 0
+        code = ", ".join(f"0x{b:02X}" for b in body)
         lines.append(f"/// @brief {t['name']} template ({len(t['code'])} bytes).")
         lines.append(
             f"inline constexpr std::array<std::uint8_t, {len(t['code'])}> "

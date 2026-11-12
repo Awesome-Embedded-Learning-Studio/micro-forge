@@ -8,14 +8,14 @@
 #include <optional>
 
 #include "jit_translate_mov.hpp"
-#include "micro_forge/base/jit_templates_mem.hpp"
+#include <micro_forge/base/jit_templates_generated.hpp>
 
 namespace micro_forge::base::detail {
 
 using arch::x86_64::Mnemonic;
 using arch::x86_64::Operand;
 
-using namespace jit_templates;
+namespace jg = micro_forge::base::jit_gen;
 
 std::optional<TranslatedInsn> translate_movx(const arch::x86_64::DecodedInsn& insn) {
     // movups/movaps/movdqa/movdqu xmm <-> [base+disp]: 16-byte SSE moves
@@ -48,45 +48,56 @@ std::optional<TranslatedInsn> translate_movx(const arch::x86_64::DecodedInsn& in
                     const auto ishift = static_cast<std::uint64_t>(std::countr_zero(mem.scale));
                     const auto idisp = static_cast<std::uint32_t>(mem.disp);
                     return TranslatedInsn{
-                        .code = jit_templates::kMovxIdxSlot,
+                        .code = jg::kMovxIdxSlot,
                         .patches =
                             {
-                                {.offset = 5, .size = 4, .value = *base},
-                                {.offset = 13, .size = 4, .value = *index},
-                                {.offset = 20, .size = 1, .value = ishift},
-                                {.offset = 27, .size = 4, .value = idisp},
-                                {.offset = 42, .size = 4, .value = *xslot},
+                                jg::hole_patch(jg::kMovxIdxSlotHoles, jg::HoleKind::kBase32, *base),
+                                jg::hole_patch(jg::kMovxIdxSlotHoles, jg::HoleKind::kIdx32, *index),
+                                jg::hole_patch(jg::kMovxIdxSlotHoles, jg::HoleKind::kShift8, ishift),
+                                jg::hole_patch(jg::kMovxIdxSlotHoles, jg::HoleKind::kDisp32, idisp),
+                                jg::hole_patch(jg::kMovxIdxSlotHoles, jg::HoleKind::kSlot32, *xslot),
                             },
-                        .call_offset = 48,
-                        .cpu_offset = 33,
+                        .call_offset =
+                            jg::hole_patch(jg::kMovxIdxSlotHoles, jg::HoleKind::kHelper64, 0).offset,
+                        .cpu_offset =
+                            jg::hole_patch(jg::kMovxIdxSlotHoles, jg::HoleKind::kCpu64, 0).offset,
                         .helper = to_xmm ? JitHelper::kLoadXmm : JitHelper::kStoreXmm,
                     };
                 }
             }
             if (!mem.has_index && base.has_value() && xslot.has_value()) {
-                std::vector<JitPage::Patch> patches = {
-                    JitPage::Patch{
-                        .offset = 5,
-                        .size = 4,
-                        .value = *base,
-                    },
-                    JitPage::Patch{
-                        .offset = 12,
-                        .size = 4,
-                        .value = static_cast<std::uint32_t>(mem.disp),
-                    },
-                };
-                patches.push_back(JitPage::Patch{
-                    .offset = to_xmm ? 27U : 17U,
-                    .size = 4,
-                    .value = *xslot,
-                });
+                const auto disp32 = static_cast<std::uint32_t>(mem.disp);
+                // The two directions have different hole layouts, so each gets
+                // its own patch list instead of a shared ternary.
+                if (to_xmm) {
+                    return TranslatedInsn{
+                        .code = jg::kMovxLoadSlot,
+                        .patches =
+                            {
+                                jg::hole_patch(jg::kMovxLoadSlotHoles, jg::HoleKind::kBase32, *base),
+                                jg::hole_patch(jg::kMovxLoadSlotHoles, jg::HoleKind::kDisp32, disp32),
+                                jg::hole_patch(jg::kMovxLoadSlotHoles, jg::HoleKind::kSlot32, *xslot),
+                            },
+                        .call_offset =
+                            jg::hole_patch(jg::kMovxLoadSlotHoles, jg::HoleKind::kHelper64, 0).offset,
+                        .cpu_offset =
+                            jg::hole_patch(jg::kMovxLoadSlotHoles, jg::HoleKind::kCpu64, 0).offset,
+                        .helper = JitHelper::kLoadXmm,
+                    };
+                }
                 return TranslatedInsn{
-                    .code = to_xmm ? jit_templates::kMovxLoadSlot : jit_templates::kMovxStoreSlot,
-                    .patches = std::move(patches),
-                    .call_offset = 33,
-                    .cpu_offset = to_xmm ? 18 : 23,
-                    .helper = to_xmm ? JitHelper::kLoadXmm : JitHelper::kStoreXmm,
+                    .code = jg::kMovxStoreSlot,
+                    .patches =
+                        {
+                            jg::hole_patch(jg::kMovxStoreSlotHoles, jg::HoleKind::kBase32, *base),
+                            jg::hole_patch(jg::kMovxStoreSlotHoles, jg::HoleKind::kDisp32, disp32),
+                            jg::hole_patch(jg::kMovxStoreSlotHoles, jg::HoleKind::kSlot32, *xslot),
+                        },
+                    .call_offset =
+                        jg::hole_patch(jg::kMovxStoreSlotHoles, jg::HoleKind::kHelper64, 0).offset,
+                    .cpu_offset =
+                        jg::hole_patch(jg::kMovxStoreSlotHoles, jg::HoleKind::kCpu64, 0).offset,
+                    .helper = JitHelper::kStoreXmm,
                 };
             }
         }
