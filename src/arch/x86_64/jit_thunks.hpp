@@ -52,6 +52,8 @@ extern "C" void mf_jit_not(void* cpu, unsigned slot, unsigned unused, unsigned w
 extern "C" void mf_jit_alu_mem_imm(void* cpu, uint64_t vaddr, uint64_t imm, unsigned mn,
                                    unsigned width);
 extern "C" void mf_jit_imul_mem(void* cpu, uint64_t vaddr, unsigned dst, unsigned width);
+extern "C" void mf_jit_ports(void* cpu, unsigned mn, unsigned width);
+extern "C" void mf_jit_grp3_mem(void* cpu, uint64_t vaddr, unsigned width, unsigned mn);
 
 /// @brief Coverage diagnostics (jit_stats.cpp): count and dump fallbacks.
 extern "C" void mf_jit_note_fail_hit(std::uint64_t rip);

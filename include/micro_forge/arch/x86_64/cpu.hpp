@@ -168,8 +168,7 @@ public:
     }
     /// @brief Whether the attached IRQ line is high.
     [[nodiscard]] bool irq_pending() const { return irq_line_ != nullptr && irq_line_->pending(); }
-    /// @brief Queue one interrupt vector (delivered at the next retire).
-    /// @param[in] vector IDT vector to deliver (0..255).
+    /// @brief Queue one interrupt vector for the next retire boundary.
     void request_interrupt(uint8_t vector) {
         pending_vector_ = vector;
         interrupt_pending_ = true;
@@ -247,10 +246,14 @@ public:
     void jit_bt(unsigned slot, unsigned src, unsigned width);
     /// @brief cmov reg,[mem]: read always, write only when cc holds.
     void jit_cmov_mem(uint64_t vaddr, unsigned cc, unsigned slot, unsigned width);
-    /// @brief ALU [mem],imm: load, combine, store; a faulted load stops.
+    /// @brief ALU [mem],imm: load, combine, store (faulted load stops).
     void jit_alu_mem_imm(uint64_t vaddr, uint64_t imm, unsigned mn, unsigned width);
     /// @brief imul dst,[mem]: load the multiplier, then execute_imul23.
     void jit_imul_mem(uint64_t vaddr, unsigned dst, unsigned width);
+    /// @brief in/out (port in dx) through execute_ports.
+    void jit_ports(unsigned mn, unsigned width);
+    /// @brief one-operand grp3, divisor read from memory.
+    void jit_grp3_mem(uint64_t vaddr, unsigned width, unsigned mn);
     /// @brief reg,reg ALU: alu_add/sub/logic with the interpreter's flags.
     void jit_alu_reg(unsigned slot, unsigned src, unsigned mn, unsigned width);
     /// @brief ALU reg,[mem]: load, combine, write; a fault skips the write.
@@ -522,22 +525,19 @@ private:
     std::unordered_map<uint32_t, uint64_t> msr_;
     /// Current privilege level (0 kernel, 3 user); set by sysretq/iretq and syscall (batch 6d).
     unsigned cpl_ = 0;
-    /// Set when a #PF was injected instead of latching a fault, so the
-    /// access helpers know not to latch.
+    /// Set when #PF was injected instead of latching a fault.
     bool exception_injected_ = false;
     /// Recursion depth of #PF injection (a fault inside the injection
     /// frame is not delivered again; it latches as a terminal fault).
     unsigned exception_depth_ = 0;
-    /// Cached IA32_EFER: the hot translate path reads it per access, and
-    /// an unordered_map lookup there dominated the perf profile.
+    /// Cached IA32_EFER: a map lookup here dominated the profile.
     uint64_t efer_value_ = 0;
     static constexpr std::size_t kDecodeCacheCapacity = 1024; ///< 512 sets of two entries.
     using DecodeCache =
         base::SetAssocCache<uint64_t, CachedInsn, kDecodeCacheCapacity, 2, DecodeHash>;
     /// Decode cache (vaddr -> instruction); rebuilt by configure_caches().
     DecodeCache decode_cache_;
-    /// Bitmap of executed physical pages, sized by configure_caches().
-    /// Stores to marked pages invalidate the decode cache.
+    /// Executed-page bitmap; stores to marked pages invalidate decoding.
     std::vector<uint64_t> code_page_bits_;
     /// Marks @p paddr's page as an executed-from page.
     void mark_code_page(uint64_t paddr);

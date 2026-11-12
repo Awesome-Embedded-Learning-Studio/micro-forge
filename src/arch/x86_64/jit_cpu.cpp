@@ -25,8 +25,7 @@ namespace micro_forge::arch::x86_64 {
 
 std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
     constexpr std::size_t max_insns = 64;
-    // Pass 1 lowers everything before any byte is emitted: a shared page
-    // must not run out mid-block.
+    // Pass 1 lowers everything first: a shared page must not run dry.
     std::vector<base::TranslatedInsn> items;
     std::size_t budget = 1; // trailing ret for unterminated blocks
     uint64_t covered = 0;
@@ -40,8 +39,7 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
         [&]() -> std::optional<JitBlock> { // NOLINT(readability-redundant-lambda-parameter-list)
         rip_ = saved_rip;
         exception_injected_ = saved_exception;
-        // A half-emitted page must go back to read-execute: blocks already
-        // sealed on it are live and would fault on the next dispatch.
+        // A half-emitted page must go back to read-execute: live blocks.
         if (jit_page_) {
             (void)jit_page_->seal(); // idempotent: false when already sealed
         }
@@ -235,6 +233,12 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
             case base::JitHelper::kImulMem:
                 helper = reinterpret_cast<std::uint64_t>(&mf_jit_imul_mem);
                 break;
+            case base::JitHelper::kPorts:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_ports);
+                break;
+            case base::JitHelper::kGrp3Mem:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_grp3_mem);
+                break;
             default:
                 return fail_compile();
             }
@@ -363,8 +367,7 @@ uint64_t merge_width(uint64_t dst, uint64_t result, unsigned width) {
 } // namespace
 
 uint64_t Cpu::jit_add(uint64_t slot, uint64_t imm, unsigned width) {
-    // The template loads the immediate with `mov edx, imm32`, which zeroes
-    // the upper half; ADD r64,imm32 sign-extends, so restore that here.
+    // `mov edx, imm32` zeroes the upper half; r64 needs sign extension.
     imm = static_cast<uint64_t>(static_cast<std::int64_t>(static_cast<std::int32_t>(imm)));
     const auto index = static_cast<unsigned>(slot / 8U);
     const uint64_t a = width == 4 ? static_cast<uint32_t>(regs_[index]) : regs_[index];
@@ -543,16 +546,14 @@ void Cpu::jit_store(uint64_t vaddr, unsigned width, uint64_t value) {
 void Cpu::maybe_compile_block(uint64_t rip) {
     // NOLINTNEXTLINE(concurrency-mt-unsafe) -- single-threaded CPU
     static const bool env_jit = std::getenv("MICRO_FORGE_JIT") != nullptr;
-    // 32,768 blocks cost ~128 MiB of the 2 GiB MAP_32BIT window. Raising
-    // the cap from 4,096 lifted boot coverage 25.9% -> 33%.
+    // ~128 MiB of the 2 GiB MAP_32BIT window; 4,096 capped boot coverage.
     constexpr std::size_t max_blocks = 32768;
     if ((!jit_requested_ && !env_jit) || jit_blocks_.contains(rip) || jit_failed_.contains(rip) ||
         jit_blocks_.size() >= max_blocks) {
         return;
     }
-    // Only compile inside the declared code range. A flat kernel has no
-    // segment table, but the loader knows the file extent, so data and
-    // bss never become blocks.
+    // Only compile inside the declared code range: the loader knows the
+    // file extent, so data and bss never become blocks.
     if (code_hi_ > code_lo_ && (rip < code_lo_ || rip >= code_hi_)) {
         return;
     }
@@ -564,8 +565,7 @@ void Cpu::maybe_compile_block(uint64_t rip) {
 }
 
 bool Cpu::run_jit_block() {
-    // A helper faulted at the last block end: one interpreter step re-raises
-    // it; normal dispatch resumes afterwards.
+    // A helper faulted: one interpreter step re-raises; dispatch resumes.
     if (jit_suspend_) {
         jit_suspend_ = false;
         return false;

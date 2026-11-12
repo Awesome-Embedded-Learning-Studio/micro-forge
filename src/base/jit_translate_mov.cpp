@@ -240,7 +240,7 @@ std::optional<TranslatedInsn> translate_move(const arch::x86_64::DecodedInsn& in
         insn.ops[0].disp >= INT32_MIN && insn.ops[0].disp <= INT32_MAX &&
         (insn.mnemonic == Mnemonic::kAdd || insn.mnemonic == Mnemonic::kSub ||
          insn.mnemonic == Mnemonic::kAnd || insn.mnemonic == Mnemonic::kOr ||
-         insn.mnemonic == Mnemonic::kXor)) {
+         insn.mnemonic == Mnemonic::kXor || insn.mnemonic == Mnemonic::kCmp)) {
         const auto base = reg_slot_offset(insn.ops[0].base);
         const auto mdisp = static_cast<std::uint32_t>(insn.ops[0].disp);
         const auto immv = static_cast<std::uint64_t>(insn.ops[1].disp);

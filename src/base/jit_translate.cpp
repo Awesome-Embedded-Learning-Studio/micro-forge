@@ -152,8 +152,8 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
         insn.mnemonic == Mnemonic::kRcr) {
         const auto slot = reg_slot_offset(insn.ops[0].reg);
         if (insn.ops[0].kind == Operand::Kind::kReg && insn.ops[1].kind == Operand::Kind::kImm &&
-            slot.has_value() && insn.addr_size == 8 && !insn.has_lock &&
-            (insn.ops[0].size == 2 || insn.ops[0].size == 4 || insn.ops[0].size == 8)) {
+            slot.has_value() && insn.addr_size == 8 && !insn.has_lock && insn.ops[0].size != 0 &&
+            *slot % sizeof(std::uint64_t) == 0) {
             const auto count = static_cast<uint64_t>(insn.ops[1].disp);
             const auto mn = static_cast<unsigned>(insn.mnemonic);
             return TranslatedInsn{

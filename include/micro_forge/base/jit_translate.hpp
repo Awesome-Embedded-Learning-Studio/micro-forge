@@ -60,6 +60,8 @@ enum class JitHelper : std::uint8_t {
     kNot,       ///< not reg: complement, flags untouched
     kAluMemImm, ///< ALU [base+disp],imm: load, combine, store back
     kImulMem,   ///< imul reg,[base+disp]: load, then the imul23 shape
+    kPorts,     ///< in/out with the port in dx, via execute_ports
+    kGrp3Mem,   ///< div/idiv/mul/imul with a memory operand
     kLeave,     ///< leave: rsp=rbp then pop rbp
     kPushImm,   ///< push imm64 (pre-extended)
     kPopReg,    ///< pop reg64: stack read via rsp

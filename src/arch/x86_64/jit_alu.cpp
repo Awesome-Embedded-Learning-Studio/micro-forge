@@ -47,6 +47,16 @@ extern "C" void mf_jit_imul23(void* cpu, unsigned dst, unsigned src, uint64_t im
     static_cast<Cpu*>(cpu)->jit_imul23(dst, src, imm, width);
 }
 
+/// @brief C ABI bridge: rdi=cpu, rsi=vaddr, edx=width, ecx=mnemonic.
+extern "C" void mf_jit_grp3_mem(void* cpu, uint64_t vaddr, unsigned width, unsigned mn) {
+    static_cast<Cpu*>(cpu)->jit_grp3_mem(vaddr, width, mn);
+}
+
+/// @brief C ABI bridge: rdi=cpu, esi=mnemonic, edx=width.
+extern "C" void mf_jit_ports(void* cpu, unsigned mn, unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_ports(mn, width);
+}
+
 /// @brief C ABI bridge: rdi=cpu, rsi=vaddr, edx=dst slot, ecx=width.
 extern "C" void mf_jit_imul_mem(void* cpu, uint64_t vaddr, unsigned dst, unsigned width) {
     static_cast<Cpu*>(cpu)->jit_imul_mem(vaddr, dst, width);
@@ -82,6 +92,37 @@ extern "C" void mf_jit_bt(void* cpu, unsigned slot, unsigned src, unsigned width
 
 } // namespace
 
+void Cpu::jit_grp3_mem(uint64_t vaddr, unsigned width, unsigned mn) {
+    uint64_t divisor = 0;
+    if (!load(vaddr, width, divisor)) {
+        return; // faulted: the interpreter re-runs this instruction
+    }
+    arch::x86_64::DecodedInsn shape{};
+    shape.mnemonic = static_cast<Mnemonic>(mn);
+    shape.opsize = static_cast<std::uint8_t>(width);
+    (void)execute_grp3(shape, divisor);
+}
+
+void Cpu::jit_ports(unsigned mn, unsigned width) {
+    // Port I/O only needs the mnemonic, the operand width and "port in dx":
+    // execute_ports writes the device side effects, so sharing it keeps the
+    // serial output byte-identical between the two engines.
+    arch::x86_64::DecodedInsn shape{};
+    shape.mnemonic = static_cast<Mnemonic>(mn);
+    shape.opsize = static_cast<std::uint8_t>(width);
+    const auto w8 = static_cast<std::uint8_t>(width);
+    const auto dx = Operand{.kind = Operand::Kind::kImplicit, .size = 2, .reg = Reg::kRdx};
+    const auto acc = Operand{.kind = Operand::Kind::kImplicit, .size = w8, .reg = Reg::kRax};
+    if (shape.mnemonic == Mnemonic::kIn) {
+        shape.ops[0] = acc;
+        shape.ops[1] = dx;
+    } else {
+        shape.ops[0] = dx;
+        shape.ops[1] = acc;
+    }
+    (void)execute_ports(shape, 0);
+}
+
 void Cpu::jit_imul_mem(uint64_t vaddr, unsigned dst, unsigned width) {
     uint64_t multiplier = 0;
     if (!load(vaddr, width, multiplier)) {
@@ -107,12 +148,17 @@ void Cpu::jit_alu_mem_imm(uint64_t vaddr, uint64_t imm, unsigned mn, unsigned wi
         return; // faulted: the interpreter re-runs this instruction
     }
     uint64_t result = 0;
+    bool writes = true;
     switch (static_cast<Mnemonic>(mn)) {
     case Mnemonic::kAdd:
         result = alu_add(value, imm, width, false);
         break;
     case Mnemonic::kSub:
         result = alu_sub(value, imm, width, false);
+        break;
+    case Mnemonic::kCmp:
+        result = alu_sub(value, imm, width, false);
+        writes = false; // flags only, the memory operand stays as it was
         break;
     case Mnemonic::kAnd:
         result = alu_logic(value & imm, width);
@@ -124,7 +170,9 @@ void Cpu::jit_alu_mem_imm(uint64_t vaddr, uint64_t imm, unsigned mn, unsigned wi
         result = alu_logic(value ^ imm, width);
         break;
     }
-    (void)store(vaddr, width, result);
+    if (writes) {
+        (void)store(vaddr, width, result);
+    }
 }
 
 void Cpu::jit_cmov_mem(uint64_t vaddr, unsigned cc, unsigned slot, unsigned width) {

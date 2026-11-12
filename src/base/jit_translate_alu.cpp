@@ -110,11 +110,12 @@ std::optional<TranslatedInsn> translate_alu_extra(const arch::x86_64::DecodedIns
          insn.mnemonic == Mnemonic::kRor || insn.mnemonic == Mnemonic::kRcl ||
          insn.mnemonic == Mnemonic::kRcr) &&
         insn.ops[0].kind == Operand::Kind::kReg && insn.ops[1].kind == Operand::Kind::kImplicit &&
-        insn.addr_size == 8 && !insn.has_lock &&
-        (insn.ops[0].size == 2 || insn.ops[0].size == 4 || insn.ops[0].size == 8)) {
+        insn.addr_size == 8 && !insn.has_lock && insn.ops[0].size != 0) {
         const auto slot = reg_slot_offset(insn.ops[0].reg);
         const auto clslot = reg_slot_offset(Reg::kRcx);
-        if (slot.has_value() && clslot.has_value()) {
+        // Byte destinations must be slot-aligned: AH/CH/DH/BH live in the
+        // upper byte and the helper addresses whole slots.
+        if (slot.has_value() && clslot.has_value() && *slot % sizeof(std::uint64_t) == 0) {
             return TranslatedInsn{
                 .code = jit_templates::kShiftClSlot,
                 .patches =
@@ -148,6 +149,27 @@ std::optional<TranslatedInsn> translate_alu_extra(const arch::x86_64::DecodedIns
             .cpu_offset = 13,
             .helper = JitHelper::kPxor,
         };
+    }
+    // in/out with the port in dx (EE/EC and the 16/32-bit variants): the
+    // accumulator operand width comes from opsize, the port from rdx.
+    if ((insn.mnemonic == Mnemonic::kIn || insn.mnemonic == Mnemonic::kOut) &&
+        insn.addr_size == 8 && !insn.has_lock && insn.opsize != 0) {
+        const auto port_op = insn.mnemonic == Mnemonic::kIn ? insn.ops[1] : insn.ops[0];
+        const auto acc_op = insn.mnemonic == Mnemonic::kIn ? insn.ops[0] : insn.ops[1];
+        if (port_op.kind == Operand::Kind::kImplicit && port_op.reg == Reg::kRdx &&
+            acc_op.reg == Reg::kRax) {
+            return TranslatedInsn{
+                .code = jit_templates::kPortsSlot,
+                .patches =
+                    {
+                        {.offset = 2, .size = 4, .value = static_cast<unsigned>(insn.mnemonic)},
+                        {.offset = 7, .size = 4, .value = insn.opsize},
+                    },
+                .call_offset = 23,
+                .cpu_offset = 13,
+                .helper = JitHelper::kPorts,
+            };
+        }
     }
     // lea r32,[base+disp]: 32-bit arithmetic, whole-slot write zero-extends.
     if (insn.mnemonic == Mnemonic::kLea && insn.ops[1].kind == Operand::Kind::kMem &&
@@ -214,6 +236,33 @@ std::optional<TranslatedInsn> translate_alu_extra(const arch::x86_64::DecodedIns
                 .call_offset = 39,
                 .cpu_offset = 29,
                 .helper = JitHelper::kImul23,
+            };
+        }
+    }
+    // one-operand grp3 with a memory divisor: read then divide.
+    if ((insn.mnemonic == Mnemonic::kMul || insn.mnemonic == Mnemonic::kImul ||
+         insn.mnemonic == Mnemonic::kDiv || insn.mnemonic == Mnemonic::kIdiv) &&
+        insn.ops[0].kind == Operand::Kind::kMem && insn.ops[1].kind == Operand::Kind::kNone &&
+        insn.ops[0].has_base && !insn.ops[0].has_index && !insn.ops[0].rip_relative &&
+        insn.ops[0].size == insn.opsize && insn.addr_size == 8 && !insn.has_lock &&
+        insn.seg != arch::x86_64::Seg::kFs && insn.seg != arch::x86_64::Seg::kGs &&
+        insn.ops[0].disp >= INT32_MIN && insn.ops[0].disp <= INT32_MAX) {
+        const auto base = reg_slot_offset(insn.ops[0].base);
+        const auto gdisp = static_cast<std::uint32_t>(insn.ops[0].disp);
+        const auto gmn = static_cast<unsigned>(insn.mnemonic);
+        if (base.has_value()) {
+            return TranslatedInsn{
+                .code = jit_templates::kGrp3MemSlot,
+                .patches =
+                    {
+                        {.offset = 4, .size = 4, .value = *base},
+                        {.offset = 11, .size = 4, .value = gdisp},
+                        {.offset = 16, .size = 4, .value = insn.ops[0].size},
+                        {.offset = 21, .size = 4, .value = gmn},
+                    },
+                .call_offset = 37,
+                .cpu_offset = 27,
+                .helper = JitHelper::kGrp3Mem,
             };
         }
     }

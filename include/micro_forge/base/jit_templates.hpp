@@ -222,6 +222,33 @@ constexpr std::array<std::uint8_t, 49> kImulMemSlot = {
     0x5F,                                  // @48: pop rdi (1)
 };
 // Holes: base32@4, disp32@11, dst32@16, width32@21; cpu64@27, helper64@37.
+// port I/O (rsi=mnemonic, edx=width): the helper rebuilds the insn/out
+// shape with the port in dx and the accumulator operand, then runs the same
+// execute_ports the interpreter uses (device side effects included).
+constexpr std::array<std::uint8_t, 35> kPortsSlot = {
+    0x57,                                  // @0: push rdi (1)
+    0xBE, 0,    0,    0, 0,                // @1: mov esi,mnem32 (5)
+    0xBA, 0,    0,    0, 0,                // @6: mov edx,width32 (5)
+    0x48, 0xBF, 0,    0, 0, 0, 0, 0, 0, 0, // @11: mov rdi,cpu64 (10)
+    0x49, 0xBB, 0,    0, 0, 0, 0, 0, 0, 0, // @21: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                      // @31: call r11 (3)
+    0x5F,                                  // @34: pop rdi (1)
+};
+// Holes: mnem32@2, width32@7; cpu64@13, helper64@23.
+// one-operand grp3 with a memory divisor (rsi=vaddr, edx=width32,
+// ecx=mnemonic): same execute_grp3 path, the helper reads memory first.
+constexpr std::array<std::uint8_t, 49> kGrp3MemSlot = {
+    0x57,                                  // @0: push rdi (1)
+    0x48, 0x8B, 0xB7, 0, 0, 0, 0,          // @1: mov rsi,[rdi+base32] (7)
+    0x48, 0x81, 0xC6, 0, 0, 0, 0,          // @8: add rsi,disp32 (7)
+    0xBA, 0,    0,    0, 0,                // @15: mov edx,width32 (5)
+    0xB9, 0,    0,    0, 0,                // @20: mov ecx,mnem32 (5)
+    0x48, 0xBF, 0,    0, 0, 0, 0, 0, 0, 0, // @25: mov rdi,cpu64 (10)
+    0x49, 0xBB, 0,    0, 0, 0, 0, 0, 0, 0, // @35: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                      // @45: call r11 (3)
+    0x5F,                                  // @48: pop rdi (1)
+};
+// Holes: base32@4, disp32@11, width32@16, mnem32@21; cpu64@27, helper64@37.
 // shift reg,cl via the same helper: the count arrives in rdx read from
 // the cl slot at run time, so no second helper is needed.
 constexpr std::array<std::uint8_t, 48> kShiftClSlot = {
