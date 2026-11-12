@@ -162,6 +162,23 @@ constexpr std::array<std::uint8_t, 45> kMovxLoadSlot = {
 };
 // Holes: base32@5, disp32@12, cpu64@18, slot32@27, helper64@33.
 // movups family, [base+disp] <- xmm via helper (same ABI, reads both halves):
+// movups-family with a SIB index (rsi=vaddr, edx=xmm slot): same helper as
+// the base form, only the address arithmetic is longer.
+constexpr std::array<std::uint8_t, 60> kMovxIdxSlot = {
+    0x57,                                     // @0: push rdi (1)
+    0x48, 0x8B, 0xB4, 0x27, 0, 0, 0, 0,       // @1: mov rsi,[rdi+base32] (8)
+    0x4C, 0x8B, 0x84, 0x27, 0, 0, 0, 0,       // @9: mov r8,[rdi+idx32] (8)
+    0x49, 0xC1, 0xE0, 0,                      // @17: shl r8,shift8 (4)
+    0x4C, 0x01, 0xC6,                         // @21: add rsi,r8 (3)
+    0x48, 0x81, 0xC6, 0,    0, 0, 0,          // @24: add rsi,disp32 (7)
+    0x48, 0xBF, 0,    0,    0, 0, 0, 0, 0, 0, // @31: mov rdi,cpu64 (10)
+    0xBA, 0,    0,    0,    0,                // @41: mov edx,slot32 (5)
+    0x49, 0xBB, 0,    0,    0, 0, 0, 0, 0, 0, // @46: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                         // @56: call r11 (3)
+    0x5F,                                     // @59: pop rdi (1)
+};
+// Holes: base32@5, idx32@13, shift8@20, disp32@27, slot32@42;
+// cpu64@33, helper64@48.
 constexpr std::array<std::uint8_t, 45> kMovxStoreSlot = {
     0x57,                                     // @0: push rdi (1)
     0x48, 0x8B, 0xB4, 0x27, 0, 0, 0, 0,       // @1: mov rsi,[rdi+base32] (8)

@@ -172,6 +172,22 @@ std::vector<DiffCase> extra_cases() {
     };
     test_mem_idx.result_reg = Reg::kRax;
     cases.push_back(test_mem_idx);
+    // movups [r12+rcx],xmm0: indexed SSE store, 16 bytes land at kData.
+    DiffCase movups_idx{
+        .name = "movups_idx",
+        .code = {0x41, 0x0F, 0x11, 0x04, 0x0C, 0xF4}, // movups [r12+rcx],xmm0
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = kFlags,
+        .store = true,
+        .memory_initial = kStored,
+        .memory_expected = 0x1122334455667788ULL,
+        .base = kData,
+        .index = 0,
+        .vec_reg = Reg::kXmm0,
+        .vec = {0x1122334455667788ULL, 0x99AABBCCDDEEFF00ULL},
+    };
+    cases.push_back(movups_idx);
     return cases;
 }
 
