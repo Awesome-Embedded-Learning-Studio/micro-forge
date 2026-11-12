@@ -174,12 +174,15 @@ TEST(JitLayoutTest, RejectsOriginalLeaAndStoreOffsets) {
     ASSERT_TRUE(bad_store);
     ASSERT_TRUE(bad_lea->has_valid_layout());
     ASSERT_TRUE(bad_store->has_valid_layout());
-    bad_lea->patches.back().offset = 16;
+    // Offsets come from the assembler now, so the literal values these cases
+    // used to corrupt are legal; park the patch past the end instead.
+    const auto bogus = bad_lea->code.size() + 10;
+    bad_lea->patches.back().offset = bogus;
     EXPECT_FALSE(bad_lea->has_valid_layout());
-    bad_store->call_offset = 36;
+    bad_store->call_offset = static_cast<std::size_t>(bogus);
     EXPECT_FALSE(bad_store->has_valid_layout());
-    bad_store->call_offset = 39;
-    bad_store->patches.back().offset = 32;
+    bad_store->call_offset = bad_store->cpu_offset;
+    bad_store->patches.back().offset = bogus;
     EXPECT_FALSE(bad_store->has_valid_layout());
 }
 

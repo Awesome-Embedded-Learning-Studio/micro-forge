@@ -11,7 +11,6 @@
 #include "jit_translate_mov.hpp"
 #include "jit_translate_movx.hpp"
 
-#include "micro_forge/base/jit_templates.hpp"
 #include "micro_forge/base/jit_templates_generated.hpp"
 
 #include <algorithm>
@@ -26,7 +25,6 @@ using arch::x86_64::Mnemonic;
 using arch::x86_64::Operand;
 using arch::x86_64::Reg;
 
-using namespace jit_templates;
 namespace jg = micro_forge::base::jit_gen;
 
 } // namespace
@@ -81,7 +79,7 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
     // no flags, no memory, nothing to model.
     if (insn.mnemonic == arch::x86_64::Mnemonic::kNop && insn.addr_size == 8 && !insn.has_lock) {
         return TranslatedInsn{
-            .code = jit_templates::kNopJit,
+            .code = jg::kNopJit,
             .patches = {},
             .call_offset = std::nullopt,
             .cpu_offset = std::nullopt,
@@ -429,20 +427,13 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
             return std::nullopt;
         }
         std::vector<JitPage::Patch> patches = {
-            JitPage::Patch{.offset = 4, .size = 4, .value = *base},
-            JitPage::Patch{
-                .offset = 10,
-                .size = 4,
-                .value = static_cast<std::uint32_t>(insn.ops[1].disp),
-            },
-            JitPage::Patch{
-                .offset = 18,
-                .size = 4,
-                .value = *slot,
-            },
+            jg::hole_patch(jg::kLeaSlotHoles, jg::HoleKind::kBase32, *base),
+            jg::hole_patch(jg::kLeaSlotHoles, jg::HoleKind::kDisp32,
+                           static_cast<std::uint32_t>(insn.ops[1].disp)),
+            jg::hole_patch(jg::kLeaSlotHoles, jg::HoleKind::kDst32, *slot),
         };
         return TranslatedInsn{
-            .code = kLeaSlot,
+            .code = jg::kLeaSlot,
             .patches = std::move(patches),
             .call_offset = std::nullopt,
             .cpu_offset = std::nullopt,
@@ -467,24 +458,34 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
             return std::nullopt;
         }
         const bool wide = insn.ops[0].size == 8;
-        std::vector<JitPage::Patch> patches = {
-            JitPage::Patch{.offset = 4, .size = 4, .value = *base},
-            JitPage::Patch{.offset = 12, .size = 4, .value = *index},
-            JitPage::Patch{.offset = 19, .size = 1, .value = scale8},
-            JitPage::Patch{
-                .offset = 25,
-                .size = 4,
-                .value = static_cast<std::uint32_t>(insn.ops[1].disp),
-            },
-            JitPage::Patch{
-                .offset = wide ? std::size_t{33} : std::size_t{35},
-                .size = 4,
-                .value = *slot,
-            },
-        };
+        const auto idisp = static_cast<std::uint32_t>(insn.ops[1].disp);
+        // The 64- and 32-bit lea forms differ in length, hence different hole
+        // offsets; each direction gets its own table instead of a ternary.
+        if (wide) {
+            return TranslatedInsn{
+                .code = jg::kLeaIdxSlot,
+                .patches =
+                    {
+                        jg::hole_patch(jg::kLeaIdxSlotHoles, jg::HoleKind::kBase32, *base),
+                        jg::hole_patch(jg::kLeaIdxSlotHoles, jg::HoleKind::kIdx32, *index),
+                        jg::hole_patch(jg::kLeaIdxSlotHoles, jg::HoleKind::kScale8, scale8),
+                        jg::hole_patch(jg::kLeaIdxSlotHoles, jg::HoleKind::kDisp32, idisp),
+                        jg::hole_patch(jg::kLeaIdxSlotHoles, jg::HoleKind::kDst32, *slot),
+                    },
+                .call_offset = std::nullopt,
+                .cpu_offset = std::nullopt,
+            };
+        }
         return TranslatedInsn{
-            .code = wide ? std::span<const uint8_t>(kLeaIdxSlot) : kLeaIdxSlot32,
-            .patches = std::move(patches),
+            .code = jg::kLeaIdxSlot32,
+            .patches =
+                {
+                    jg::hole_patch(jg::kLeaIdxSlot32Holes, jg::HoleKind::kBase32, *base),
+                    jg::hole_patch(jg::kLeaIdxSlot32Holes, jg::HoleKind::kIdx32, *index),
+                    jg::hole_patch(jg::kLeaIdxSlot32Holes, jg::HoleKind::kScale8, scale8),
+                    jg::hole_patch(jg::kLeaIdxSlot32Holes, jg::HoleKind::kDisp32, idisp),
+                    jg::hole_patch(jg::kLeaIdxSlot32Holes, jg::HoleKind::kDst32, *slot),
+                },
             .call_offset = std::nullopt,
             .cpu_offset = std::nullopt,
         };
@@ -497,11 +498,11 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
             return std::nullopt;
         }
         std::vector<JitPage::Patch> patches = {
-            JitPage::Patch{.offset = 4, .size = 4, .value = *source},
-            JitPage::Patch{.offset = 12, .size = 4, .value = *slot},
+            jg::hole_patch(jg::kMovSlotSlotHoles, jg::HoleKind::kSrc32, *source),
+            jg::hole_patch(jg::kMovSlotSlotHoles, jg::HoleKind::kDst32, *slot),
         };
         return TranslatedInsn{
-            .code = kMovSlotSlot,
+            .code = jg::kMovSlotSlot,
             .patches = std::move(patches),
             .call_offset = std::nullopt,
             .cpu_offset = std::nullopt,
@@ -515,11 +516,11 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
             return std::nullopt;
         }
         std::vector<JitPage::Patch> patches = {
-            JitPage::Patch{.offset = 3, .size = 4, .value = *source},
-            JitPage::Patch{.offset = 11, .size = 4, .value = *slot},
+            jg::hole_patch(jg::kMovSlotSlot32Holes, jg::HoleKind::kSrc32, *source),
+            jg::hole_patch(jg::kMovSlotSlot32Holes, jg::HoleKind::kDst32, *slot),
         };
         return TranslatedInsn{
-            .code = kMovSlotSlot32,
+            .code = jg::kMovSlotSlot32,
             .patches = std::move(patches),
             .call_offset = std::nullopt,
             .cpu_offset = std::nullopt,
@@ -536,11 +537,11 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
                                            : static_cast<uint64_t>(insn.ops[1].disp);
     if (insn.mnemonic == Mnemonic::kMov) {
         return TranslatedInsn{
-            .code = kMovSlotImm,
+            .code = jg::kMovSlotImm,
             .patches =
                 {
-                    {.offset = 2, .size = 8, .value = imm},
-                    {.offset = 14, .size = 4, .value = *slot},
+                    jg::hole_patch(jg::kMovSlotImmHoles, jg::HoleKind::kImm64, imm),
+                    jg::hole_patch(jg::kMovSlotImmHoles, jg::HoleKind::kDst32, *slot),
                 },
             .call_offset = std::nullopt,
             .cpu_offset = std::nullopt,
