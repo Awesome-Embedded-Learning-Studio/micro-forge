@@ -87,9 +87,8 @@ enum class FaultId : uint8_t {
  *   write on RAM equals its unlocked form. Locked MMIO semantics arrive
  *   with the device batches.
  */
-// The state object is large by design (snapshots, boot handoff); a few
-// padding bytes between subsystems are irrelevant next to the caches it
-// already misses on. Suppress the opt-in padding analyzer.
+// Large by design (snapshots, boot handoff); padding is irrelevant next to
+// the caches it already misses on. Suppress the opt-in padding analyzer.
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 class Cpu {
 public:
@@ -244,10 +243,14 @@ public:
     void jit_grp3(uint64_t divisor, unsigned width, unsigned mn);
     /// @brief three-operand imul via execute_imul23 (rebuilt shape).
     void jit_imul23(unsigned dst, unsigned src, uint64_t imm, unsigned width);
-    /// @brief bt: CF = bit (@p src & bits-1) of the slot, others unchanged.
+    /// @brief bt: CF = bit (src & bits-1) of the slot; others unchanged.
     void jit_bt(unsigned slot, unsigned src, unsigned width);
     /// @brief cmov reg,[mem]: read always, write only when cc holds.
     void jit_cmov_mem(uint64_t vaddr, unsigned cc, unsigned slot, unsigned width);
+    /// @brief ALU [mem],imm: load, combine, store; a faulted load stops.
+    void jit_alu_mem_imm(uint64_t vaddr, uint64_t imm, unsigned mn, unsigned width);
+    /// @brief imul dst,[mem]: load the multiplier, then execute_imul23.
+    void jit_imul_mem(uint64_t vaddr, unsigned dst, unsigned width);
     /// @brief reg,reg ALU: alu_add/sub/logic with the interpreter's flags.
     void jit_alu_reg(unsigned slot, unsigned src, unsigned mn, unsigned width);
     /// @brief ALU reg,[mem]: load, combine, write; a fault skips the write.
@@ -408,15 +411,13 @@ private:
     // --- helpers, defined across cpu.cpp and execute.cpp ---
     /// Applies the FS/GS segment base for a memory operand's EA.
     [[nodiscard]] uint64_t segment_address(const DecodedInsn& insn, uint64_t ea) const;
-    /// Retires @p n icount units: clock advance, scheduler dispatch, irq
-    /// observation, trace.
+    /// Retires @p n icount units: clock advance, scheduler dispatch, irq observation, trace.
     void retire(unsigned n);
     /// Fills fetch_buf_ from rip_; false on bus failure (kFetch fault).
     bool fetch(unsigned& got);
     /// Latches an unsupported-mnemonic stop for the instruction at rip_.
     ExitStatus unsupported(const DecodedInsn& insn);
-    /// Effective address of a memory operand; @p rip_after resolves
-    /// rip-relative forms.
+    /// Effective address of a memory operand; @p rip_after resolves rip-relative forms.
     [[nodiscard]] uint64_t effective_address(const Operand& op, uint64_t rip_after) const;
     /// Reads an operand at its width; false latches a fault.
     bool read_operand(const DecodedInsn& insn, const Operand& op, uint64_t rip_after,
@@ -519,8 +520,7 @@ private:
     uint16_t gdtr_limit_ = 0, idtr_limit_ = 0;
     /// MSR space: only whitelisted indices live here (Cinux boot set).
     std::unordered_map<uint32_t, uint64_t> msr_;
-    /// Current privilege level (0 kernel, 3 user); set by sysretq/iretq
-    /// and syscall (batch 6d).
+    /// Current privilege level (0 kernel, 3 user); set by sysretq/iretq and syscall (batch 6d).
     unsigned cpl_ = 0;
     /// Set when a #PF was injected instead of latching a fault, so the
     /// access helpers know not to latch.

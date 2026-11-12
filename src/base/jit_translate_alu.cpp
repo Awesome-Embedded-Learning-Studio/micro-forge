@@ -39,6 +39,8 @@ JitHelper alu_helper(Mnemonic mnemonic) {
         return JitHelper::kImul;
     case Mnemonic::kBt:
         return JitHelper::kBt;
+    case Mnemonic::kNot:
+        return JitHelper::kNot;
     default:
         return JitHelper::kNone;
     }
@@ -268,6 +270,22 @@ std::optional<TranslatedInsn> translate_alu(const arch::x86_64::DecodedInsn& ins
                 },
             .call_offset = 33,
             .cpu_offset = 23,
+            .helper = helper,
+        };
+    }
+    // Unary forms (not) have no second operand; the shared three-argument
+    // template carries the slot twice and the helper ignores the extra one.
+    if (helper == JitHelper::kNot && source.kind == Operand::Kind::kNone) {
+        return TranslatedInsn{
+            .code = kAluRegHelper,
+            .patches =
+                {
+                    {.offset = 2, .size = 4, .value = slot},
+                    {.offset = 10, .size = 4, .value = slot},
+                    {.offset = 15, .size = 4, .value = width},
+                },
+            .call_offset = 31,
+            .cpu_offset = 21,
             .helper = helper,
         };
     }

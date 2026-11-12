@@ -47,6 +47,28 @@ extern "C" void mf_jit_imul23(void* cpu, unsigned dst, unsigned src, uint64_t im
     static_cast<Cpu*>(cpu)->jit_imul23(dst, src, imm, width);
 }
 
+/// @brief C ABI bridge: rdi=cpu, rsi=vaddr, edx=dst slot, ecx=width.
+extern "C" void mf_jit_imul_mem(void* cpu, uint64_t vaddr, unsigned dst, unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_imul_mem(vaddr, dst, width);
+}
+
+/// @brief C ABI bridge: rdi=cpu, rsi=vaddr, rdx=imm, ecx=mnemonic, r8d=width.
+extern "C" void mf_jit_alu_mem_imm(void* cpu, uint64_t vaddr, uint64_t imm, unsigned mn,
+                                   unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_alu_mem_imm(vaddr, imm, mn, width);
+}
+
+/// @brief not helper: only the public gpr accessors are needed, so this is a
+/// free function rather than another Cpu member.
+extern "C" void mf_jit_not(void* cpu, unsigned slot, unsigned unused, unsigned width) {
+    static_cast<void>(unused); // shared three-argument template
+    auto* const c = static_cast<Cpu*>(cpu);
+    const auto reg = static_cast<Reg>(slot / 8U);
+    const uint64_t value = c->gpr(reg);
+    const uint64_t mask = width_util::width_mask(width);
+    c->set_gpr(reg, (value & ~mask) | (~value & mask));
+}
+
 /// @brief C ABI bridge: rdi=cpu, rsi=vaddr, edx=cc, ecx=slot, r8d=width.
 extern "C" void mf_jit_cmov_mem(void* cpu, uint64_t vaddr, unsigned cc, unsigned slot,
                                 unsigned width) {
@@ -59,6 +81,51 @@ extern "C" void mf_jit_bt(void* cpu, unsigned slot, unsigned src, unsigned width
 }
 
 } // namespace
+
+void Cpu::jit_imul_mem(uint64_t vaddr, unsigned dst, unsigned width) {
+    uint64_t multiplier = 0;
+    if (!load(vaddr, width, multiplier)) {
+        return; // faulted: the interpreter re-runs this instruction
+    }
+    // Two-operand imul is dst = dst * src; the three-operand shape with
+    // ops[1] == ops[0] and the loaded value as the immediate says exactly
+    // that, so execute_imul23 keeps the flag rule.
+    arch::x86_64::DecodedInsn shape{};
+    shape.opsize = static_cast<std::uint8_t>(width);
+    const auto w8 = static_cast<std::uint8_t>(width);
+    const auto reg = static_cast<Reg>(dst / 8U);
+    const auto mval = static_cast<std::int64_t>(multiplier);
+    shape.ops[0] = {.kind = Operand::Kind::kReg, .size = w8, .reg = reg};
+    shape.ops[1] = {.kind = Operand::Kind::kReg, .size = w8, .reg = reg};
+    shape.ops[2] = {.kind = Operand::Kind::kImm, .size = w8, .disp = mval};
+    (void)execute_imul23(shape, 0);
+}
+
+void Cpu::jit_alu_mem_imm(uint64_t vaddr, uint64_t imm, unsigned mn, unsigned width) {
+    uint64_t value = 0;
+    if (!load(vaddr, width, value)) {
+        return; // faulted: the interpreter re-runs this instruction
+    }
+    uint64_t result = 0;
+    switch (static_cast<Mnemonic>(mn)) {
+    case Mnemonic::kAdd:
+        result = alu_add(value, imm, width, false);
+        break;
+    case Mnemonic::kSub:
+        result = alu_sub(value, imm, width, false);
+        break;
+    case Mnemonic::kAnd:
+        result = alu_logic(value & imm, width);
+        break;
+    case Mnemonic::kOr:
+        result = alu_logic(value | imm, width);
+        break;
+    default: // kXor
+        result = alu_logic(value ^ imm, width);
+        break;
+    }
+    (void)store(vaddr, width, result);
+}
 
 void Cpu::jit_cmov_mem(uint64_t vaddr, unsigned cc, unsigned slot, unsigned width) {
     // x86 cmov reads the source unconditionally (a faulting read still

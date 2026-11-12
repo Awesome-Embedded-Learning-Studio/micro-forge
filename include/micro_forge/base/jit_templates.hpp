@@ -191,6 +191,37 @@ constexpr std::array<std::uint8_t, 55> kCmovMemSlot = {
 };
 // Holes: base32@4, disp32@11, cc32@16, slot32@21, width32@27;
 // cpu64@33, helper64@41.
+// ALU [base+disp],imm (rsi=vaddr, rdx=imm64, ecx=mnemonic, r8d=width): the
+// helper loads the memory operand, combines it with the immediate and
+// stores it back, so read-modify-write stays one memory operation pair.
+constexpr std::array<std::uint8_t, 60> kAluMemImmSlot = {
+    0x57,                                  // @0: push rdi (1)
+    0x48, 0x8B, 0xB7, 0, 0, 0, 0,          // @1: mov rsi,[rdi+base32] (7)
+    0x48, 0x81, 0xC6, 0, 0, 0, 0,          // @8: add rsi,disp32 (7)
+    0x48, 0xBA, 0,    0, 0, 0, 0, 0, 0, 0, // @15: movabs rdx,imm64 (10)
+    0xB9, 0,    0,    0, 0,                // @25: mov ecx,mnem32 (5)
+    0x41, 0xB8, 0,    0, 0, 0,             // @30: mov r8d,width32 (6)
+    0x48, 0xBF, 0,    0, 0, 0, 0, 0, 0, 0, // @36: mov rdi,cpu64 (10)
+    0x49, 0xBB, 0,    0, 0, 0, 0, 0, 0, 0, // @46: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                      // @56: call r11 (3)
+    0x5F,                                  // @59: pop rdi (1)
+};
+// Holes: base32@4, disp32@11, imm64@17, mnem32@26, width32@32;
+// cpu64@38, helper64@48 (49 BB at @46-47).
+// imul dst,[base+disp] (rsi=vaddr, edx=dst slot, ecx=width): the helper
+// loads the multiplier and rebuilds the imul shape with src == dst.
+constexpr std::array<std::uint8_t, 49> kImulMemSlot = {
+    0x57,                                  // @0: push rdi (1)
+    0x48, 0x8B, 0xB7, 0, 0, 0, 0,          // @1: mov rsi,[rdi+base32] (7)
+    0x48, 0x81, 0xC6, 0, 0, 0, 0,          // @8: add rsi,disp32 (7)
+    0xBA, 0,    0,    0, 0,                // @15: mov edx,dst32 (5)
+    0xB9, 0,    0,    0, 0,                // @20: mov ecx,width32 (5)
+    0x48, 0xBF, 0,    0, 0, 0, 0, 0, 0, 0, // @25: mov rdi,cpu64 (10)
+    0x49, 0xBB, 0,    0, 0, 0, 0, 0, 0, 0, // @35: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                      // @45: call r11 (3)
+    0x5F,                                  // @48: pop rdi (1)
+};
+// Holes: base32@4, disp32@11, dst32@16, width32@21; cpu64@27, helper64@37.
 // shift reg,cl via the same helper: the count arrives in rdx read from
 // the cl slot at run time, so no second helper is needed.
 constexpr std::array<std::uint8_t, 48> kShiftClSlot = {

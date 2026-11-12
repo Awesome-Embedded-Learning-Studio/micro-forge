@@ -57,6 +57,9 @@ enum class JitHelper : std::uint8_t {
     kImul23,    ///< three-operand imul via execute_imul23
     kBt,        ///< bt: CF = tested bit; no other flag changes
     kCmovMem,   ///< cmov reg,[base+disp]: load, then merge if cc holds
+    kNot,       ///< not reg: complement, flags untouched
+    kAluMemImm, ///< ALU [base+disp],imm: load, combine, store back
+    kImulMem,   ///< imul reg,[base+disp]: load, then the imul23 shape
     kLeave,     ///< leave: rsp=rbp then pop rbp
     kPushImm,   ///< push imm64 (pre-extended)
     kPopReg,    ///< pop reg64: stack read via rsp

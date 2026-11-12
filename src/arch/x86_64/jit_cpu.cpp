@@ -25,8 +25,8 @@ namespace micro_forge::arch::x86_64 {
 
 std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
     constexpr std::size_t max_insns = 64;
-    // Pass 1 lowers everything first so the page budget is known before
-    // any byte is emitted: a shared page must not run out mid-block.
+    // Pass 1 lowers everything before any byte is emitted: a shared page
+    // must not run out mid-block.
     std::vector<base::TranslatedInsn> items;
     std::size_t budget = 1; // trailing ret for unterminated blocks
     uint64_t covered = 0;
@@ -34,8 +34,7 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
     bool terminated = false;
     uint64_t pc = rip;
     const uint64_t saved_rip = rip_;
-    // fetch() can latch exception_injected_ when a translation fails; the
-    // compile pass must not leak that into the interpreter's fault path.
+    // fetch() can latch exception_injected_; keep it out of the fault path.
     const bool saved_exception = exception_injected_;
     const auto fail_compile =
         [&]() -> std::optional<JitBlock> { // NOLINT(readability-redundant-lambda-parameter-list)
@@ -97,9 +96,8 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
     if (count == 0) {
         return std::nullopt;
     }
-    // Pass 2: keep filling the current page while the block fits, else
-    // start a fresh one; blocks average ~1.3 KiB so a 4 KiB page holds a
-    // few. The unseal/seal round trip is per compile, not per instruction.
+    // Pass 2: fill the current page while the block fits, else start a
+    // fresh one. The unseal/seal round trip is per compile, not per insn.
     if (!jit_page_ || jit_page_->available() < budget) {
         auto fresh = base::JitPage::create();
         if (!fresh.has_value()) {
@@ -228,11 +226,20 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
             case base::JitHelper::kCmovMem:
                 helper = reinterpret_cast<std::uint64_t>(&mf_jit_cmov_mem);
                 break;
+            case base::JitHelper::kNot:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_not);
+                break;
+            case base::JitHelper::kAluMemImm:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_alu_mem_imm);
+                break;
+            case base::JitHelper::kImulMem:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_imul_mem);
+                break;
             default:
                 return fail_compile();
             }
-            // A half-patched template must never become a block: give up
-            // on the whole compile; the interpreter takes this rip.
+
+            // A half-patched template must never become a block.
             if (!page.patch(*offset + *lowered.cpu_offset, 8, cpu_arg) ||
                 !page.patch(*offset + *lowered.call_offset, 8, helper)) {
                 return fail_compile();
@@ -509,8 +516,7 @@ void Cpu::jit_store(uint64_t vaddr, unsigned width, uint64_t value) {
     if (!translated.ok) {
         return;
     }
-    // Store errors are latched by the bus; the template has no way to
-    // react to them, so the results are deliberately discarded here.
+    // Store errors latch in the bus; the results are discarded here.
     switch (width) {
     case 1: {
         [[maybe_unused]] const auto w =
@@ -537,9 +543,8 @@ void Cpu::jit_store(uint64_t vaddr, unsigned width, uint64_t value) {
 void Cpu::maybe_compile_block(uint64_t rip) {
     // NOLINTNEXTLINE(concurrency-mt-unsafe) -- single-threaded CPU
     static const bool env_jit = std::getenv("MICRO_FORGE_JIT") != nullptr;
-    // Each block owns a 4 KiB page; 32,768 blocks cost ~128 MiB of the
-    // 2 GiB MAP_32BIT window. Raising the cap from 4,096 lifted the
-    // kernel-boot coverage from 25.9% to 33% (codex measurement).
+    // 32,768 blocks cost ~128 MiB of the 2 GiB MAP_32BIT window. Raising
+    // the cap from 4,096 lifted boot coverage 25.9% -> 33%.
     constexpr std::size_t max_blocks = 32768;
     if ((!jit_requested_ && !env_jit) || jit_blocks_.contains(rip) || jit_failed_.contains(rip) ||
         jit_blocks_.size() >= max_blocks) {

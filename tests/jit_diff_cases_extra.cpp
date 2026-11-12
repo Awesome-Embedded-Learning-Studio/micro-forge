@@ -137,6 +137,29 @@ std::vector<DiffCase> extra_cases() {
     };
     cmov_mem_false.result_reg = Reg::kRcx;
     cases.push_back(cmov_mem_false);
+    // not rdx: complement at 64 bits, flags untouched.
+    DiffCase not_r64{
+        .name = "not_r64",
+        .code = {0x48, 0xF7, 0xD2, 0xF4}, // not rdx
+        .initial = kLoaded,
+        .expected = ~kLoaded,
+        .flags = kFlags,
+    };
+    not_r64.result_reg = Reg::kRdx;
+    cases.push_back(not_r64);
+    // sub qword [r12],1: read-modify-write through the ALU mem-imm helper.
+    DiffCase sub_mem_imm{
+        .name = "sub_mem_imm",
+        .code = {0x49, 0x83, 0x6C, 0x24, 0x00, 0x01, 0xF4}, // sub qword [r12],1
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = 0x80, // SF: (kStored-1) keeps the top bit set
+        .store = true,
+        .memory_initial = kStored,
+        .memory_expected = kStored - 1,
+        .base = kData,
+    };
+    cases.push_back(sub_mem_imm);
     return cases;
 }
 

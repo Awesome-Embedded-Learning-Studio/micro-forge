@@ -205,6 +205,63 @@ std::optional<TranslatedInsn> translate_move(const arch::x86_64::DecodedInsn& in
             };
         }
     }
+    // imul reg,[base+disp]: two-operand form, multiplier read from memory.
+    if (insn.mnemonic == Mnemonic::kImul && insn.ops[0].kind == Operand::Kind::kReg &&
+        insn.ops[1].kind == Operand::Kind::kMem && insn.ops[1].has_base && !insn.ops[1].has_index &&
+        !insn.ops[1].rip_relative && insn.ops[0].size == insn.ops[1].size && insn.addr_size == 8 &&
+        !insn.has_lock && insn.seg != arch::x86_64::Seg::kFs &&
+        insn.seg != arch::x86_64::Seg::kGs && insn.ops[1].disp >= INT32_MIN &&
+        insn.ops[1].disp <= INT32_MAX && (insn.ops[0].size == 4 || insn.ops[0].size == 8)) {
+        const auto slot = operand_slot(insn.ops[0], insn.rex_present);
+        const auto base = reg_slot_offset(insn.ops[1].base);
+        const auto idisp = static_cast<std::uint32_t>(insn.ops[1].disp);
+        if (slot.has_value() && base.has_value()) {
+            return TranslatedInsn{
+                .code = kImulMemSlot,
+                .patches =
+                    {
+                        {.offset = 4, .size = 4, .value = *base},
+                        {.offset = 11, .size = 4, .value = idisp},
+                        {.offset = 16, .size = 4, .value = *slot},
+                        {.offset = 21, .size = 4, .value = insn.ops[0].size},
+                    },
+                .call_offset = 37,
+                .cpu_offset = 27,
+                .helper = JitHelper::kImulMem,
+            };
+        }
+    }
+    // ALU [base+disp],imm: read-modify-write in one helper so the memory
+    // operand is touched exactly once per direction.
+    if (insn.ops[0].kind == Operand::Kind::kMem && insn.ops[1].kind == Operand::Kind::kImm &&
+        insn.ops[0].has_base && !insn.ops[0].has_index && !insn.ops[0].rip_relative &&
+        insn.ops[0].size == insn.opsize && insn.addr_size == 8 && !insn.has_lock &&
+        insn.seg != arch::x86_64::Seg::kFs && insn.seg != arch::x86_64::Seg::kGs &&
+        insn.ops[0].disp >= INT32_MIN && insn.ops[0].disp <= INT32_MAX &&
+        (insn.mnemonic == Mnemonic::kAdd || insn.mnemonic == Mnemonic::kSub ||
+         insn.mnemonic == Mnemonic::kAnd || insn.mnemonic == Mnemonic::kOr ||
+         insn.mnemonic == Mnemonic::kXor)) {
+        const auto base = reg_slot_offset(insn.ops[0].base);
+        const auto mdisp = static_cast<std::uint32_t>(insn.ops[0].disp);
+        const auto immv = static_cast<std::uint64_t>(insn.ops[1].disp);
+        const auto mmn = static_cast<unsigned>(insn.mnemonic);
+        if (base.has_value()) {
+            return TranslatedInsn{
+                .code = kAluMemImmSlot,
+                .patches =
+                    {
+                        {.offset = 4, .size = 4, .value = *base},
+                        {.offset = 11, .size = 4, .value = mdisp},
+                        {.offset = 17, .size = 8, .value = immv},
+                        {.offset = 26, .size = 4, .value = mmn},
+                        {.offset = 32, .size = 4, .value = insn.ops[0].size},
+                    },
+                .call_offset = 48,
+                .cpu_offset = 38,
+                .helper = JitHelper::kAluMemImm,
+            };
+        }
+    }
     // cmov reg,[base+disp]: load the source, merge only when cc holds. The
     // helper reads memory after the condition test, so a false condition
     // costs nothing and a faulted read writes nothing.
