@@ -169,10 +169,11 @@ def render(templates: list[dict]) -> str:
         "#define MICRO_FORGE_BASE_JIT_TEMPLATES_GENERATED_HPP",
         "",
         "#include <array>",
+        "#include <micro_forge/base/jit.hpp>",
         "#include <cstddef>",
-        "#include <cstdint>",
+        "#include <cstdint>"
         "",
-        "namespace micro_forge::base::jit_templates {",
+        "namespace micro_forge::base::jit_gen {",
         "",
         "/// @brief What a hole is filled with at block-compile time.",
         "enum class HoleKind : std::uint8_t {",
@@ -189,6 +190,21 @@ def render(templates: list[dict]) -> str:
         "    std::uint8_t size;",
         "};",
         "",
+        "/// @brief Looks up a hole by kind and renders it as a patch site.",
+        "/// @param[in] holes Hole table of the template being compiled.",
+        "/// @param[in] kind Which hole to fill.",
+        "/// @param[in] value Value written at patch time.",
+        "/// @return Patch site; offset/size stay zero when the kind is absent.",
+        "template <std::size_t N>",
+        "constexpr auto hole_patch(const Hole (&holes)[N], HoleKind kind, std::uint64_t value) {",
+        "    for (const auto& hole : holes) {",
+        "        if (hole.kind == kind) {",
+        "            return JitPage::Patch{.offset = hole.offset, .size = hole.size, .value = value};",
+        "        }",
+        "    }",
+        "    return JitPage::Patch{};",
+        "}",
+        "",
     ]
     for t in templates:
         code = ", ".join(f"0x{b:02X}" for b in t["code"])
@@ -202,17 +218,17 @@ def render(templates: list[dict]) -> str:
                 f"{{HoleKind::{h['kind']}, {h['offset']}, {h['size']}}}" for h in t["holes"]
             )
             lines.append(
-                f"inline constexpr std::array<Hole, {len(t['holes'])}> "
-                f"k{t['name'].title().replace('_', '')}Holes = {{{table}}};"
+                f"inline constexpr Hole k{t['name'].title().replace('_', '')}Holes[] = "
+                f"{{{table}}};"
             )
         else:
             lines.append(
-                f"inline constexpr std::array<Hole, 0> "
-                f"k{t['name'].title().replace('_', '')}Holes = {{}};"
+                f"inline constexpr Hole k{t['name'].title().replace('_', '')}Holes[] = "
+                "{HoleKind::kBase32, 0, 0}; // no holes; keeps the array well-formed"
             )
         lines.append("")
     lines += [
-        "} // namespace micro_forge::base::jit_templates",
+        "} // namespace micro_forge::base::jit_gen",
         "",
         "#endif // MICRO_FORGE_BASE_JIT_TEMPLATES_GENERATED_HPP",
         "",
