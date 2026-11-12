@@ -160,6 +160,18 @@ std::vector<DiffCase> extra_cases() {
         .base = kData,
     };
     cases.push_back(sub_mem_imm);
+    // test [r12+rcx],rax: index form, flags only, memory untouched.
+    DiffCase test_mem_idx{
+        .name = "test_mem_idx",
+        .code = {0x49, 0x85, 0x04, 0x0C, 0xF4}, // test [r12+rcx],rax
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = 0x80, // SF: kLoaded & kLoaded keeps the top bit
+        .base = kData,
+        .index = 0,
+    };
+    test_mem_idx.result_reg = Reg::kRax;
+    cases.push_back(test_mem_idx);
     return cases;
 }
 

@@ -195,6 +195,41 @@ std::optional<TranslatedInsn> translate_alu_extra(const arch::x86_64::DecodedIns
             };
         }
     }
+    // test/cmp [base+index*scale+disp],src: flag-only, so one template with
+    // the SIB address arithmetic serves both source kinds.
+    if (insn.ops[0].kind == Operand::Kind::kMem && insn.ops[0].has_base && insn.ops[0].has_index &&
+        !insn.ops[0].rip_relative && insn.ops[0].size == insn.opsize && insn.addr_size == 8 &&
+        !insn.has_lock && insn.seg != arch::x86_64::Seg::kFs &&
+        insn.seg != arch::x86_64::Seg::kGs &&
+        ((insn.mnemonic == Mnemonic::kTest && insn.ops[1].kind == Operand::Kind::kReg) ||
+         (insn.mnemonic == Mnemonic::kCmp && insn.ops[1].kind == Operand::Kind::kImm))) {
+        const auto base = reg_slot_offset(insn.ops[0].base);
+        const auto index = reg_slot_offset(insn.ops[0].index);
+        const auto& mem = insn.ops[0];
+        const auto src_slot = operand_slot(insn.ops[1], insn.rex_present);
+        if (base.has_value() && index.has_value() && src_slot.has_value() && mem.scale <= 8 &&
+            std::has_single_bit(mem.scale)) {
+            const bool is_test = insn.mnemonic == Mnemonic::kTest;
+            const auto src = is_test ? *src_slot : static_cast<std::size_t>(insn.ops[1].disp);
+            const auto shift = static_cast<std::uint64_t>(std::countr_zero(mem.scale));
+            return TranslatedInsn{
+                .code = kAluMemIdxSlot,
+                .patches =
+                    {
+                        {.offset = 5, .size = 4, .value = *base},
+                        {.offset = 13, .size = 4, .value = *index},
+                        {.offset = 20, .size = 1, .value = shift},
+                        {.offset = 27, .size = 4, .value = static_cast<std::uint32_t>(mem.disp)},
+                        {.offset = 32, .size = 4, .value = src},
+                        {.offset = 37, .size = 4, .value = static_cast<unsigned>(insn.mnemonic)},
+                        {.offset = 43, .size = 4, .value = insn.ops[0].size},
+                    },
+                .call_offset = 59,
+                .cpu_offset = 49,
+                .helper = JitHelper::kAluMemIdx,
+            };
+        }
+    }
     // lea r32,[base+disp]: 32-bit arithmetic, whole-slot write zero-extends.
     if (insn.mnemonic == Mnemonic::kLea && insn.ops[1].kind == Operand::Kind::kMem &&
         insn.ops[1].has_base && !insn.ops[1].has_index && !insn.ops[1].rip_relative &&

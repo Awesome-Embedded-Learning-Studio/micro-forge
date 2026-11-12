@@ -90,6 +90,8 @@ std::uint64_t mf_jit_helper_address(micro_forge::base::JitHelper id) {
         return reinterpret_cast<std::uint64_t>(&mf_jit_imul_mem);
     case micro_forge::base::JitHelper::kPorts:
         return reinterpret_cast<std::uint64_t>(&mf_jit_ports);
+    case micro_forge::base::JitHelper::kAluMemIdx:
+        return reinterpret_cast<std::uint64_t>(&mf_jit_alu_mem_idx);
     case micro_forge::base::JitHelper::kGrp3Mem:
         return reinterpret_cast<std::uint64_t>(&mf_jit_grp3_mem);
     case micro_forge::base::JitHelper::kMovsx:

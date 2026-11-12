@@ -248,15 +248,17 @@ public:
     void jit_alu_mem_imm(uint64_t vaddr, uint64_t imm, unsigned mn, unsigned width);
     /// @brief imul dst,[mem]: load the multiplier, then execute_imul23.
     void jit_imul_mem(uint64_t vaddr, unsigned dst, unsigned width);
-    /// @brief in/out (port in dx) through execute_ports.
+    /// @brief in/out (port in dx) and cli/sti through the executors.
     void jit_ports(unsigned mn, unsigned width);
+    /// @brief test/cmp [mem+index],src: flags only.
+    void jit_alu_mem_idx(uint64_t vaddr, uint64_t src, unsigned mn, unsigned width);
     /// @brief one-operand grp3, divisor read from memory.
     void jit_grp3_mem(uint64_t vaddr, unsigned width, unsigned mn);
     /// @brief movsx: sign-extend src_width bytes into the dst width.
     void jit_movsx(uint64_t value, unsigned src_width, unsigned dst, unsigned dst_width);
     /// @brief neg: complement and add one; flags follow alu_sub(0, value).
     void jit_neg(unsigned slot, unsigned unused, unsigned width);
-    /// @brief bts/btr/btc: CF = tested bit, then set/clear/toggle.
+    /// @brief bts/btr/btc: CF = bit, then set/clear/toggle.
     void jit_bit_op(unsigned slot, unsigned index, unsigned width, unsigned op);
     /// @brief reg,reg ALU: alu_add/sub/logic with the interpreter's flags.
     void jit_alu_reg(unsigned slot, unsigned src, unsigned mn, unsigned width);
@@ -389,8 +391,6 @@ public:
     /// @brief Direction flag (clear = string ops walk forward).
     [[nodiscard]] bool df() const { return df_; }
 
-    // --- execution ---
-
     /**
      * @brief Fetches, decodes, and executes the instruction at rip.
      *
@@ -412,7 +412,6 @@ public:
     [[nodiscard]] ExitStatus run(uint64_t max_instructions);
 
 private:
-    // --- helpers, defined across cpu.cpp and execute.cpp ---
     /// Applies the FS/GS segment base for a memory operand's EA.
     [[nodiscard]] uint64_t segment_address(const DecodedInsn& insn, uint64_t ea) const;
     /// Retires @p n icount units: clock advance, scheduler dispatch, irq observation, trace.
@@ -497,8 +496,6 @@ private:
     /// Latches @p status if terminal and reports whether to stop.
     bool latch(ExitStatus status);
 
-    // --- state ---
-
     kernel::Bus& bus_;
     kernel::Scheduler& scheduler_;
     kernel::PortSpace* ports_;
@@ -580,7 +577,7 @@ private:
     std::array<std::array<uint64_t, 2>, 16> xmm_{};       // SSE2: 16 XMM regs
     uint32_t mxcsr_ = 0x1F80U;                            // MXCSR (FXSAVE carries it)
     uint64_t rng_state_ = 0x9E3779B97F4A7C15ULL;          // splitmix64 seed
-    uint16_t tss_selector_ = 0, ldt_selector_ = 0;        // 0F 00 group; v0: none
+    uint16_t tss_selector_ = 0, ldt_selector_ = 0;        // 0F 00 group
     uint64_t fs_base_ = 0, gs_base_ = 0, kernel_gs_base_ = 0; // FS/GS bases
 
     kernel::Tick icount_ = 0;   // virtual time

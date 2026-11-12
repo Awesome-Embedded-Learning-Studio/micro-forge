@@ -249,6 +249,26 @@ constexpr std::array<std::uint8_t, 49> kGrp3MemSlot = {
     0x5F,                                  // @48: pop rdi (1)
 };
 // Holes: base32@4, disp32@11, width32@16, mnem32@21; cpu64@27, helper64@37.
+// ALU [base+index*scale+disp],src (rsi=vaddr, edx=src, ecx=mnemonic,
+// r8d=width): flag-only forms (test/cmp) never write the memory operand, so
+// one helper covers both src kinds (register slot or immediate).
+constexpr std::array<std::uint8_t, 71> kAluMemIdxSlot = {
+    0x57,                                     // @0: push rdi (1)
+    0x48, 0x8B, 0xB4, 0x27, 0, 0, 0, 0,       // @1: mov rsi,[rdi+base32] (8)
+    0x4C, 0x8B, 0x84, 0x27, 0, 0, 0, 0,       // @9: mov r8,[rdi+idx32] (8)
+    0x49, 0xC1, 0xE0, 0,                      // @17: shl r8,shift8 (4)
+    0x4C, 0x01, 0xC6,                         // @21: add rsi,r8 (3)
+    0x48, 0x81, 0xC6, 0,    0, 0, 0,          // @24: add rsi,disp32 (7)
+    0xBA, 0,    0,    0,    0,                // @31: mov edx,src32 (5)
+    0xB9, 0,    0,    0,    0,                // @36: mov ecx,mnem32 (5)
+    0x41, 0xB8, 0,    0,    0, 0,             // @41: mov r8d,width32 (6)
+    0x48, 0xBF, 0,    0,    0, 0, 0, 0, 0, 0, // @47: mov rdi,cpu64 (10)
+    0x49, 0xBB, 0,    0,    0, 0, 0, 0, 0, 0, // @57: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                         // @67: call r11 (3)
+    0x5F,                                     // @70: pop rdi (1)
+};
+// Holes: base32@5, idx32@13, shift8@20, disp32@27, src32@32, mnem32@37,
+// width32@43; cpu64@49, helper64@59.
 // shift reg,cl via the same helper: the count arrives in rdx read from
 // the cl slot at run time, so no second helper is needed.
 constexpr std::array<std::uint8_t, 48> kShiftClSlot = {

@@ -79,6 +79,12 @@ extern "C" void mf_jit_grp3_mem(void* cpu, uint64_t vaddr, unsigned width, unsig
     static_cast<Cpu*>(cpu)->jit_grp3_mem(vaddr, width, mn);
 }
 
+/// @brief C ABI bridge: rdi=cpu, rsi=vaddr, rdx=src, ecx=mnemonic, r8d=width.
+extern "C" void mf_jit_alu_mem_idx(void* cpu, uint64_t vaddr, uint64_t src, unsigned mn,
+                                   unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_alu_mem_idx(vaddr, src, mn, width);
+}
+
 /// @brief C ABI bridge: rdi=cpu, esi=mnemonic, edx=width.
 extern "C" void mf_jit_ports(void* cpu, unsigned mn, unsigned width) {
     static_cast<Cpu*>(cpu)->jit_ports(mn, width);
@@ -166,6 +172,22 @@ void Cpu::jit_grp3_mem(uint64_t vaddr, unsigned width, unsigned mn) {
     shape.mnemonic = static_cast<Mnemonic>(mn);
     shape.opsize = static_cast<std::uint8_t>(width);
     (void)execute_grp3(shape, divisor);
+}
+
+void Cpu::jit_alu_mem_idx(uint64_t vaddr, uint64_t src, unsigned mn, unsigned width) {
+    uint64_t mem = 0;
+    if (!load(vaddr, width, mem)) {
+        return; // faulted: the interpreter re-runs this instruction
+    }
+    // test takes a register slot, cmp an immediate; neither writes memory.
+    const auto kind = static_cast<Mnemonic>(mn);
+    const uint64_t other =
+        kind == Mnemonic::kTest ? read_gpr(static_cast<Reg>(src / 8U), width, true) : src;
+    if (kind == Mnemonic::kTest) {
+        (void)alu_logic(mem & other, width);
+    } else {
+        (void)alu_sub(mem, other, width, false);
+    }
 }
 
 void Cpu::jit_ports(unsigned mn, unsigned width) {

@@ -55,6 +55,8 @@ extern "C" void mf_jit_alu_mem_imm(void* cpu, uint64_t vaddr, uint64_t imm, unsi
                                    unsigned width);
 extern "C" void mf_jit_imul_mem(void* cpu, uint64_t vaddr, unsigned dst, unsigned width);
 extern "C" void mf_jit_ports(void* cpu, unsigned mn, unsigned width);
+extern "C" void mf_jit_alu_mem_idx(void* cpu, uint64_t vaddr, uint64_t src, unsigned mn,
+                                   unsigned width);
 extern "C" void mf_jit_grp3_mem(void* cpu, uint64_t vaddr, unsigned width, unsigned mn);
 extern "C" void mf_jit_movsx(void* cpu, uint64_t value, unsigned src_width, unsigned dst,
                              unsigned dst_width);

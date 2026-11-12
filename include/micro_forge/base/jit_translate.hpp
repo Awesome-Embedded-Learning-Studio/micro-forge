@@ -61,6 +61,7 @@ enum class JitHelper : std::uint8_t {
     kAluMemImm, ///< ALU [base+disp],imm: load, combine, store back
     kImulMem,   ///< imul reg,[base+disp]: load, then the imul23 shape
     kPorts,     ///< in/out with the port in dx, via execute_ports
+    kAluMemIdx, ///< test/cmp [base+index*scale+disp],src (flag-only)
     kGrp3Mem,   ///< div/idiv/mul/imul with a memory operand
     kMovsx,     ///< movsx/movsxd: sign-extend into the destination
     kNeg,       ///< neg: two's complement with sub's flags
