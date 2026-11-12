@@ -189,6 +189,30 @@ std::optional<TranslatedInsn> translate_alu_extra(const arch::x86_64::DecodedIns
             };
         }
     }
+    // one-operand mul/imul/div/idiv r64..r8 (F6/F7 group 3): the helper
+    // rebuilds the instruction shape and runs execute_grp3, so the rdx:rax
+    // split, flag updates and #DE latching stay in one implementation.
+    if ((insn.mnemonic == Mnemonic::kMul || insn.mnemonic == Mnemonic::kImul ||
+         insn.mnemonic == Mnemonic::kDiv || insn.mnemonic == Mnemonic::kIdiv) &&
+        insn.ops[0].kind == Operand::Kind::kReg && insn.ops[1].kind == Operand::Kind::kNone &&
+        insn.addr_size == 8 && !insn.has_lock &&
+        (insn.opsize == 1 || insn.opsize == 2 || insn.opsize == 4 || insn.opsize == 8)) {
+        const auto src = reg_slot_offset(insn.ops[0].reg);
+        if (src.has_value()) {
+            return TranslatedInsn{
+                .code = jit_templates::kGrp3Slot,
+                .patches =
+                    {
+                        {.offset = 4, .size = 4, .value = *src},
+                        {.offset = 9, .size = 4, .value = insn.opsize},
+                        {.offset = 14, .size = 4, .value = static_cast<unsigned>(insn.mnemonic)},
+                    },
+                .call_offset = 30,
+                .cpu_offset = 20,
+                .helper = JitHelper::kGrp3,
+            };
+        }
+    }
     return std::nullopt;
 }
 

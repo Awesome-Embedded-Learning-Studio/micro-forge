@@ -121,6 +121,38 @@ std::optional<TranslatedInsn> translate_move(const arch::x86_64::DecodedInsn& in
             };
         }
     }
+    // movzx reg,[base+index*scale+disp]: same whole-slot write trick as the
+    // base-only form, through the indexed load template.
+    if (insn.mnemonic == Mnemonic::kMovzx && insn.ops[0].kind == Operand::Kind::kReg &&
+        insn.ops[1].kind == Operand::Kind::kMem && insn.ops[1].has_base && insn.ops[1].has_index &&
+        !insn.ops[1].rip_relative && (insn.ops[0].size == 4 || insn.ops[0].size == 8) &&
+        (insn.ops[1].size == 1 || insn.ops[1].size == 2) && insn.addr_size == 8 && !insn.has_lock &&
+        insn.seg != arch::x86_64::Seg::kFs && insn.seg != arch::x86_64::Seg::kGs) {
+        const auto slot = operand_slot(insn.ops[0], insn.rex_present);
+        const auto base = reg_slot_offset(insn.ops[1].base);
+        const auto index = reg_slot_offset(insn.ops[1].index);
+        const auto& mem = insn.ops[1];
+        const auto shift = static_cast<std::uint64_t>(std::countr_zero(mem.scale));
+        const auto mdisp = static_cast<std::uint32_t>(mem.disp);
+        if (slot.has_value() && base.has_value() && index.has_value() && mem.scale <= 8 &&
+            std::has_single_bit(mem.scale)) {
+            return TranslatedInsn{
+                .code = kLoadIdxSlot,
+                .patches =
+                    {
+                        {.offset = 5, .size = 4, .value = *base},
+                        {.offset = 13, .size = 4, .value = *index},
+                        {.offset = 20, .size = 1, .value = shift},
+                        {.offset = 27, .size = 4, .value = mdisp},
+                        {.offset = 42, .size = 4, .value = mem.size},
+                        {.offset = 64, .size = 4, .value = *slot},
+                    },
+                .call_offset = 48,
+                .cpu_offset = 33,
+                .helper = JitHelper::kLoad,
+            };
+        }
+    }
     // ALU reg,[rip+disp]: the effective address is rip+length+disp, known at
     // compile time, so the template carries it as one imm64.
     if (insn.ops[0].kind == Operand::Kind::kReg && insn.ops[1].kind == Operand::Kind::kMem &&

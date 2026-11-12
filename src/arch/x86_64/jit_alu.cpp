@@ -37,7 +37,21 @@ extern "C" void mf_jit_pxor(void* cpu, unsigned dst, unsigned src) {
     c->set_xmm(d, {a[0] ^ b[0], a[1] ^ b[1]});
 }
 
+/// @brief C ABI bridge: rdi=cpu, rsi=divisor, edx=width, ecx=mnemonic.
+extern "C" void mf_jit_grp3(void* cpu, uint64_t divisor, unsigned width, unsigned mn) {
+    static_cast<Cpu*>(cpu)->jit_grp3(divisor, width, mn);
+}
+
 } // namespace
+
+void Cpu::jit_grp3(uint64_t divisor, unsigned width, unsigned mn) {
+    // execute_grp3 only reads the mnemonic and the operand size, so a
+    // zero-initialized shape is enough; flags and rdx:rax are handled there.
+    arch::x86_64::DecodedInsn shape{};
+    shape.mnemonic = static_cast<Mnemonic>(mn);
+    shape.opsize = static_cast<std::uint8_t>(width);
+    (void)execute_grp3(shape, divisor);
+}
 
 void Cpu::jit_alu_mem(unsigned slot, uint64_t vaddr, unsigned mn, unsigned width) {
     uint64_t vb = 0;

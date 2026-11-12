@@ -371,6 +371,20 @@ constexpr std::array<std::uint8_t, 48> kLoadRipSlot = {
     0x48, 0x89, 0x84, 0x27, 0, 0, 0, 0,       // @40: mov [rdi+dst32],rax (8)
 };
 // Holes: vaddr64@3, width32@22; cpu64@13, helper64@28, dst32@44.
+// one-operand grp3 (mul/imul/div/idiv r/m): rsi=divisor value, edx=width,
+// ecx=mnemonic. The helper rebuilds the minimal instruction shape the
+// interpreter's execute_grp3 reads (mnemonic + opsize).
+constexpr std::array<std::uint8_t, 42> kGrp3Slot = {
+    0x57,                                  // @0: push rdi (1)
+    0x48, 0x8B, 0xB7, 0, 0, 0, 0,          // @1: mov rsi,[rdi+src32] (7)
+    0xBA, 0,    0,    0, 0,                // @8: mov edx,width32 (5)
+    0xB9, 0,    0,    0, 0,                // @13: mov ecx,mnem32 (5)
+    0x48, 0xBF, 0,    0, 0, 0, 0, 0, 0, 0, // @18: mov rdi,cpu64 (10)
+    0x49, 0xBB, 0,    0, 0, 0, 0, 0, 0, 0, // @28: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                      // @38: call r11 (3)
+    0x5F,                                  // @41: pop rdi (1)
+};
+// Holes: src32@4, width32@9, mnem32@14; cpu64@20, helper64@30.
 // shift reg,cl via the same helper: the count arrives in rdx read from
 // the cl slot at run time, so no second helper is needed.
 constexpr std::array<std::uint8_t, 48> kShiftClSlot = {

@@ -224,6 +224,9 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
             case base::JitHelper::kLoadRip:
                 helper = reinterpret_cast<std::uint64_t>(&mf_jit_load);
                 break;
+            case base::JitHelper::kGrp3:
+                helper = reinterpret_cast<std::uint64_t>(&mf_jit_grp3);
+                break;
             default:
                 return fail_compile();
             }

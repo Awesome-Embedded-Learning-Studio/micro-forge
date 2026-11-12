@@ -53,8 +53,7 @@ struct ExitStatus {
     uint64_t code = 0;
     /// RIP of the instruction that stopped the run.
     uint64_t rip = 0;
-    /// Mnemonic ordinal or syscall number (kUnsupported), decode kind
-    /// (kDecodeError), or FaultId.
+    /// Mnemonic ordinal, syscall number, decode kind, or FaultId.
     uint64_t detail = 0;
 };
 
@@ -172,9 +171,8 @@ public:
     [[nodiscard]] bool irq_pending() const { return irq_line_ != nullptr && irq_line_->pending(); }
     /// @brief Queues one interrupt vector for delivery (batch 6c).
     ///
-    /// Delivered at the next retire boundary when IF is set and the machine
-    /// is running: gate lookup, five-qword frame push, IF cleared for
-    /// interrupt gates, RIP to the handler. A missing IDT drops it.
+    /// Delivered at the next retire boundary when IF is set: gate lookup,
+    /// five-qword frame push, IF cleared, RIP to the handler.
     ///
     /// @param[in] vector IDT vector to deliver (0..255).
     void request_interrupt(uint8_t vector) {
@@ -246,9 +244,11 @@ public:
     void jit_mov_slot_w(uint64_t value, unsigned width, unsigned dst, unsigned zx);
     /// @brief shift helper: alu_shift on the slot; count 0 keeps flags.
     void jit_shift(unsigned slot, uint64_t count, unsigned mn, unsigned width);
+    /// @brief one-operand grp3: execute_grp3 with a rebuilt shape.
+    void jit_grp3(uint64_t divisor, unsigned width, unsigned mn);
     /// @brief reg,reg ALU: alu_add/sub/logic with the interpreter's flags.
     void jit_alu_reg(unsigned slot, unsigned src, unsigned mn, unsigned width);
-    /// @brief ALU reg,[mem]: load then combine; faulted load writes nothing.
+    /// @brief ALU reg,[mem]: load, combine, write; a fault skips the write.
     void jit_alu_mem(unsigned slot, uint64_t vaddr, unsigned mn, unsigned width);
     /// @brief pxor: xor two 16-byte xmm slots, store the result in the first.
     void jit_pxor(unsigned dst, unsigned src);
@@ -288,7 +288,7 @@ public:
     [[nodiscard]] bool interrupts_enabled() const { return if_; }
     /// @brief Current privilege level (0 = kernel, 3 = user).
     [[nodiscard]] unsigned cpl() const { return cpl_; }
-    /// @brief Test hook: enter SYSCALL/SYSRET user-mode tests at CPL 3.
+    /// @brief Test hook: set CPL directly (SYSCALL/SYSRET tests).
     void set_cpl(unsigned level) { cpl_ = level & 3U; }
     /// @brief Reads one control register (0=CR0, 1=CR2, 2=CR3, 3=CR4).
     [[nodiscard]] uint64_t control_register(unsigned index) const { return cr_[index]; }

@@ -81,6 +81,30 @@ std::vector<DiffCase> extra_cases() {
     };
     lea_r32.result_reg = Reg::kRdi;
     cases.push_back(lea_r32);
+    // movzx through a SIB index: rcx is zeroed so the address stays at kData.
+    DiffCase movzx_idx{
+        .name = "movzx_idx",
+        .code = {0x41, 0x0F, 0xB6, 0x04, 0x0C, 0xF4}, // movzx eax,byte [r12+rcx]
+        .initial = kLoaded,
+        .expected = 0x10, // low byte of kLoaded
+        .flags = kFlags,
+        .base = kData,
+        .index = 0,
+    };
+    movzx_idx.result_reg = Reg::kRax;
+    cases.push_back(movzx_idx);
+    // One-operand div: rdx:rax / rbx. xor edx,edx first keeps the quotient
+    // inside 64 bits so no #DE is raised.
+    DiffCase div_reg{
+        .name = "div_reg",
+        .code = {0x31, 0xD2, 0x48, 0xF7, 0xF3, 0xF4}, // xor edx,edx ; div rbx
+        .initial = kLoaded,
+        .expected = 0xF, // quotient, remainder 0x0cf9e6d3c0ad6d63 in rdx
+        .flags = 0x44,   // xor edx,edx sets ZF and PF
+    };
+    div_reg.result_reg = Reg::kRax;
+    div_reg.jit_insns = 2;
+    cases.push_back(div_reg);
     return cases;
 }
 
