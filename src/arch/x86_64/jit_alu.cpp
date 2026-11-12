@@ -42,7 +42,28 @@ extern "C" void mf_jit_grp3(void* cpu, uint64_t divisor, unsigned width, unsigne
     static_cast<Cpu*>(cpu)->jit_grp3(divisor, width, mn);
 }
 
+/// @brief C ABI bridge: rdi=cpu, esi=dst, edx=src, rcx=imm, r8d=width.
+extern "C" void mf_jit_imul23(void* cpu, unsigned dst, unsigned src, uint64_t imm, unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_imul23(dst, src, imm, width);
+}
+
 } // namespace
+
+void Cpu::jit_imul23(unsigned dst, unsigned src, uint64_t imm, unsigned width) {
+    // execute_imul23 reads the two source operands and their sizes; the
+    // destination is written through write_operand, so the shape carries
+    // real register ids picked from the slot offsets.
+    arch::x86_64::DecodedInsn shape{};
+    shape.opsize = static_cast<std::uint8_t>(width);
+    const auto w8 = static_cast<std::uint8_t>(width);
+    const auto dreg = static_cast<Reg>(dst / 8U);
+    const auto sreg = static_cast<Reg>(src / 8U);
+    const auto sdisp = static_cast<std::int64_t>(imm);
+    shape.ops[0] = {.kind = Operand::Kind::kReg, .size = w8, .reg = dreg};
+    shape.ops[1] = {.kind = Operand::Kind::kReg, .size = w8, .reg = sreg};
+    shape.ops[2] = {.kind = Operand::Kind::kImm, .size = w8, .disp = sdisp};
+    (void)execute_imul23(shape, 0);
+}
 
 void Cpu::jit_grp3(uint64_t divisor, unsigned width, unsigned mn) {
     // execute_grp3 only reads the mnemonic and the operand size, so a

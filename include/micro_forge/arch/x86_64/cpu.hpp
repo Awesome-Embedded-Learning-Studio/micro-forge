@@ -167,13 +167,12 @@ public:
         irq_line_ = &line;
         irq_hook_ = std::move(on_pending);
     }
-    /// @brief Whether the attached line (if any) is high.
+    /// @brief Whether the attached IRQ line is high.
     [[nodiscard]] bool irq_pending() const { return irq_line_ != nullptr && irq_line_->pending(); }
     /// @brief Queues one interrupt vector for delivery (batch 6c).
     ///
     /// Delivered at the next retire boundary when IF is set: gate lookup,
-    /// five-qword frame push, IF cleared, RIP to the handler.
-    ///
+    /// frame push, IF cleared, RIP to the handler.
     /// @param[in] vector IDT vector to deliver (0..255).
     void request_interrupt(uint8_t vector) {
         pending_vector_ = vector;
@@ -246,6 +245,8 @@ public:
     void jit_shift(unsigned slot, uint64_t count, unsigned mn, unsigned width);
     /// @brief one-operand grp3: execute_grp3 with a rebuilt shape.
     void jit_grp3(uint64_t divisor, unsigned width, unsigned mn);
+    /// @brief three-operand imul via execute_imul23 (rebuilt shape).
+    void jit_imul23(unsigned dst, unsigned src, uint64_t imm, unsigned width);
     /// @brief reg,reg ALU: alu_add/sub/logic with the interpreter's flags.
     void jit_alu_reg(unsigned slot, unsigned src, unsigned mn, unsigned width);
     /// @brief ALU reg,[mem]: load, combine, write; a fault skips the write.
@@ -570,8 +571,7 @@ private:
     /// Reads TSS.RSP0: ltr's selector indexes the GDT, offset 4 holds it.
     [[nodiscard]] uint64_t kernel_stack_top();
     bool raise_page_fault(uint64_t error); // #PF vector 14; false if no IDT
-    /// Queued interrupt delivery (batch 6c).
-    uint8_t pending_vector_ = 0;
+    uint8_t pending_vector_ = 0;           // queued interrupt delivery (batch 6c)
     bool interrupt_pending_ = false;
     bool sti_shadow_ = false;                       // STI blocks delivery past the next retire
     void deliver_interrupt();                       // queued vector; needs IF && running

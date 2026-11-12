@@ -105,6 +105,16 @@ std::vector<DiffCase> extra_cases() {
     div_reg.result_reg = Reg::kRax;
     div_reg.jit_insns = 2;
     cases.push_back(div_reg);
+    // Three-operand imul: the product overflows 64 bits, so CF and OF set.
+    DiffCase imul23{
+        .name = "imul23",
+        .code = {0x48, 0x69, 0xC3, 0x10, 0x00, 0x00, 0x00, 0xF4}, // imul rax,rbx,0x10
+        .initial = kLoaded,
+        .expected = 0x0203040506073830ULL, // (rbx * 0x10) truncated
+        .flags = kFlags,
+    };
+    imul23.result_reg = Reg::kRax;
+    cases.push_back(imul23);
     return cases;
 }
 

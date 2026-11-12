@@ -54,6 +54,7 @@ enum class JitHelper : std::uint8_t {
     kAluMemRip, ///< ALU reg,[rip+disp]: constant address, same helper
     kLoadRip,   ///< movzx reg,[rip+disp]: constant address load
     kGrp3,      ///< one-operand mul/imul/div/idiv via execute_grp3
+    kImul23,    ///< three-operand imul via execute_imul23
     kLeave,     ///< leave: rsp=rbp then pop rbp
     kPushImm,   ///< push imm64 (pre-extended)
     kPopReg,    ///< pop reg64: stack read via rsp

@@ -189,6 +189,30 @@ std::optional<TranslatedInsn> translate_alu_extra(const arch::x86_64::DecodedIns
             };
         }
     }
+    // imul dst,src,imm (0F AF with an immediate): execute_imul23 owns the
+    // CF/OF overflow rule, so the helper rebuilds its shape as well.
+    if (insn.mnemonic == Mnemonic::kImul && insn.ops[0].kind == Operand::Kind::kReg &&
+        insn.ops[1].kind == Operand::Kind::kReg && insn.ops[2].kind == Operand::Kind::kImm &&
+        insn.addr_size == 8 && !insn.has_lock && (insn.opsize == 4 || insn.opsize == 8)) {
+        const auto dst = operand_slot(insn.ops[0], insn.rex_present);
+        const auto src = reg_slot_offset(insn.ops[1].reg);
+        const auto immv = static_cast<std::uint64_t>(insn.ops[2].disp);
+        if (dst.has_value() && src.has_value()) {
+            return TranslatedInsn{
+                .code = jit_templates::kImul23Slot,
+                .patches =
+                    {
+                        {.offset = 2, .size = 4, .value = *dst},
+                        {.offset = 7, .size = 4, .value = *src},
+                        {.offset = 13, .size = 8, .value = immv},
+                        {.offset = 23, .size = 4, .value = insn.opsize},
+                    },
+                .call_offset = 39,
+                .cpu_offset = 29,
+                .helper = JitHelper::kImul23,
+            };
+        }
+    }
     // one-operand mul/imul/div/idiv r64..r8 (F6/F7 group 3): the helper
     // rebuilds the instruction shape and runs execute_grp3, so the rdx:rax
     // split, flag updates and #DE latching stay in one implementation.

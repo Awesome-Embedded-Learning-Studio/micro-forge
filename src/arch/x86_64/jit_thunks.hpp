@@ -44,6 +44,7 @@ extern "C" void mf_jit_alu_mem(void* cpu, unsigned slot, uint64_t vaddr, unsigne
                                unsigned width);
 extern "C" void mf_jit_pxor(void* cpu, unsigned dst, unsigned src);
 extern "C" void mf_jit_grp3(void* cpu, uint64_t divisor, unsigned width, unsigned mn);
+extern "C" void mf_jit_imul23(void* cpu, unsigned dst, unsigned src, uint64_t imm, unsigned width);
 extern "C" void mf_jit_call(void* cpu, uint64_t target, uint64_t my_rip, uint64_t ret_addr);
 extern "C" void mf_jit_pop_reg(void* cpu, uint64_t slot);
 

@@ -385,6 +385,20 @@ constexpr std::array<std::uint8_t, 42> kGrp3Slot = {
     0x5F,                                  // @41: pop rdi (1)
 };
 // Holes: src32@4, width32@9, mnem32@14; cpu64@20, helper64@30.
+// imul dst,src,imm (rsi=dst slot, edx=src slot, rcx=imm64, r8d=width): the
+// helper rebuilds the three-operand shape for execute_imul23.
+constexpr std::array<std::uint8_t, 51> kImul23Slot = {
+    0x57,                                  // @0: push rdi (1)
+    0xBE, 0,    0,    0, 0,                // @1: mov esi,dst32 (5)
+    0xBA, 0,    0,    0, 0,                // @6: mov edx,src32 (5)
+    0x48, 0xB9, 0,    0, 0, 0, 0, 0, 0, 0, // @11: movabs rcx,imm64 (10)
+    0x41, 0xB8, 0,    0, 0, 0,             // @21: mov r8d,width32 (6)
+    0x48, 0xBF, 0,    0, 0, 0, 0, 0, 0, 0, // @27: mov rdi,cpu64 (10)
+    0x49, 0xBB, 0,    0, 0, 0, 0, 0, 0, 0, // @37: movabs r11,helper64 (10)
+    0x41, 0xFF, 0xD3,                      // @47: call r11 (3)
+    0x5F,                                  // @50: pop rdi (1)
+};
+// Holes: dst32@2, src32@7, imm64@13, width32@23; cpu64@29, helper64@39.
 // shift reg,cl via the same helper: the count arrives in rdx read from
 // the cl slot at run time, so no second helper is needed.
 constexpr std::array<std::uint8_t, 48> kShiftClSlot = {
