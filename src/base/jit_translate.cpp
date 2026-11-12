@@ -12,6 +12,7 @@
 #include "jit_translate_movx.hpp"
 
 #include "micro_forge/base/jit_templates.hpp"
+#include "micro_forge/base/jit_templates_generated.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -26,6 +27,7 @@ using arch::x86_64::Operand;
 using arch::x86_64::Reg;
 
 using namespace jit_templates;
+namespace jg = micro_forge::base::jit_gen;
 
 } // namespace
 
@@ -93,14 +95,15 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
         const auto rsp_slot = reg_slot_offset(Reg::kRsp);
         if (rsp_slot.has_value()) {
             return TranslatedInsn{
-                .code = jit_templates::kRetHelper,
+                .code = jg::kRetHelper,
                 .patches =
                     {
-                        JitPage::Patch{.offset = 5, .size = 4, .value = *rsp_slot},
-                        JitPage::Patch{.offset = 11, .size = 8, .value = rip},
+                        jg::hole_patch(jg::kRetHelperHoles, jg::HoleKind::kRsp32, *rsp_slot),
+                        jg::hole_patch(jg::kRetHelperHoles, jg::HoleKind::kMyRip64, rip),
                     },
-                .call_offset = 31,
-                .cpu_offset = 21,
+                .call_offset =
+                    jg::hole_patch(jg::kRetHelperHoles, jg::HoleKind::kHelper64, 0).offset,
+                .cpu_offset = jg::hole_patch(jg::kRetHelperHoles, jg::HoleKind::kCpu64, 0).offset,
                 .helper = JitHelper::kRet,
             };
         }
@@ -113,15 +116,17 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
             const uint64_t ret_addr = rip + insn.length;
             const uint64_t target = ret_addr + static_cast<uint64_t>(insn.ops[0].disp);
             return TranslatedInsn{
-                .code = jit_templates::kCallImmHelper,
+                .code = jg::kCallImmHelper,
                 .patches =
                     {
-                        JitPage::Patch{.offset = 3, .size = 8, .value = target},
-                        JitPage::Patch{.offset = 13, .size = 8, .value = rip},
-                        JitPage::Patch{.offset = 23, .size = 8, .value = ret_addr},
+                        jg::hole_patch(jg::kCallImmHelperHoles, jg::HoleKind::kTarget64, target),
+                        jg::hole_patch(jg::kCallImmHelperHoles, jg::HoleKind::kMyRip64, rip),
+                        jg::hole_patch(jg::kCallImmHelperHoles, jg::HoleKind::kRetAddr64, ret_addr),
                     },
-                .call_offset = 43,
-                .cpu_offset = 33,
+                .call_offset =
+                    jg::hole_patch(jg::kCallImmHelperHoles, jg::HoleKind::kHelper64, 0).offset,
+                .cpu_offset =
+                    jg::hole_patch(jg::kCallImmHelperHoles, jg::HoleKind::kCpu64, 0).offset,
                 .helper = JitHelper::kCall,
             };
         }
@@ -130,15 +135,18 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
             const uint64_t ret_addr = rip + insn.length;
             if (reg.has_value()) {
                 return TranslatedInsn{
-                    .code = jit_templates::kCallRegHelper,
+                    .code = jg::kCallRegHelper,
                     .patches =
                         {
-                            JitPage::Patch{.offset = 5, .size = 4, .value = *reg},
-                            JitPage::Patch{.offset = 11, .size = 8, .value = rip},
-                            JitPage::Patch{.offset = 21, .size = 8, .value = ret_addr},
+                            jg::hole_patch(jg::kCallRegHelperHoles, jg::HoleKind::kReg32, *reg),
+                            jg::hole_patch(jg::kCallRegHelperHoles, jg::HoleKind::kMyRip64, rip),
+                            jg::hole_patch(jg::kCallRegHelperHoles, jg::HoleKind::kRetAddr64,
+                                           ret_addr),
                         },
-                    .call_offset = 41,
-                    .cpu_offset = 31,
+                    .call_offset =
+                        jg::hole_patch(jg::kCallRegHelperHoles, jg::HoleKind::kHelper64, 0).offset,
+                    .cpu_offset =
+                        jg::hole_patch(jg::kCallRegHelperHoles, jg::HoleKind::kCpu64, 0).offset,
                     .helper = JitHelper::kCall,
                 };
             }
@@ -158,16 +166,19 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
             const auto count = static_cast<uint64_t>(insn.ops[1].disp);
             const auto mn = static_cast<unsigned>(insn.mnemonic);
             return TranslatedInsn{
-                .code = jit_templates::kShiftImmSlot,
+                .code = jg::kShiftImmSlot,
                 .patches =
                     {
-                        {.offset = 2, .size = 4, .value = *slot},
-                        {.offset = 7, .size = 4, .value = count},
-                        {.offset = 12, .size = 4, .value = mn},
-                        {.offset = 18, .size = 4, .value = insn.ops[0].size},
+                        jg::hole_patch(jg::kShiftImmSlotHoles, jg::HoleKind::kSlot32, *slot),
+                        jg::hole_patch(jg::kShiftImmSlotHoles, jg::HoleKind::kCount32, count),
+                        jg::hole_patch(jg::kShiftImmSlotHoles, jg::HoleKind::kMnem32, mn),
+                        jg::hole_patch(jg::kShiftImmSlotHoles, jg::HoleKind::kWidth32,
+                                       insn.ops[0].size),
                     },
-                .call_offset = 34,
-                .cpu_offset = 24,
+                .call_offset =
+                    jg::hole_patch(jg::kShiftImmSlotHoles, jg::HoleKind::kHelper64, 0).offset,
+                .cpu_offset =
+                    jg::hole_patch(jg::kShiftImmSlotHoles, jg::HoleKind::kCpu64, 0).offset,
                 .helper = JitHelper::kShift,
             };
         }
@@ -177,13 +188,14 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
         insn.ops[0].kind == Operand::Kind::kImm) {
         const uint64_t target = rip + insn.length + static_cast<uint64_t>(insn.ops[0].disp);
         return TranslatedInsn{
-            .code = jit_templates::kJmpImmHelper,
+            .code = jg::kJmpImmHelper,
             .patches =
                 {
-                    JitPage::Patch{.offset = 3, .size = 8, .value = target},
+                    jg::hole_patch(jg::kJmpImmHelperHoles, jg::HoleKind::kTarget64, target),
                 },
-            .call_offset = 23,
-            .cpu_offset = 13,
+            .call_offset =
+                jg::hole_patch(jg::kJmpImmHelperHoles, jg::HoleKind::kHelper64, 0).offset,
+            .cpu_offset = jg::hole_patch(jg::kJmpImmHelperHoles, jg::HoleKind::kCpu64, 0).offset,
             .helper = JitHelper::kJmp,
         };
     }
@@ -194,15 +206,15 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
         const uint64_t taken = fall + static_cast<uint64_t>(insn.ops[0].disp);
         const auto cc = static_cast<uint64_t>(insn.cc);
         return TranslatedInsn{
-            .code = jit_templates::kJccHelper,
+            .code = jg::kJccHelper,
             .patches =
                 {
-                    JitPage::Patch{.offset = 3, .size = 8, .value = taken},
-                    JitPage::Patch{.offset = 13, .size = 8, .value = fall},
-                    JitPage::Patch{.offset = 22, .size = 4, .value = cc},
+                    jg::hole_patch(jg::kJccHelperHoles, jg::HoleKind::kTaken64, taken),
+                    jg::hole_patch(jg::kJccHelperHoles, jg::HoleKind::kFall64, fall),
+                    jg::hole_patch(jg::kJccHelperHoles, jg::HoleKind::kCc32, cc),
                 },
-            .call_offset = 38,
-            .cpu_offset = 28,
+            .call_offset = jg::hole_patch(jg::kJccHelperHoles, jg::HoleKind::kHelper64, 0).offset,
+            .cpu_offset = jg::hole_patch(jg::kJccHelperHoles, jg::HoleKind::kCpu64, 0).offset,
             .helper = JitHelper::kJcc,
         };
     }
@@ -210,10 +222,10 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
     if (insn.mnemonic == Mnemonic::kLeave && insn.addr_size == 8 && !insn.has_lock &&
         insn.ops[0].kind != Operand::Kind::kImm) {
         return TranslatedInsn{
-            .code = jit_templates::kLeaveHelper,
+            .code = jg::kLeaveHelper,
             .patches = {},
-            .call_offset = 13,
-            .cpu_offset = 3,
+            .call_offset = jg::hole_patch(jg::kLeaveHelperHoles, jg::HoleKind::kHelper64, 0).offset,
+            .cpu_offset = jg::hole_patch(jg::kLeaveHelperHoles, jg::HoleKind::kCpu64, 0).offset,
             .helper = JitHelper::kLeave,
         };
     }
@@ -230,19 +242,16 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
             return std::nullopt;
         }
         return TranslatedInsn{
-            .code = kAddMemSlot,
+            .code = jg::kAddMemSlot,
             .patches =
                 {
-                    JitPage::Patch{.offset = 5, .size = 4, .value = *source},
-                    JitPage::Patch{.offset = 13, .size = 4, .value = *base},
-                    JitPage::Patch{
-                        .offset = 20,
-                        .size = 4,
-                        .value = static_cast<std::uint32_t>(insn.ops[0].disp),
-                    },
+                    jg::hole_patch(jg::kAddMemSlotHoles, jg::HoleKind::kSrc32, *source),
+                    jg::hole_patch(jg::kAddMemSlotHoles, jg::HoleKind::kBase32, *base),
+                    jg::hole_patch(jg::kAddMemSlotHoles, jg::HoleKind::kDisp32,
+                                   static_cast<std::uint32_t>(insn.ops[0].disp)),
                 },
-            .call_offset = 36,
-            .cpu_offset = 26,
+            .call_offset = jg::hole_patch(jg::kAddMemSlotHoles, jg::HoleKind::kHelper64, 0).offset,
+            .cpu_offset = jg::hole_patch(jg::kAddMemSlotHoles, jg::HoleKind::kCpu64, 0).offset,
             .helper = JitHelper::kAddMem,
         };
     }
@@ -253,16 +262,14 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
     // push imm: the value is already sign-extended into ops[0].disp.
     if (insn.addr_size == 8 && !insn.has_lock && insn.mnemonic == Mnemonic::kPush &&
         insn.ops[0].kind == Operand::Kind::kImm) {
-        const JitPage::Patch imm_patch{
-            .offset = 3,
-            .size = 8,
-            .value = static_cast<std::uint64_t>(insn.ops[0].disp),
-        };
+        const auto imm_patch = jg::hole_patch(jg::kPushImmHelperHoles, jg::HoleKind::kImm64,
+                                              static_cast<std::uint64_t>(insn.ops[0].disp));
         return TranslatedInsn{
-            .code = jit_templates::kPushImmHelper,
+            .code = jg::kPushImmHelper,
             .patches = {imm_patch},
-            .call_offset = 23,
-            .cpu_offset = 13,
+            .call_offset =
+                jg::hole_patch(jg::kPushImmHelperHoles, jg::HoleKind::kHelper64, 0).offset,
+            .cpu_offset = jg::hole_patch(jg::kPushImmHelperHoles, jg::HoleKind::kCpu64, 0).offset,
             .helper = JitHelper::kPushImm,
         };
     }
@@ -296,16 +303,19 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
         const auto src_slot = reg_slot_offset(insn.ops[1].reg);
         if (reg_alu && src_slot.has_value()) {
             return TranslatedInsn{
-                .code = jit_templates::kAluRegSlot,
+                .code = jg::kAluRegSlot,
                 .patches =
                     {
-                        {.offset = 2, .size = 4, .value = *slot},
-                        {.offset = 7, .size = 4, .value = *src_slot},
-                        {.offset = 12, .size = 4, .value = static_cast<unsigned>(insn.mnemonic)},
-                        {.offset = 18, .size = 4, .value = insn.ops[0].size},
+                        jg::hole_patch(jg::kAluRegSlotHoles, jg::HoleKind::kSlot32, *slot),
+                        jg::hole_patch(jg::kAluRegSlotHoles, jg::HoleKind::kSrc32, *src_slot),
+                        jg::hole_patch(jg::kAluRegSlotHoles, jg::HoleKind::kMnem32,
+                                       static_cast<unsigned>(insn.mnemonic)),
+                        jg::hole_patch(jg::kAluRegSlotHoles, jg::HoleKind::kWidth32,
+                                       insn.ops[0].size),
                     },
-                .call_offset = 34,
-                .cpu_offset = 24,
+                .call_offset =
+                    jg::hole_patch(jg::kAluRegSlotHoles, jg::HoleKind::kHelper64, 0).offset,
+                .cpu_offset = jg::hole_patch(jg::kAluRegSlotHoles, jg::HoleKind::kCpu64, 0).offset,
                 .helper = JitHelper::kAluReg,
             };
         }
@@ -324,16 +334,20 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
         const auto src_slot = reg_slot_offset(insn.ops[1].reg);
         if (src_slot.has_value()) {
             return TranslatedInsn{
-                .code = jit_templates::kCmovRegHelper,
+                .code = jg::kCmovRegHelper,
                 .patches =
                     {
-                        {.offset = 2, .size = 4, .value = *slot},
-                        {.offset = 10, .size = 4, .value = *src_slot},
-                        {.offset = 15, .size = 4, .value = static_cast<std::uint32_t>(insn.cc)},
-                        {.offset = 21, .size = 4, .value = insn.ops[0].size},
+                        jg::hole_patch(jg::kCmovRegHelperHoles, jg::HoleKind::kDst32, *slot),
+                        jg::hole_patch(jg::kCmovRegHelperHoles, jg::HoleKind::kSrc32, *src_slot),
+                        jg::hole_patch(jg::kCmovRegHelperHoles, jg::HoleKind::kCc32,
+                                       static_cast<std::uint32_t>(insn.cc)),
+                        jg::hole_patch(jg::kCmovRegHelperHoles, jg::HoleKind::kWidth32,
+                                       insn.ops[0].size),
                     },
-                .call_offset = 37,
-                .cpu_offset = 27,
+                .call_offset =
+                    jg::hole_patch(jg::kCmovRegHelperHoles, jg::HoleKind::kHelper64, 0).offset,
+                .cpu_offset =
+                    jg::hole_patch(jg::kCmovRegHelperHoles, jg::HoleKind::kCpu64, 0).offset,
                 .helper = JitHelper::kCmov,
             };
         }
@@ -343,14 +357,16 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
     if (insn.mnemonic == Mnemonic::kSetcc && *slot % sizeof(uint64_t) == 0 &&
         insn.ops[0].kind == Operand::Kind::kReg && insn.ops[0].size == 1 && !insn.has_lock) {
         return TranslatedInsn{
-            .code = jit_templates::kSetccRegHelper,
+            .code = jg::kSetccRegHelper,
             .patches =
                 {
-                    {.offset = 2, .size = 4, .value = *slot},
-                    {.offset = 7, .size = 4, .value = static_cast<std::uint32_t>(insn.cc)},
+                    jg::hole_patch(jg::kSetccRegHelperHoles, jg::HoleKind::kDst32, *slot),
+                    jg::hole_patch(jg::kSetccRegHelperHoles, jg::HoleKind::kCc32,
+                                   static_cast<std::uint32_t>(insn.cc)),
                 },
-            .call_offset = 23,
-            .cpu_offset = 13,
+            .call_offset =
+                jg::hole_patch(jg::kSetccRegHelperHoles, jg::HoleKind::kHelper64, 0).offset,
+            .cpu_offset = jg::hole_patch(jg::kSetccRegHelperHoles, jg::HoleKind::kCpu64, 0).offset,
             .helper = JitHelper::kSetcc,
         };
     }
@@ -359,20 +375,24 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
         if (insn.mnemonic == Mnemonic::kPush && insn.ops[0].kind == Operand::Kind::kReg &&
             insn.ops[0].size == 8 && *slot % sizeof(uint64_t) == 0) {
             return TranslatedInsn{
-                .code = jit_templates::kPushRegHelper,
-                .patches = {{.offset = 5, .size = 4, .value = *slot}},
-                .call_offset = 21,
-                .cpu_offset = 11,
+                .code = jg::kPushRegHelper,
+                .patches = {jg::hole_patch(jg::kPushRegHelperHoles, jg::HoleKind::kSlot32, *slot)},
+                .call_offset =
+                    jg::hole_patch(jg::kPushRegHelperHoles, jg::HoleKind::kHelper64, 0).offset,
+                .cpu_offset =
+                    jg::hole_patch(jg::kPushRegHelperHoles, jg::HoleKind::kCpu64, 0).offset,
                 .helper = JitHelper::kPushVal,
             };
         }
         if (insn.mnemonic == Mnemonic::kPop && insn.ops[0].kind == Operand::Kind::kReg &&
             insn.ops[0].size == 8 && *slot % sizeof(uint64_t) == 0) {
             return TranslatedInsn{
-                .code = jit_templates::kPopRegHelper,
-                .patches = {{.offset = 2, .size = 4, .value = *slot}},
-                .call_offset = 18,
-                .cpu_offset = 8,
+                .code = jg::kPopRegHelper,
+                .patches = {jg::hole_patch(jg::kPopRegHelperHoles, jg::HoleKind::kSlot32, *slot)},
+                .call_offset =
+                    jg::hole_patch(jg::kPopRegHelperHoles, jg::HoleKind::kHelper64, 0).offset,
+                .cpu_offset =
+                    jg::hole_patch(jg::kPopRegHelperHoles, jg::HoleKind::kCpu64, 0).offset,
                 .helper = JitHelper::kPopReg,
             };
         }
@@ -386,23 +406,17 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
         insn.ops[1].disp <=
             (insn.ops[0].size == 4 ? static_cast<int64_t>(UINT32_MAX) : INT32_MAX)) {
         std::vector<JitPage::Patch> patches = {
-            JitPage::Patch{
-                .offset = 2,
-                .size = 4,
-                .value = *slot,
-            },
-            JitPage::Patch{
-                .offset = 7,
-                .size = 4,
-                .value = static_cast<std::uint32_t>(insn.ops[1].disp),
-            },
-            {.offset = 12, .size = 4, .value = insn.ops[0].size},
+            jg::hole_patch(jg::kAddImmHelperHoles, jg::HoleKind::kSlot32, *slot),
+            jg::hole_patch(jg::kAddImmHelperHoles, jg::HoleKind::kImm32,
+                           static_cast<std::uint32_t>(insn.ops[1].disp)),
+            jg::hole_patch(jg::kAddImmHelperHoles, jg::HoleKind::kWidth32, insn.ops[0].size),
         };
         return TranslatedInsn{
-            .code = kAddImmHelper,
+            .code = jg::kAddImmHelper,
             .patches = std::move(patches),
-            .call_offset = 28,
-            .cpu_offset = 18,
+            .call_offset =
+                jg::hole_patch(jg::kAddImmHelperHoles, jg::HoleKind::kHelper64, 0).offset,
+            .cpu_offset = jg::hole_patch(jg::kAddImmHelperHoles, jg::HoleKind::kCpu64, 0).offset,
             .helper = JitHelper::kAdd,
         };
     }

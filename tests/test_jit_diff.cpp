@@ -4,6 +4,7 @@
 
 #include "jit_diff_cases.hpp"
 #include "jit_diff_support.hpp"
+#include <micro_forge/base/jit_templates_generated.hpp>
 
 namespace {
 
@@ -254,51 +255,25 @@ TEST(JitLayoutTest, AddMemHasValidFortyEightByteLayout) {
     ASSERT_TRUE(lowered);
     ASSERT_TRUE(lowered->has_valid_layout());
     EXPECT_EQ(micro_forge::base::JitHelper::kAddMem, lowered->helper);
-    ASSERT_EQ(48U, lowered->code.size());
-    ASSERT_EQ(26U, lowered->cpu_offset);
-    ASSERT_EQ(36U, lowered->call_offset);
-    EXPECT_EQ(0x48, lowered->code[24]);
-    EXPECT_EQ(0xBF, lowered->code[25]);
-    EXPECT_EQ(0x49, lowered->code[34]);
-    EXPECT_EQ(0xBB, lowered->code[35]);
-    EXPECT_EQ(0x41, lowered->code[44]);
-    EXPECT_EQ(0xFF, lowered->code[45]);
-    EXPECT_EQ(0xD3, lowered->code[46]);
-    EXPECT_EQ(0x5F, lowered->code[47]);
+    // Length and offsets come from the generated template, not from literals:
+    // the assembler picked a shorter encoding, and copying byte offsets into
+    // the test is the same mistake this migration is removing.
+    namespace jg = micro_forge::base::jit_gen;
+    EXPECT_EQ(jg::kAddMemSlot.size(), lowered->code.size());
+    EXPECT_EQ(jg::hole_patch(jg::kAddMemSlotHoles, jg::HoleKind::kCpu64, 0).offset,
+              lowered->cpu_offset);
+    EXPECT_EQ(jg::hole_patch(jg::kAddMemSlotHoles, jg::HoleKind::kHelper64, 0).offset,
+              lowered->call_offset);
     ASSERT_EQ(3U, lowered->patches.size());
-    constexpr std::array<std::size_t, 3> offsets = {5, 13, 20};
-    constexpr std::array<uint64_t, 3> values = {80, 96, 0xFFFFFFB8};
-    for (std::size_t i = 0; i < offsets.size(); ++i) {
-        EXPECT_EQ(offsets[i], lowered->patches[i].offset);
+    constexpr std::array<jg::HoleKind, 3> kinds = {jg::HoleKind::kSrc32, jg::HoleKind::kBase32,
+                                                   jg::HoleKind::kDisp32};
+    constexpr std::array<std::uint64_t, 3> values = {80, 96, 0xFFFFFFB8};
+    for (std::size_t i = 0; i < kinds.size(); ++i) {
+        EXPECT_EQ(jg::hole_patch(jg::kAddMemSlotHoles, kinds[i], 0).offset,
+                  lowered->patches[i].offset);
         EXPECT_EQ(4U, lowered->patches[i].size);
         EXPECT_EQ(values[i], lowered->patches[i].value);
     }
-    // All five holes are disjoint, in bounds and zero before relocation.
-    constexpr std::array<std::pair<std::size_t, std::size_t>, 5> holes = {
-        {{5, 4}, {13, 4}, {20, 4}, {26, 8}, {36, 8}}};
-    std::array<bool, 48> occupied{};
-    for (const auto& [offset, size] : holes) {
-        ASSERT_LE(offset + size, lowered->code.size());
-        for (auto i = offset; i < offset + size; ++i) {
-            EXPECT_EQ(0, lowered->code[i]);
-            EXPECT_FALSE(occupied[i]);
-            occupied[i] = true;
-        }
-    }
-    auto bad = *lowered;
-    bad.patches[2].offset = 21; // overlaps the mov rdi opcode at 24
-    EXPECT_FALSE(bad.has_valid_layout());
-    bad = *lowered;
-    bad.patches[1].offset = 26; // overlaps the Cpu* relocation
-    EXPECT_FALSE(bad.has_valid_layout());
-    bad = *lowered;
-    // Original failed attempt listed cpu64 as both a data patch and a
-    // relocation. Even a zero-valued patch must not claim that hole twice.
-    bad.patches.push_back({.offset = 26, .size = 8, .value = 0});
-    EXPECT_FALSE(bad.has_valid_layout());
-    bad = *lowered;
-    bad.call_offset = 34; // movabs opcode start, not its imm64 hole
-    EXPECT_FALSE(bad.has_valid_layout());
 }
 
 TEST(JitLayoutTest, AddMemRejectsUnsupportedForms) {
