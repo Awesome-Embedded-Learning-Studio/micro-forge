@@ -622,7 +622,7 @@ tpl_setcc_reg_helper_end:
 .globl tpl_push_reg_helper
 tpl_push_reg_helper:
     push   rdi
-    mov    rsi,QWORD PTR [rax+0x202020]
+    mov    rsi,QWORD PTR [rdi+0x6B41536A]
     movabs rdi,0x1B4153A5000000C1
     movabs r11,0x2B4153A5000000C2
     call   r11
