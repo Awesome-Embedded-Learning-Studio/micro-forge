@@ -79,6 +79,11 @@ extern "C" void mf_jit_grp3_mem(void* cpu, uint64_t vaddr, unsigned width, unsig
     static_cast<Cpu*>(cpu)->jit_grp3_mem(vaddr, width, mn);
 }
 
+/// @brief C ABI bridge: rdi=cpu, rsi=vaddr, edx=width, ecx=mnemonic.
+extern "C" void mf_jit_sys_mem(void* cpu, uint64_t vaddr, unsigned width, unsigned mn) {
+    static_cast<Cpu*>(cpu)->jit_sys_mem(vaddr, width, mn);
+}
+
 /// @brief C ABI bridge: rdi=cpu, rsi=vaddr, rdx=src, ecx=mnemonic, r8d=width.
 extern "C" void mf_jit_alu_mem_idx(void* cpu, uint64_t vaddr, uint64_t src, unsigned mn,
                                    unsigned width) {
@@ -174,6 +179,19 @@ void Cpu::jit_grp3_mem(uint64_t vaddr, unsigned width, unsigned mn) {
     (void)execute_grp3(shape, divisor);
 }
 
+void Cpu::jit_sys_mem(uint64_t vaddr, unsigned width, unsigned mn) {
+    // execute_system reaches the operand through read_operand, so the shape
+    // carries a rip-relative memory operand whose disp is the address we
+    // already computed (rip_after 0 makes effective_address return it as is).
+    arch::x86_64::DecodedInsn shape{};
+    shape.mnemonic = static_cast<Mnemonic>(mn);
+    shape.opsize = static_cast<std::uint8_t>(width);
+    shape.ops[0] = {.kind = Operand::Kind::kMem, .size = static_cast<std::uint8_t>(width)};
+    shape.ops[0].rip_relative = true;
+    shape.ops[0].disp = static_cast<std::int64_t>(vaddr);
+    (void)execute_system(shape, 0);
+}
+
 void Cpu::jit_alu_mem_idx(uint64_t vaddr, uint64_t src, unsigned mn, unsigned width) {
     uint64_t mem = 0;
     if (!load(vaddr, width, mem)) {
@@ -197,9 +215,23 @@ void Cpu::jit_ports(unsigned mn, unsigned width) {
     arch::x86_64::DecodedInsn shape{};
     shape.mnemonic = static_cast<Mnemonic>(mn);
     shape.opsize = static_cast<std::uint8_t>(width);
-    if (shape.mnemonic == Mnemonic::kCli || shape.mnemonic == Mnemonic::kSti) {
-        (void)execute_system(shape, 0); // flag-only: the STI shadow lives there
+    // Operand-less system instructions all live in execute_system; the only
+    // shape they need is the mnemonic (they read fixed registers themselves).
+    switch (shape.mnemonic) {
+    case Mnemonic::kCli:
+    case Mnemonic::kSti:
+    case Mnemonic::kClac:
+    case Mnemonic::kStac:
+    case Mnemonic::kFninit:
+    case Mnemonic::kRdmsr:
+    case Mnemonic::kWrmsr:
+    case Mnemonic::kRdtsc:
+    case Mnemonic::kCpuid:
+    case Mnemonic::kRdrand:
+        (void)execute_system(shape, 0); // iret/lgdt need control flow or memory
         return;
+    default:
+        break;
     }
     const auto w8 = static_cast<std::uint8_t>(width);
     const auto dx = Operand{.kind = Operand::Kind::kImplicit, .size = 2, .reg = Reg::kRdx};

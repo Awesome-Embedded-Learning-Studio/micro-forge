@@ -14,7 +14,6 @@ namespace micro_forge::base::detail {
 
 using arch::x86_64::Mnemonic;
 using arch::x86_64::Operand;
-using arch::x86_64::Reg;
 
 using namespace jit_templates;
 

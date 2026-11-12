@@ -160,8 +160,14 @@ std::optional<TranslatedInsn> translate_alu_extra(const arch::x86_64::DecodedIns
     }
     // Flag-only system instructions (cli/sti): the template carries just the
     // mnemonic; execute_system keeps the STI-shadow rule in one place.
-    if ((insn.mnemonic == Mnemonic::kCli || insn.mnemonic == Mnemonic::kSti) &&
-        insn.ops[0].kind == Operand::Kind::kNone && insn.addr_size == 8 && !insn.has_lock) {
+    const bool operandless =
+        insn.mnemonic == Mnemonic::kCli || insn.mnemonic == Mnemonic::kSti ||
+        insn.mnemonic == Mnemonic::kClac || insn.mnemonic == Mnemonic::kStac ||
+        insn.mnemonic == Mnemonic::kFninit || insn.mnemonic == Mnemonic::kRdmsr ||
+        insn.mnemonic == Mnemonic::kWrmsr || insn.mnemonic == Mnemonic::kRdtsc ||
+        insn.mnemonic == Mnemonic::kCpuid || insn.mnemonic == Mnemonic::kRdrand;
+    if (operandless && insn.ops[0].kind == Operand::Kind::kNone && insn.addr_size == 8 &&
+        !insn.has_lock) {
         return TranslatedInsn{
             .code = jit_templates::kPortsSlot,
             .patches =
@@ -295,6 +301,33 @@ std::optional<TranslatedInsn> translate_alu_extra(const arch::x86_64::DecodedIns
                 .call_offset = 39,
                 .cpu_offset = 29,
                 .helper = JitHelper::kImul23,
+            };
+        }
+    }
+    // lgdt/lidt/fxsave take a memory operand; the template computes the
+    // address and the helper rebuilds the operand shape around it.
+    if ((insn.mnemonic == Mnemonic::kLgdt || insn.mnemonic == Mnemonic::kLidt ||
+         insn.mnemonic == Mnemonic::kSgdt || insn.mnemonic == Mnemonic::kSidt ||
+         insn.mnemonic == Mnemonic::kFxsave || insn.mnemonic == Mnemonic::kFxrstor) &&
+        insn.ops[0].kind == Operand::Kind::kMem && insn.ops[0].has_base && !insn.ops[0].has_index &&
+        !insn.ops[0].rip_relative && insn.addr_size == 8 && !insn.has_lock &&
+        insn.ops[0].disp >= INT32_MIN && insn.ops[0].disp <= INT32_MAX) {
+        const auto base = reg_slot_offset(insn.ops[0].base);
+        const auto sdisp = static_cast<std::uint32_t>(insn.ops[0].disp);
+        const auto smn = static_cast<unsigned>(insn.mnemonic);
+        if (base.has_value()) {
+            return TranslatedInsn{
+                .code = jit_templates::kGrp3MemSlot,
+                .patches =
+                    {
+                        {.offset = 4, .size = 4, .value = *base},
+                        {.offset = 11, .size = 4, .value = sdisp},
+                        {.offset = 16, .size = 4, .value = insn.ops[0].size},
+                        {.offset = 21, .size = 4, .value = smn},
+                    },
+                .call_offset = 37,
+                .cpu_offset = 27,
+                .helper = JitHelper::kSysMem,
             };
         }
     }

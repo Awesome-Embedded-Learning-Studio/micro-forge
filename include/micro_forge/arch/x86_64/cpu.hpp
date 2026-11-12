@@ -252,6 +252,8 @@ public:
     void jit_ports(unsigned mn, unsigned width);
     /// @brief test/cmp [mem+index],src: flags only.
     void jit_alu_mem_idx(uint64_t vaddr, uint64_t src, unsigned mn, unsigned width);
+    /// @brief lgdt/lidt/fxsave: rebuild the mem operand from a vaddr.
+    void jit_sys_mem(uint64_t vaddr, unsigned width, unsigned mn);
     /// @brief one-operand grp3, divisor read from memory.
     void jit_grp3_mem(uint64_t vaddr, unsigned width, unsigned mn);
     /// @brief movsx: sign-extend src_width bytes into the dst width.
