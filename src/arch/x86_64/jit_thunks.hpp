@@ -10,6 +10,7 @@
 #ifndef MICRO_FORGE_ARCH_X86_64_JIT_THUNKS_HPP
 #define MICRO_FORGE_ARCH_X86_64_JIT_THUNKS_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 #include <micro_forge/base/jit_translate.hpp>
@@ -78,6 +79,10 @@ std::uint64_t mf_jit_helper_address(micro_forge::base::JitHelper id);
 /// @brief Coverage diagnostics (jit_stats.cpp): count and dump fallbacks.
 extern "C" void mf_jit_note_fail_hit(std::uint64_t rip);
 extern "C" void mf_jit_dump_fail_hits();
+/// @brief Coverage diagnostics: per-template translation hits
+///        (MICRO_FORGE_JIT_TPLSTATS gates both).
+extern "C" void mf_jit_note_template(const std::uint8_t* data);
+extern "C" void mf_jit_dump_template_hits();
 extern "C" void mf_jit_call(void* cpu, uint64_t target, uint64_t my_rip, uint64_t ret_addr);
 extern "C" void mf_jit_pop_reg(void* cpu, uint64_t slot);
 

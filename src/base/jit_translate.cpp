@@ -74,7 +74,11 @@ std::optional<std::size_t> reg_slot_offset(Reg reg) {
     return static_cast<std::size_t>(value) * 8U;
 }
 
-std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& insn, uint64_t rip) {
+// Real lowering lives in translate_insn_impl; the public wrapper counts
+// which template was chosen (MICRO_FORGE_JIT_TPLSTATS coverage diagnostics).
+namespace {
+std::optional<TranslatedInsn> translate_insn_impl(const arch::x86_64::DecodedInsn& insn,
+                                                  uint64_t rip) {
     // Guest nops (single, xchg ax,ax, 0F 1F padding) lower to one host nop:
     // no flags, no memory, nothing to model.
     if (insn.mnemonic == arch::x86_64::Mnemonic::kNop && insn.addr_size == 8 && !insn.has_lock) {
@@ -550,6 +554,19 @@ std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& in
     // Arithmetic would have to update guest flags; the templates do not
     // model them yet, so those instructions stay with the interpreter.
     return std::nullopt;
+}
+} // namespace
+
+// Coverage diagnostics (jit_stats.cpp): count one translation hit for the
+// template whose bytes were chosen. extern "C" keeps the core namespace-free.
+extern "C" void mf_jit_note_template(const std::uint8_t* data);
+
+std::optional<TranslatedInsn> translate_insn(const arch::x86_64::DecodedInsn& insn, uint64_t rip) {
+    auto lowered = translate_insn_impl(insn, rip);
+    if (lowered.has_value()) {
+        mf_jit_note_template(lowered->code.data());
+    }
+    return lowered;
 }
 
 } // namespace micro_forge::base

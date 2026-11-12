@@ -249,7 +249,25 @@ def render(templates: list[dict]) -> str:
             lines.append("    {.kind = HoleKind::kBase32, .offset = 0, .size = 0}, // no holes")
             lines.append("};")
         lines.append("")
+    # Registry: byte-array identity -> template name, so coverage diagnostics
+    # (MICRO_FORGE_JIT_TPLSTATS) can count per-template translation hits from
+    # the emitted pointer alone.
     lines += [
+        "/// @brief Maps a template's emitted bytes to its source name.",
+        "struct TemplateEntry {",
+        "    const std::uint8_t* data;",
+        "    const char* name;",
+        "};",
+        "",
+        "/// @brief Every template in this header, for per-template coverage counts.",
+        "inline constexpr TemplateEntry kTemplateRegistry[] = {",
+    ]
+    for t in templates:
+        camel = t["name"].title().replace("_", "")
+        lines.append(f"    {{.data = k{camel}.data(), .name = \"{t['name']}\"}},")
+    lines += [
+        "};",
+        "",
         "} // namespace micro_forge::base::jit_gen",
         "",
         "#endif // MICRO_FORGE_BASE_JIT_TEMPLATES_GENERATED_HPP",

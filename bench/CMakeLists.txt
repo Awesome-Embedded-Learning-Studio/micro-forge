@@ -27,3 +27,9 @@ add_dependencies(mf-bench guest-int-alu_bin guest-mem-mix_bin)
 add_executable(mf-jit-kernel-probe jit_kernel_probe.cpp)
 target_link_libraries(mf-jit-kernel-probe PRIVATE micro_forge)
 target_link_options(mf-jit-kernel-probe PRIVATE -no-pie)
+
+add_executable(mf-tpl-coverage tpl_coverage.cpp
+               ../tests/jit/jit_diff_cases.cpp ../tests/jit/jit_diff_cases_alu.cpp
+               ../tests/jit/jit_diff_cases_extra.cpp)
+target_include_directories(mf-tpl-coverage PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../tests/jit)
+target_link_libraries(mf-tpl-coverage PRIVATE micro_forge)

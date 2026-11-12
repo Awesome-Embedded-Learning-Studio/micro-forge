@@ -36,18 +36,6 @@ tpl_load_idx_slot:
 .globl tpl_load_idx_slot_end
 tpl_load_idx_slot_end:
 
-.globl tpl_load_rip
-tpl_load_rip:
-    push   rdi
-    movabs rsi,0x4B4153A5000000C4
-    movabs rdi,0x1B4153A5000000C1
-    mov    edx,0x6B415369
-    movabs r11,0x2B4153A5000000C2
-    call   r11
-    pop    rdi
-    mov    QWORD PTR [rdi+0x6B415372],rax
-.globl tpl_load_rip_end
-tpl_load_rip_end:
 
 .globl tpl_store_slot
 tpl_store_slot:
@@ -244,35 +232,10 @@ tpl_mov_slot_imm:
 .globl tpl_mov_slot_imm_end
 tpl_mov_slot_imm_end:
 
-.globl tpl_add_slot_imm
-tpl_add_slot_imm:
-    add    QWORD PTR [rdi+0x6B415367],0x6B41536F
-.globl tpl_add_slot_imm_end
-tpl_add_slot_imm_end:
 
-.globl tpl_sub_slot_imm
-tpl_sub_slot_imm:
-    sub    QWORD PTR [rdi+0x6B415367],0x6B41536F
-.globl tpl_sub_slot_imm_end
-tpl_sub_slot_imm_end:
 
-.globl tpl_and_slot_imm
-tpl_and_slot_imm:
-    and    QWORD PTR [rdi+0x6B415367],0x6B41536F
-.globl tpl_and_slot_imm_end
-tpl_and_slot_imm_end:
 
-.globl tpl_or_slot_imm
-tpl_or_slot_imm:
-    or     QWORD PTR [rdi+0x6B415367],0x6B41536F
-.globl tpl_or_slot_imm_end
-tpl_or_slot_imm_end:
 
-.globl tpl_xor_slot_imm
-tpl_xor_slot_imm:
-    xor    QWORD PTR [rdi+0x6B415367],0x6B41536F
-.globl tpl_xor_slot_imm_end
-tpl_xor_slot_imm_end:
 
 .globl tpl_mov_slot_slot
 tpl_mov_slot_slot:
@@ -652,16 +615,6 @@ tpl_pop_reg_helper:
 .globl tpl_pop_reg_helper_end
 tpl_pop_reg_helper_end:
 
-.globl tpl_cmp_mem_call
-tpl_cmp_mem_call:
-    mov    edx,0x6B41536A
-    mov    ecx,0x6B415369
-    movabs rdi,0x1B4153A5000000C1
-    movabs r11,0x2B4153A5000000C2
-    call   r11
-    pop    rdi
-.globl tpl_cmp_mem_call_end
-tpl_cmp_mem_call_end:
 
 /* cmp [base+disp], slot: the load address prefix plus the cmp helper tail.
  * These used to be built by cmp_memory_code<kLoadSlot, 16>(), splicing the

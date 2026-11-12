@@ -78,8 +78,28 @@ Base32 魔数是 `0x6b415365`——扫描 4 字节时会在 8 字节魔数的后
 差分测试比的是"两边结果是否一致"，不是"这条指令写得对不对"。能抓住这类
 问题的是字节断言：`57 48 8B B7` 就是 `push rdi; mov rsi,[rdi+disp32]`。
 
-## 剩余
+## 剩余 → 已做：模板覆盖反查（2026-11-12）
 
-355 个失败块里可能还藏着同类问题——某些模板的路径从未被差分用例走到。
-可以拿覆盖率数据反查"有翻译分支但没有用例命中"的模板，给 translate 加个
-按 helper 计数的探针。
+原文说"可以拿覆盖率数据反查"。现在落地为两个工具：
+
+- **翻译期审计** `./build/bench/mf-tpl-coverage`：把全部差分用例表
+  （base/width/alu/extra，330 条）逐条喂给 `translate_insn`（只翻译不执行），
+  按"发出的模板字节指针"对照生成头里的 `kTemplateRegistry` 计数，
+  打印每个模板的命中次数。零命中 = 没有任何差分用例走到这条翻译分支。
+- **运行期探针** `MICRO_FORGE_JIT_TPLSTATS=1` + `mf-jit-kernel-probe`：
+  `translate_insn` 外包一层 wrapper 记数（env 关闭时零开销），
+  probe 退出前 `mf_jit_dump_template_hits()` 打印内核侧每个模板的翻译命中。
+
+首轮结果（老内核 b58e271）：
+
+- 七个模板在翻译层零引用，纯死代码，已从 `jit_templates.S` 删除：
+  `add/sub/and/or/xor_slot_imm`、`cmp_mem_call`、`load_rip`（被
+  `load_rip_slot` 取代）。61 → 54 个模板，覆盖率不变（99.9625）。
+- 测试零命中但内核在用的 8 个是差分用例缺口（kPushRegHelper 那类盲区）：
+  `call_reg_helper`、`grp3_slot`、`grp3_mem_slot`、`imul_mem_slot`、
+  `lea_idx_slot32`、`pop_reg_helper`、`ports_slot`、`ret_helper`。
+  这些模板的翻译分支真实服务内核，却没有一条差分用例或字节断言盯着——
+  下一批补用例按这份清单来。
+- 内核零命中但测试有的 6 个（`add_mem_slot`、`load_slot_b/w`、
+  `load_idx_slot_b/w`、`push_imm_helper`）是老内核没走到的宽度/形态变体，
+  属于正常冗余，不是缺口。

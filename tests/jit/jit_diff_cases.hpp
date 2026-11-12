@@ -32,4 +32,8 @@ std::vector<DiffCase> alu_cases();
 /// @brief Cases for the later lowering rounds (pxor, shifts, rip-relative).
 std::vector<DiffCase> extra_cases();
 
+/// @brief Core lowering cases (mov/add/lea/load/store + indexed + add-mem),
+///        split out of test_jit_diff.cpp so tooling shares the same table.
+std::vector<DiffCase> base_cases();
+
 } // namespace jit_diff_cases

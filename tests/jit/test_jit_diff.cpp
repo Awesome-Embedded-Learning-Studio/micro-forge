@@ -59,57 +59,10 @@ TEST_P(JitDiffTest, MatchesInterpreter) {
     EXPECT_EQ(interpreter.memory, jit.memory);
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    Native, JitDiffTest,
-    ::testing::Values(
-        DiffCase{"MovImm32", {0x49, 0xC7, 0xC1, 0x78, 0x56, 0x34, 0x12}, 0, 0x12345678},
-        DiffCase{"MovNegativeImm32", {0x49, 0xC7, 0xC1, 0xFF, 0xFF, 0xFF, 0xFF}, 0, UINT64_MAX},
-        DiffCase{"AddPositive", {0x49, 0x81, 0xC1, 0x01, 0x01, 0x00, 0x00}, 0xF, 0x110, 0x10},
-        DiffCase{
-            "AddNegative", {0x49, 0x81, 0xC1, 0x00, 0xFF, 0xFF, 0xFF}, 5, UINT64_MAX - 250, 0x84},
-        DiffCase{"AddCarry", {0x49, 0x81, 0xC1, 1, 0, 0, 0}, UINT64_MAX, 0, 0x55},
-        DiffCase{"AddOverflow",
-                 {0x49, 0x81, 0xC1, 1, 0, 0, 0},
-                 0x7FFFFFFFFFFFFFFFULL,
-                 0x8000000000000000ULL,
-                 0x894},
-        DiffCase{"AddNegativeOverflow",
-                 {0x49, 0x81, 0xC1, 0xFF, 0xFF, 0xFF, 0xFF},
-                 0x8000000000000000ULL,
-                 0x7FFFFFFFFFFFFFFFULL,
-                 0x805},
-        DiffCase{"MovRegReg", {0x4D, 0x89, 0xD1}, 0, kStored}, // mov r9,r10
-        DiffCase{"LeaBaseDisp", {0x4D, 0x8D, 0x8C, 0x24, 0xB8, 0xFF, 0xFF, 0xFF}, 0, kData},
-        DiffCase{"LoadBaseDisp", {0x4D, 0x8B, 0x8C, 0x24, 0xB8, 0xFF, 0xFF, 0xFF}, 0, kLoaded},
-        DiffCase{"LoadRipDisp", {0x4C, 0x8B, 0x0D, 0xF9, 0x2F, 0, 0}, 0, kLoaded},
-        DiffCase{
-            "StoreBaseDisp", {0x4D, 0x89, 0x94, 0x24, 0xB8, 0xFF, 0xFF, 0xFF}, 0, 0, kFlags, true},
-        // Exact requested forms: mov rax,[rbx+rcx*8+0x10] and the scale-4 store.
-        indexed_case("LoadIdxScale8", {0x48, 0x8B, 0x44, 0xCB, 0x10}, false, kData - 0x28),
-        indexed_case("StoreIdxScale4", {0x48, 0x89, 0x44, 0x8B, 0x20}, true, kData - 0x2C),
-        indexed_case("LoadIdxScale4NoDisp", {0x48, 0x8B, 0x04, 0x8B}, false, kData - 12),
-        indexed_case("StoreIdxScale1NoDisp", {0x48, 0x89, 0x04, 0x0B}, true, kData - 3),
-        indexed_case("LoadIdxScale2NegativeDisp", {0x48, 0x8B, 0x44, 0x4B, 0xE0}, false,
-                     kData + 0x20 - 6),
-        indexed_case("StoreIdxScale8NegativeDisp", {0x48, 0x89, 0x44, 0xCB, 0xE0}, true,
-                     kData + 0x20 - 24),
-        indexed_case("LoadIdxScale1AliasedNegativeIndex", {0x48, 0x8B, 0x04, 0x03}, false,
-                     kData + 3, UINT64_MAX - 2, Reg::kRax),
-        indexed_case("StoreIdxScale2HighIndexReg", {0x4A, 0x89, 0x04, 0x6B}, true, kData - 6, 3,
-                     Reg::kR13),
-        add_mem_case("AddMemCarry", UINT64_MAX, 1, 0, 0x55),
-        add_mem_case("AddMemOverflow", 0x7FFFFFFFFFFFFFFFULL, 1, 0x8000000000000000ULL, 0x894),
-        add_mem_case("AddMemNegativeOverflow", 0x8000000000000000ULL, UINT64_MAX,
-                     0x7FFFFFFFFFFFFFFFULL, 0x805),
-        add_mem_case("AddMemAuxCarry", 15, 1, 16, 0x10),
-        add_mem_case("AddMemNoAuxCarry", 7, 1, 8, 0),
-        add_mem_case("AddMemNoDisp", 2, 0x100000001ULL, 0x100000003ULL, 4, kData,
-                     {0x4D, 0x01, 0x14, 0x24}),
-        add_mem_case("AddMemPositiveDisp8", 0, 0, 0, 0x44, kData - 0x48,
-                     {0x4D, 0x01, 0x54, 0x24, 0x48}),
-        add_mem_case("AddMemAliasedBase", 0, kStored, kData + 0x48, 4, kData + 0x48,
-                     {0x4D, 0x01, 0x64, 0x24, 0xB8})),
-    [](const ::testing::TestParamInfo<DiffCase>& info) { return info.param.name; });
+INSTANTIATE_TEST_SUITE_P(Native, JitDiffTest, ::testing::ValuesIn(jit_diff_cases::base_cases()),
+                         [](const ::testing::TestParamInfo<DiffCase>& info) {
+                             return info.param.name;
+                         });
 
 INSTANTIATE_TEST_SUITE_P(Widths, JitDiffTest, ::testing::ValuesIn(width_cases()),
                          [](const ::testing::TestParamInfo<DiffCase>& info) {
