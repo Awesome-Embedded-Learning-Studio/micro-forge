@@ -6,6 +6,7 @@
 #include "jit_translate_mov.hpp"
 
 #include "micro_forge/base/jit_templates.hpp"
+#include "micro_forge/base/jit_templates_generated.hpp"
 
 #include <bit>
 #include <cstdint>
@@ -21,6 +22,7 @@ using arch::x86_64::Mnemonic;
 using arch::x86_64::Operand;
 
 using namespace jit_templates;
+namespace jg = micro_forge::base::jit_gen;
 
 // Keep the final slot write eight bytes long, preserving every existing hole.
 template <auto Code>
@@ -76,16 +78,18 @@ std::optional<TranslatedInsn> translate_move(const arch::x86_64::DecodedInsn& in
         const auto disp = static_cast<std::uint32_t>(insn.ops[1].disp);
         if (slot.has_value() && base.has_value()) {
             return TranslatedInsn{
-                .code = jit_templates::kLoadSlot,
+                .code = jg::kLoadSlot,
                 .patches =
                     {
-                        {.offset = 5, .size = 4, .value = *base},
-                        {.offset = 12, .size = 4, .value = disp},
-                        {.offset = 27, .size = 4, .value = insn.ops[1].size},
-                        {.offset = 49, .size = 4, .value = *slot},
+                        jg::hole_patch(jg::kLoadSlotHoles, jg::HoleKind::kBase32, *base),
+                        jg::hole_patch(jg::kLoadSlotHoles, jg::HoleKind::kDisp32, disp),
+                        jg::hole_patch(jg::kLoadSlotHoles, jg::HoleKind::kWidth32,
+                                       insn.ops[1].size),
+                        jg::hole_patch(jg::kLoadSlotHoles, jg::HoleKind::kDst32, *slot),
                     },
-                .call_offset = 33,
-                .cpu_offset = 18,
+                .call_offset =
+                    jg::hole_patch(jg::kLoadSlotHoles, jg::HoleKind::kHelper64, 0).offset,
+                .cpu_offset = jg::hole_patch(jg::kLoadSlotHoles, jg::HoleKind::kCpu64, 0).offset,
                 .helper = JitHelper::kLoad,
             };
         }
@@ -107,14 +111,15 @@ std::optional<TranslatedInsn> translate_move(const arch::x86_64::DecodedInsn& in
         const auto amn = static_cast<unsigned>(insn.mnemonic);
         if (slot.has_value() && base.has_value()) {
             return TranslatedInsn{
-                .code = kAluMemSlot,
+                .code = jg::kAluMemSlot,
                 .patches =
                     {
-                        {.offset = 2, .size = 4, .value = *slot},
-                        {.offset = 9, .size = 4, .value = *base},
-                        {.offset = 16, .size = 4, .value = adisp},
-                        {.offset = 21, .size = 4, .value = amn},
-                        {.offset = 27, .size = 4, .value = insn.ops[0].size},
+                        jg::hole_patch(jg::kAluMemSlotHoles, jg::HoleKind::kSlot32, *slot),
+                        jg::hole_patch(jg::kAluMemSlotHoles, jg::HoleKind::kBase32, *base),
+                        jg::hole_patch(jg::kAluMemSlotHoles, jg::HoleKind::kDisp32, adisp),
+                        jg::hole_patch(jg::kAluMemSlotHoles, jg::HoleKind::kMnem32, amn),
+                        jg::hole_patch(jg::kAluMemSlotHoles, jg::HoleKind::kWidth32,
+                                       insn.ops[0].size),
                     },
                 .call_offset = 43,
                 .cpu_offset = 33,

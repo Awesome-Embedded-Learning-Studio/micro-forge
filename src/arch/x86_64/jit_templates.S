@@ -697,3 +697,68 @@ tpl_cmp_mem_idx_slot:
     pop rdi
 .globl tpl_cmp_mem_idx_slot_end
 tpl_cmp_mem_idx_slot_end:
+
+/* Load variants that write back only 1 or 2 bytes. load_code<N> used to
+ * patch the last 8 bytes of tpl_load_slot in place, which assumed where the
+ * write-back sat; the assembler emits each width directly instead. */
+.globl tpl_load_slot_b
+tpl_load_slot_b:
+    push rdi
+    mov rsi, [rdi + 0x6B415365]
+    add rsi, 0x6B415367
+    movabs rdi, 0x1B4153A5000000C1
+    mov edx, 0x6B415369
+    movabs r11, 0x2B4153A5000000C2
+    call r11
+    pop rdi
+    mov [rdi + 0x6B415372], al
+.globl tpl_load_slot_b_end
+tpl_load_slot_b_end:
+
+.globl tpl_load_slot_w
+tpl_load_slot_w:
+    push rdi
+    mov rsi, [rdi + 0x6B415365]
+    add rsi, 0x6B415367
+    movabs rdi, 0x1B4153A5000000C1
+    mov edx, 0x6B415369
+    movabs r11, 0x2B4153A5000000C2
+    call r11
+    pop rdi
+    mov [rdi + 0x6B415372], ax
+.globl tpl_load_slot_w_end
+tpl_load_slot_w_end:
+
+.globl tpl_load_idx_slot_b
+tpl_load_idx_slot_b:
+    push rdi
+    mov rsi, [rdi + 0x6B415365]
+    mov r8, [rdi + 0x6B415370]
+    shl r8, 0x5A
+    add rsi, r8
+    add rsi, 0x6B415367
+    movabs rdi, 0x1B4153A5000000C1
+    mov edx, 0x6B415369
+    movabs r11, 0x2B4153A5000000C2
+    call r11
+    pop rdi
+    mov [rdi + 0x6B415372], al
+.globl tpl_load_idx_slot_b_end
+tpl_load_idx_slot_b_end:
+
+.globl tpl_load_idx_slot_w
+tpl_load_idx_slot_w:
+    push rdi
+    mov rsi, [rdi + 0x6B415365]
+    mov r8, [rdi + 0x6B415370]
+    shl r8, 0x5A
+    add rsi, r8
+    add rsi, 0x6B415367
+    movabs rdi, 0x1B4153A5000000C1
+    mov edx, 0x6B415369
+    movabs r11, 0x2B4153A5000000C2
+    call r11
+    pop rdi
+    mov [rdi + 0x6B415372], ax
+.globl tpl_load_idx_slot_w_end
+tpl_load_idx_slot_w_end:
