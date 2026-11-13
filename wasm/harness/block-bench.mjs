@@ -31,6 +31,8 @@ e.free(k); e.free(d);
 
 // --- block machinery -------------------------------------------------
 const outLen = e.malloc(4), outInsns = e.malloc(4), outMasks = e.malloc(8);
+const bridge0 = e.mf_gpr_bridge_base(); // mirror base is fixed for the engine
+let view0 = new DataView(e.memory.buffer);
 const cache = new Map(); // rip(BigInt) -> {run,...} | null; LRU-bounded below
 const refusedHits = new Map(); // rip(Number key hex) -> executions (weight)
 const CACHE_MAX = 30000;
@@ -83,46 +85,49 @@ async function runBlocks(budget) {
       cachePut(key, block);
       if (block) ++compiled; else ++refused;
     }
-    if (block && (budgetOf(e) >= BigInt(block.count))) {
-      // mirror bridge: one C call each way, no BigInt crossing the boundary
-      e.mf_gprs_flush(block.used | 0x80000000); // flags always: handoff commits them
+    if (block) {
+      // bridge prepare = flush + event budget in one crossing; flags always
+      // flush because a handoff commits them. i64 -> signed BigInt: normalize.
+      const raw = e.mf_bridge_prepare(block.used | 0x80000000);
+      const budget = raw < 0n ? raw + (1n << 64n) : raw;
+      if (budget >= BigInt(block.count)) {
+        // run the block: finish = commit + store drain + rip + retire
+        // in one crossing
       const next = block.run();
-      const bridge = e.mf_gpr_bridge_base();
-      const view = new DataView(e.memory.buffer);
+      const bridge = bridge0;
+      if (view0.buffer !== e.memory.buffer) view0 = new DataView(e.memory.buffer);
+      const view = view0;
       const handed = view.getUint32(bridge + 292, true) === 1;
       // handoff wrote a prefix dirty mask (may exceed the static liveness mask)
       const hd = handed ? view.getUint32(bridge + 300, true) : 0;
-      e.mf_gprs_commit(block.dirty | hd | 0x80000000);
-      // drain the guest store log: block stores bypass note_store, so the
-      // interpreter decode cache must be invalidated from the runner side
-      const nStores = view.getUint32(bridge + 296, true);
-      for (let i = 0; i < nStores; ++i) e.mf_note_store(view.getBigUint64(bridge + 304 + i * 8, true));
-      if (nStores) view.setUint32(bridge + 296, 0, true);
       if (handed) {
         // handoff: mid-block refusal or a ret terminator hands the rest
         // back; done instructions ran, the runner takes one interp step.
         const done = view.getUint32(bridge + 288, true);
-        e.mf_set_rip(next);
-        e.mf_retire(done);
+        // bridge finish = commit + store-log drain + rip + retire in one
+        // crossing (block stores bypass note_store, so the decode cache
+        // needs the drained entries before any block reuse)
+        e.mf_bridge_finish(next, done, block.dirty | hd | 0x80000000);
         const before = e.mf_icount();
         const exit = decodeExit(e.mf_run(1n));
         retired += BigInt(done) + (e.mf_icount() - before);
         if (exit.kind !== EXIT_KIND.RUNNING) return { retired, exit, compiled, refused, execs };
       } else {
-        e.mf_set_rip(next);
-        e.mf_retire(block.count); // scheduler + interrupt accounting
+        e.mf_bridge_finish(next, block.count, block.dirty | 0x80000000);
         retired += BigInt(block.count);
       }
-      ++execs;
-    } else {
-      refusedHits.set(key, (refusedHits.get(key) ?? 0) + 1);
-      // one interpreter step: rep-prefixed insns retire one per iteration,
-      // so the actual count comes from mf_icount, not the step itself
-      const before = e.mf_icount();
-      const exit = decodeExit(e.mf_run(1n));
-      retired += e.mf_icount() - before;
-      if (exit.kind !== EXIT_KIND.RUNNING) return { retired, exit, compiled, refused, execs };
+        ++execs;
+        continue;
+      }
     }
+    // no block, or the event budget would outlive it: one interpreter step.
+    // rep-prefixed insns retire one per iteration, so the actual count comes
+    // from mf_icount, not the step itself
+    refusedHits.set(key, (refusedHits.get(key) ?? 0) + 1);
+    const before = e.mf_icount();
+    const exit = decodeExit(e.mf_run(1n));
+    retired += e.mf_icount() - before;
+    if (exit.kind !== EXIT_KIND.RUNNING) return { retired, exit, compiled, refused, execs };
   }
   return { retired, exit: { kind: 0, code: 0 }, compiled, refused, execs };
 }
@@ -154,8 +159,8 @@ console.log(JSON.stringify({
   icount: result.retired.toString(),
   exit: result.exit,
   serial: e.mf_serial_tx().toString(),
-  serialText: process.env.MF_DUMP_SERIAL ? Buffer.from(Number(e.mf_serial_tx())).toString("latin1") : undefined,
   compiled: result.compiled, refused: result.refused, blockExecs: result.execs,
 }));
+
 const top = [...refusedHits.entries()].sort((x, y) => y[1] - x[1]).slice(0, 12);
 console.error("top refused (weight, rip): " + top.map(([r, n]) => `${n}@0x${(r < 0n ? r + (1n << 64n) : r).toString(16)}`).join(" "));

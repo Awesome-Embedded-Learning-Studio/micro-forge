@@ -53,16 +53,22 @@ std::uint8_t alu_opcode(Mnemonic mnemonic) {
     }
 }
 
-/// Two-register form (ops[0] and ops[1] both kReg, qword or dword).
+/// Two-register form (ops[0] and ops[1] both GPR slots, one width).
 bool reg_reg(const arch::x86_64::DecodedInsn& insn) {
-    return insn.ops[0].kind == Operand::Kind::kReg && insn.ops[1].kind == Operand::Kind::kReg &&
-           (insn.ops[0].size == 8 || insn.ops[0].size == 4) && insn.ops[1].size == insn.ops[0].size;
+    return reglike(insn.ops[0]) && insn.ops[1].kind == Operand::Kind::kReg &&
+           insn.ops[0].size != 0 && insn.ops[0].size <= 8 && insn.ops[1].size == insn.ops[0].size;
 }
 
-/// Register, immediate form (ops[0] kReg, ops[1] kImm, qword or dword reg).
+/// Register/immediate form (ops[0] GPR slot, ops[1] kImm).
 bool reg_imm(const arch::x86_64::DecodedInsn& insn) {
-    return insn.ops[0].kind == Operand::Kind::kReg && insn.ops[1].kind == Operand::Kind::kImm &&
-           (insn.ops[0].size == 8 || insn.ops[0].size == 4);
+    return reglike(insn.ops[0]) && insn.ops[1].kind == Operand::Kind::kImm &&
+           insn.ops[0].size != 0 && insn.ops[0].size <= 8;
+}
+
+/// Zeros the carry-in local (reg-path ALU never has an x86 carry-in).
+void emit_carry_in_zero(std::vector<std::uint8_t>& body, std::uint32_t /*base*/) {
+    emit_i64(body, 0);
+    emit_local(body, kLocalSet, kTmpCi);
 }
 
 /// i32.load of the flags cell (leaves the packed flags on the stack).
@@ -163,12 +169,13 @@ void emit_cc(std::vector<std::uint8_t>& body, arch::x86_64::Cc cc, std::uint32_t
 
 /// Mnemonics that write ops[0] (cmp/test only consume their operands).
 bool writes_dst(Mnemonic mnemonic) {
-    return mnemonic == Mnemonic::kMov || alu_opcode(mnemonic) != 0;
+    return mnemonic == Mnemonic::kMov || mnemonic == Mnemonic::kSetcc || alu_opcode(mnemonic) != 0;
 }
 
-/// Mnemonics whose lowering calls emit_flags (writes the flags cell).
+/// Mnemonics whose lowering writes the flags cell or reads CF (bt).
 bool writes_flags(Mnemonic mnemonic) {
-    return alu_opcode(mnemonic) != 0 || mnemonic == Mnemonic::kCmp || mnemonic == Mnemonic::kTest;
+    return alu_opcode(mnemonic) != 0 || mnemonic == Mnemonic::kCmp || mnemonic == Mnemonic::kTest ||
+           mnemonic == Mnemonic::kBt;
 }
 
 /// Exit shape one terminating instruction reports to the block builder.
@@ -225,70 +232,133 @@ bool lower_insn(const arch::x86_64::DecodedInsn& insn, std::uint64_t rip,
         term.fall = after;
         return true;
     }
+    // bt r,r: CF-only update, every other flag stays untouched
+    if (insn.mnemonic == Mnemonic::kBt && reg_reg(insn)) {
+        const auto dst0 = local_of(insn.ops[0].reg);
+        const auto src1 = local_of(insn.ops[1].reg);
+        if (!dst0.has_value() || !src1.has_value() || !mirror_ok(insn, insn.ops[0]) ||
+            !mirror_ok(insn, insn.ops[1])) {
+            return false;
+        }
+        const unsigned size = insn.ops[0].size;
+        emit_local(body, kLocalGet, *dst0);
+        if (size < 8) {
+            emit_i64(body, width_mask_of(size));
+            body.push_back(kI64And);
+        }
+        emit_local(body, kLocalSet, kTmpA);
+        emit_local(body, kLocalGet, *src1);
+        emit_local(body, kLocalSet, kTmpB);
+        // pos = index % bits; bit = (t_a >> pos) & 1
+        emit_local(body, kLocalGet, kTmpB);
+        emit_i64(body, static_cast<std::int64_t>(size) * 8);
+        body.push_back(kI64RemU);
+        emit_local(body, kLocalSet, kTmpE);
+        // cell = (cell & ~1) | bit
+        emit_i32(body, static_cast<std::int32_t>(kFlagsSlot + base));
+        emit_load_flags(body, base);
+        emit_i32(body, -2);
+        body.push_back(kI32And);
+        emit_local(body, kLocalGet, kTmpA);
+        emit_local(body, kLocalGet, kTmpE);
+        body.push_back(kI64ShrU);
+        body.push_back(kI32Wrap);
+        emit_i32(body, 1);
+        body.push_back(kI32And);
+        body.push_back(kI32Or);
+        body.push_back(kI32Store);
+        body.push_back(kAlign4);
+        append_uleb(body, 0);
+        return true;
+    }
+    // setcc r8: merge the 0/1 condition byte into the register's high bits
+    if (insn.mnemonic == Mnemonic::kSetcc && reglike(insn.ops[0]) && insn.ops[0].size == 1) {
+        const auto dst = local_of(insn.ops[0].reg);
+        if (!dst.has_value() || !mirror_ok(insn, insn.ops[0])) {
+            return false;
+        }
+        emit_cc(body, insn.cc, base);
+        // emit_cc yields the raw masked flag bits; normalize to 0/1
+        body.push_back(kI32Eqz);
+        body.push_back(kI32Eqz);
+        body.push_back(kI64ExtendI32U);
+        emit_local(body, kLocalSet, kTmpC);
+        emit_dst_write(body, *dst, kTmpC, 1);
+        return true;
+    }
     if (insn.ops[0].kind == Operand::Kind::kMem || insn.ops[1].kind == Operand::Kind::kMem) {
         return lower_mem_insn(insn, rip, body, base, ram_limit, done, dirty_so_far);
     }
-    const bool qword = insn.ops[0].size == 8;
-    const std::int64_t width_mask =
-        qword ? ~INT64_C(0) : static_cast<std::int64_t>(UINT64_C(0xFFFFFFFF));
+    const unsigned size = insn.ops[0].size;
+    const std::int64_t width_mask = width_mask_of(size);
     const bool cmp_test = insn.mnemonic == Mnemonic::kCmp || insn.mnemonic == Mnemonic::kTest;
     const bool imm_src = reg_imm(insn);
     const bool reg_src = reg_reg(insn);
     if ((!imm_src && !reg_src) ||
-        (!cmp_test && insn.mnemonic != Mnemonic::kMov && !writes_flags(insn.mnemonic))) {
+        (!cmp_test && insn.mnemonic != Mnemonic::kMov &&
+         (!writes_flags(insn.mnemonic) || insn.mnemonic == Mnemonic::kBt))) {
+        // bt has no ALU opcode here (alu_opcode returns 0, which is the
+        // wasm unreachable opcode) — only the dedicated r,r path above
+        // lowers it; every other bt shape must fall back to the interpreter
         return false;
     }
     const auto dst = local_of(insn.ops[0].reg);
     const auto src = imm_src ? std::optional<std::uint32_t>{} : local_of(insn.ops[1].reg);
-    if (!dst.has_value() || (!imm_src && !src.has_value())) {
+    if (!dst.has_value() || !mirror_ok(insn, insn.ops[0]) ||
+        (!imm_src && (!src.has_value() || !mirror_ok(insn, insn.ops[1])))) {
         return false;
     }
     if (insn.mnemonic == Mnemonic::kMov) {
         if (imm_src) {
-            // NOLINTNEXTLINE(bugprone-signed-bitwise) -- dword zero-extend mask
-            emit_i64(body, insn.ops[1].disp & width_mask); // mov r32 zero-extends
+            // NOLINTNEXTLINE(bugprone-signed-bitwise) -- imm zero-extend mask
+            emit_i64(body, insn.ops[1].disp & width_mask); // imm loads zero-extend
+            emit_local(body, kLocalSet, kTmpC);
         } else {
             emit_local(body, kLocalGet, *src);
-            if (!qword) {
+            if (size < 8) {
                 emit_i64(body, width_mask);
                 body.push_back(kI64And);
             }
+            emit_local(body, kLocalSet, kTmpC);
         }
-        emit_local(body, kLocalSet, *dst);
+        emit_dst_write(body, *dst, kTmpC, size);
         return true;
     }
     const std::uint8_t opcode = cmp_alu_opcode(insn.mnemonic);
     emit_local(body, kLocalGet, *dst);
-    if (!qword) {
+    if (size < 8) {
         emit_i64(body, width_mask);
-        body.push_back(kI64And); // t_a must match the 32-bit domain too
+        body.push_back(kI64And); // t_a must match the operand domain too
     }
     emit_local(body, kLocalSet, kTmpA); // t_a = dst
     if (imm_src) {
-        // NOLINTNEXTLINE(bugprone-signed-bitwise) -- dword operand mask
+        // NOLINTNEXTLINE(bugprone-signed-bitwise) -- operand mask
         emit_i64(body, insn.ops[1].disp & width_mask);
     } else {
         emit_local(body, kLocalGet, *src);
-        emit_i64(body, width_mask);
-        body.push_back(kI64And);
+        if (size < 8) {
+            emit_i64(body, width_mask);
+            body.push_back(kI64And);
+        }
     }
     emit_local(body, kLocalSet, kTmpB); // t_b = src
+    emit_carry_in_zero(body, base);
     emit_local(body, kLocalGet, kTmpA);
     emit_local(body, kLocalGet, kTmpB);
     body.push_back(opcode);
-    // cmp/test keep the result in t_c: the destination register is not
-    // written, only the flags chain consumes it.
-    const std::uint32_t result = cmp_test ? kTmpC : *dst;
-    emit_local(body, kLocalSet, result);
-    if (!qword) {
-        // dword stores zero-extend; t_a/t_b stay masked so the flag chain
-        // (cf via i64.lt_u, zf via eqz) matches 32-bit semantics.
-        emit_local(body, kLocalGet, result);
+    emit_local(body, kLocalSet, kTmpC);
+    if (size < 8) {
+        // t_c stays masked so the flag chain (carry via s2, zf via eqz)
+        // matches sub-dword semantics; the dst write merges after.
+        emit_local(body, kLocalGet, kTmpC);
         emit_i64(body, width_mask);
         body.push_back(kI64And);
-        emit_local(body, kLocalSet, result);
+        emit_local(body, kLocalSet, kTmpC);
     }
-    emit_flags(body, result, alu_kind(insn.mnemonic), qword, base);
+    emit_flags(body, kTmpC, alu_kind(insn.mnemonic), top_bit_of(size), base);
+    if (!cmp_test) {
+        emit_dst_write(body, *dst, kTmpC, size);
+    }
     return true;
 }
 
@@ -321,10 +391,11 @@ WasmBlockInfo append_wasm_block(std::span<const arch::x86_64::DecodedInsn> insns
         if (insn.mnemonic != Mnemonic::kRet && insn.mnemonic != Mnemonic::kJmp &&
             insn.mnemonic != Mnemonic::kJcc) {
             for (const auto& op : insn.ops) {
-                if (op.kind == Operand::Kind::kReg) {
+                if (reglike(op) && op.size != 0 && op.size <= 8 && mirror_ok(insn, op)) {
+                    // every width bridges into the full 64-bit slot; byte
+                    // and word writes also read the old value for the merge
                     const auto local = local_of(op.reg);
-                    // qword and dword both bridge into the full 64-bit slot
-                    if (local.has_value() && (op.size == 8 || op.size == 4)) {
+                    if (local.has_value()) {
                         mask.mark_used(*local);
                     }
                 }
@@ -343,7 +414,7 @@ WasmBlockInfo append_wasm_block(std::span<const arch::x86_64::DecodedInsn> insns
                     }
                 }
             }
-            if (writes_dst(insn.mnemonic) && insn.ops[0].kind == Operand::Kind::kReg) {
+            if (writes_dst(insn.mnemonic) && reglike(insn.ops[0])) {
                 const auto dst = local_of(insn.ops[0].reg);
                 if (dst.has_value()) {
                     mask.mark_dirty(*dst);

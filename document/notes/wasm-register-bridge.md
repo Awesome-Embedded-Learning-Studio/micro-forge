@@ -83,3 +83,36 @@ wasm 里执行，控制流与不支持指令回到解释器。验收标准与 na
 - 实测：blocks 1.42→2.53 Mips（编译量 38.3k 回常态）；interp 42.4 持平；
   串口 1238=1238；**40M 对拍 26,580,732 边界全绿**；九段全绿。
 - 下一战场仍是速度：内存操作数下沉 + 内联页表遍历（桥拷贝主导，blocks 仍慢 17 倍）。
+
+## 2026-11-14 切片加宽 + 桥合并（速度第一轮）
+
+- **切片加宽**（wasm_block.cpp / wasm_block_mem.cpp）：
+  - reg/reg 与 reg/imm ALU（add/sub/adc/sbb/and/or/xor/cmp/test）开到 1..8 字节宽，
+    统一走 `emit_dst_write`（8/16 位合并高字节、32 位零扩展）+ 带进位语义的
+    `emit_flags(kind, top_bit)`（width<8 进位=移出位，与解释器 alu_add 逐位一致）；
+  - bt r,r（kI64RemU 取模定位 CF-only 更新）、setcc r8（emit_cc 后**两次 kI32Eqz
+    归一化**——emit_cc 返回的是原始掩码位，kBe 直接写会得 2 不是 1）；
+  - `mirror_ok` 守卫无 REX 的 h 寄存器字节操作数（AH/CH/DH/BH 是父槽 byte1，
+    不在镜像布局上）；REX 后 spl/bpl/sil/dil 是低字节、照常入块。
+- **两个实测抓到的正确性坑**：
+  - setcc 归一化（上）：lockstep 首个分叉 setbe dl 写 2；
+  - **bt reg,imm 混进 ALU 通路**：writes_flags 包含 kBt 但 alu_opcode(bt) 返回 0
+    ——0 恰是 wasm `unreachable` 操作码，模块能实例化、运行即 trap（40M 对拍在
+    ic 20762799 用户态 rip 0x4c2542 `0f ba e2 17` 抓到）。修法：reg 通路显式
+    排除 kBt（只有专用 r,r 分支降它）。
+- **桥合并**（src/wasm/bridge.cpp 新 TU）：`mf_bridge_prepare(mask)`=flush+event
+  budget、`mf_bridge_finish(rip,retire,mask)`=commit+store-log drain+set_rip+
+  retire，每次块执行 8 次 C 跨界降到 3 次；harness 缓存 bridge base 与 DataView。
+  顺手修了 bench 的事件预算短路（budget<count 时原来会空转不退休指令，表现为
+  “挂死”）。另清掉了 bench 里的 TEMP 诊断（refCodes/refdetail/refbytes）与坏死的
+  serialText 字段。
+- **拆分**：wasm_block_mem.cpp 772 行超限 → 页表遍历（walk/level/paddr/large
+  page/handoff/mode guard）拆到 wasm_block_walk.cpp + wasm_block_internal.hpp。
+- **实测（block-bench.mjs，同机同参数）**：
+  - 8M：interp 40.40 / blocks **4.45 Mips**（上一轮 2.29，**+94%**）；
+  - 40M：interp 25.96 / blocks 1.98 Mips，块执行占比 **45.6%**（1825 万次块执行、
+    16.4M 单步；上一轮占比 0.09%）。40M 时变慢的主因是 38k 次逐块
+    WebAssembly.instantiate（编译 ~11s）+ 用户态块平均只有 2.8 条指令。
+  - 40M lockstep 25,664,798 边界全绿、串口 1238=1238、九段验收全绿。
+- 下一战场（按收益）：批量/复用块实例化（instantiate 主导）、call rel32 入块、
+  用户态短块合并。

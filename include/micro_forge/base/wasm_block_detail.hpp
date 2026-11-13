@@ -51,6 +51,7 @@ constexpr std::uint8_t kI64Eqz = 0x50;
 constexpr std::uint8_t kI64LtU = 0x54;
 constexpr std::uint8_t kI64ShrU = 0x88;
 constexpr std::uint8_t kI64ShlOp = 0x86;
+constexpr std::uint8_t kI64RemU = 0x81;
 constexpr std::uint8_t kI32Wrap = 0xA7;
 constexpr std::uint8_t kI32Store = 0x36;
 constexpr std::uint8_t kI32Store8 = 0x3A;
@@ -67,10 +68,12 @@ constexpr std::uint8_t kAlign2 = 0x02;
 constexpr std::uint8_t kAlign1 = 0x01;
 constexpr std::uint8_t kAlign0 = 0x00;
 
-constexpr unsigned kNumGprs = 16;         ///< One wasm local per guest GPR.
-constexpr std::uint32_t kTmpA = 16;       ///< i64 scratch: original dst.
-constexpr std::uint32_t kTmpB = 17;       ///< i64 scratch: source operand.
-constexpr std::uint32_t kTmpC = 19;       ///< i64 scratch: cmp/test result.
+constexpr unsigned kNumGprs = 16;   ///< One wasm local per guest GPR.
+constexpr std::uint32_t kTmpA = 16; ///< i64 scratch: original dst.
+constexpr std::uint32_t kTmpB = 17; ///< i64 scratch: source operand.
+/// i64 scratch: carry-in (0/1) for adc/sbb flag chains; 0 for plain add/sub.
+constexpr std::uint32_t kTmpCi = 18;
+constexpr std::uint32_t kTmpC = 19; ///< i64 scratch: cmp/test result.
 /// i64 scratch: effective address under page-table walk (mem operands).
 constexpr std::uint32_t kTmpV = 20;
 /// i64 scratch: page-table frame pointer while walking.
@@ -79,17 +82,17 @@ constexpr std::uint32_t kTmpT = 21;
 constexpr std::uint32_t kTmpE = 22;
 /// i64 scratch: translated guest-physical address.
 constexpr std::uint32_t kTmpPd = 23;
-constexpr std::uint32_t kTmpP = 25;       ///< i32 scratch: parity chain.
-constexpr std::uint32_t kFlagsSlot = 256; ///< i32 flags cell behind the GPRs.
-constexpr std::uint32_t kCr3Slot = 264;   ///< i64 cr3 cell (walk root).
-constexpr std::uint32_t kCr0Slot = 272;   ///< i64 cr0 cell (WP bit guard).
-constexpr std::uint32_t kCplSlot = 280;   ///< u8 cpl cell (0 = kernel).
-constexpr std::uint32_t kDoneSlot = 288;   ///< i32 instructions done at handoff.
-constexpr std::uint32_t kHandedSlot = 292; ///< i32 handoff flag (1 = handed back).
-constexpr std::uint32_t kStoreCountSlot = 296; ///< u32 guest stores pending invalidation.
+constexpr std::uint32_t kTmpP = 25;              ///< i32 scratch: parity chain.
+constexpr std::uint32_t kFlagsSlot = 256;        ///< i32 flags cell behind the GPRs.
+constexpr std::uint32_t kCr3Slot = 264;          ///< i64 cr3 cell (walk root).
+constexpr std::uint32_t kCr0Slot = 272;          ///< i64 cr0 cell (WP bit guard).
+constexpr std::uint32_t kCplSlot = 280;          ///< u8 cpl cell (0 = kernel).
+constexpr std::uint32_t kDoneSlot = 288;         ///< i32 instructions done at handoff.
+constexpr std::uint32_t kHandedSlot = 292;       ///< i32 handoff flag (1 = handed back).
+constexpr std::uint32_t kStoreCountSlot = 296;   ///< u32 guest stores pending invalidation.
 constexpr std::uint32_t kHandoffDirtySlot = 300; ///< u32 dirty_bits written back at handoff.
-constexpr std::uint32_t kStoreLogSlot = 304;   ///< 8 store paddrs for note_store.
-constexpr std::uint32_t kMirrorBytes = 372;    ///< Total GPR mirror size.
+constexpr std::uint32_t kStoreLogSlot = 304;     ///< 8 store paddrs for note_store.
+constexpr std::uint32_t kMirrorBytes = 372;      ///< Total GPR mirror size.
 
 /// Local index of a guest GPR, or nothing when outside the 16-GPR map.
 inline std::optional<std::uint32_t> local_of(arch::x86_64::Reg reg) {
@@ -98,6 +101,52 @@ inline std::optional<std::uint32_t> local_of(arch::x86_64::Reg reg) {
         return std::nullopt;
     }
     return static_cast<std::uint32_t>(value);
+}
+
+/// @brief True unless @p op is an un-REXed h-register byte operand.
+/// ah/ch/dh/bh live in byte 1 of the parent slot, off the mirror layout.
+/// @param[in] insn Decoded instruction carrying the REX-present fact.
+/// @param[in] op Operand to vet.
+/// @return True when the operand maps onto a mirror local.
+inline bool mirror_ok(const arch::x86_64::DecodedInsn& insn, const Operand& op) {
+    if (op.size != 1) {
+        return true;
+    }
+    const auto id = static_cast<unsigned>(op.reg);
+    return insn.rex_present || id < 4U || id > 7U;
+}
+
+/// @brief True when the operand acts as a GPR slot.
+/// Implicit al/cl accumulator forms are included.
+/// @param[in] op Operand to test.
+/// @return True for kReg and kImplicit operands.
+inline bool reglike(const Operand& op) {
+    return op.kind == Operand::Kind::kReg || op.kind == Operand::Kind::kImplicit;
+}
+
+/// @brief Width mask of an operand size 1..8.
+/// Byte yields 0xFF, qword all ones; sizes 1..8 only, callers guard widths.
+/// @param[in] size Operand size in bytes.
+/// @return Mask covering the low @p size bytes.
+inline std::int64_t width_mask_of(unsigned size) {
+    switch (size) {
+    case 1:
+        return 0xFF;
+    case 2:
+        return 0xFFFF;
+    case 4:
+        return static_cast<std::int64_t>(UINT64_C(0xFFFFFFFF));
+    default:
+        return ~INT64_C(0);
+    }
+}
+
+/// @brief Top sign/carry bit index of an operand size.
+/// Sizes 1/2/4/8 map to 7/15/31/63.
+/// @param[in] size Operand size in bytes.
+/// @return Index of the most significant bit of @p size bytes.
+inline unsigned top_bit_of(unsigned size) {
+    return (8U * size) - 1U;
 }
 
 /// @brief Emits i32.const @p value.
@@ -127,14 +176,43 @@ inline void emit_load(std::vector<std::uint8_t>& body, std::uint32_t base) {
 }
 
 /// @brief Emits local.get/local.set of local @p idx.
-inline void emit_local(std::vector<std::uint8_t>& body, std::uint8_t opcode,
-                       std::uint32_t idx) {
+inline void emit_local(std::vector<std::uint8_t>& body, std::uint8_t opcode, std::uint32_t idx) {
     body.push_back(opcode);
     append_uleb(body, idx);
 }
 
+/// @brief Writes a width-masked result local into a GPR slot.
+///
+/// x86 write semantics: 8/16-bit writes merge into the slot's high bits,
+/// 32-bit writes zero-extend, 64-bit writes replace. @p res must already be
+/// masked to the operand width.
+inline void emit_dst_write(std::vector<std::uint8_t>& body, std::uint32_t dst, std::uint32_t res,
+                           unsigned size) {
+    if (size == 8) {
+        emit_local(body, kLocalGet, res);
+        emit_local(body, kLocalSet, dst);
+        return;
+    }
+    if (size == 4) {
+        emit_local(body, kLocalGet, res);
+        emit_i64(body, width_mask_of(4));
+        body.push_back(kI64And);
+        emit_local(body, kLocalSet, dst);
+        return;
+    }
+    emit_local(body, kLocalGet, dst);
+    // NOLINTNEXTLINE(bugprone-signed-bitwise) -- mask complement, not arithmetic
+    emit_i64(body, ~width_mask_of(size));
+    body.push_back(kI64And);
+    emit_local(body, kLocalGet, res);
+    body.push_back(kI64Or);
+    emit_local(body, kLocalSet, dst);
+}
+
 /**
- * @brief Emits the qword/dword flag chain of one ALU op into the flags cell.
+ * @brief Emits the flag chain of one ALU op into the flags cell. Add/sub
+ * chains read kTmpCi as carry/borrow-in (callers set 0 without one); the
+ * dst result of adc/sbb must already fold it in.
  *
  * Mirrors the interpreter's alu_add/alu_sub/alu_logic (set_zsp included):
  * t_a/t_b hold the masked operands and dst holds the result. The cell
@@ -142,17 +220,18 @@ inline void emit_local(std::vector<std::uint8_t>& body, std::uint8_t opcode,
  * @param[in,out] body Body bytes appended to.
  * @param[in] dst Destination local (holds the result).
  * @param[in] kind 0 = add, 1 = sub, 2 = logic.
- * @param[in] qword True for 64-bit semantics (top bit 63 instead of 31).
+ * @param[in] top_bit Top bit index of the width (7, 15, 31 or 63).
  * @param[in] base Static memory offset of the GPR mirror.
  */
-void emit_flags(std::vector<std::uint8_t>& body, std::uint32_t dst, unsigned kind, bool qword,
+void emit_flags(std::vector<std::uint8_t>& body, std::uint32_t dst, unsigned kind, unsigned top_bit,
                 std::uint32_t base);
 
 /**
  * @brief Lowers one instruction with a memory operand into wasm body bytes.
  *
  * Supports mov reg,[m] / mov [m],reg / mov [m],imm / cmp/test reg,[m] /
- * add/sub/and/or/xor reg,[m] in 32/64-bit width (stores also 8/16-bit).
+ * add/sub/adc/sbb/and/or/xor reg,[m] / add/sub/adc/sbb/and/or/xor/cmp/test
+ * [m],r (lock RMW included) in 8..64-bit width.
  * The access walks the guest page tables inline; any failure returns the
  * step sentinel so the caller takes one interpreter step.
  * @param[in] insn Decoded instruction.
@@ -163,8 +242,8 @@ void emit_flags(std::vector<std::uint8_t>& body, std::uint32_t dst, unsigned kin
  * @return True when lowered, false when the form is unsupported.
  */
 bool lower_mem_insn(const arch::x86_64::DecodedInsn& insn, std::uint64_t rip,
-                    std::vector<std::uint8_t>& body, std::uint32_t base,
-                    std::uint32_t ram_limit, unsigned done, std::uint32_t dirty_bits);
+                    std::vector<std::uint8_t>& body, std::uint32_t base, std::uint32_t ram_limit,
+                    unsigned done, std::uint32_t dirty_bits);
 
 /**
  * @brief Emits a handoff exit: mark the mirror flag, record how many

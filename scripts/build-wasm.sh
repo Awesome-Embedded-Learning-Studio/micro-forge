@@ -42,7 +42,7 @@ EXPORTS="${EXPORTS},_mf_read_console,_mf_snapshot,_mf_restore"
 EXPORTS="${EXPORTS},_mf_boot_cinux,_mf_inject_serial,_malloc,_free"
 EXPORTS="${EXPORTS},_mf_rip_low,_mf_rip_high,_mf_peek32,_mf_serial_tx"
 EXPORTS="${EXPORTS},_mf_instance_create,_mf_instance_destroy,_mf_instance_use"
-EXPORTS="${EXPORTS},_mf_wasm_block,_mf_wasm_block2,_mf_gprs_flush,_mf_gprs_commit,_mf_gpr_bridge_base,_mf_fetch_peek,_mf_write_guest"
+EXPORTS="${EXPORTS},_mf_wasm_block,_mf_wasm_block2,_mf_gprs_flush,_mf_gprs_commit,_mf_bridge_prepare,_mf_bridge_finish,_mf_gpr_bridge_base,_mf_fetch_peek,_mf_write_guest"
 EXPORTS="${EXPORTS},_mf_gpr_get,_mf_gpr_set,_mf_set_rip"
 EXPORTS="${EXPORTS},_mf_flags_get,_mf_flags_set"
 EXPORTS="${EXPORTS},_mf_retire"
@@ -54,9 +54,10 @@ mkdir -p "$(dirname "${OUT}")"
 em++ -std=c++23 -O3 "${OPT_FLAGS[@]}" -fno-exceptions -fno-rtti \
     -DGUEST_RAM_MB=${GUEST_RAM_MB} \
     -Iinclude -Ibuild/generated -Isrc \
-    src/machine.cpp src/engine.cpp src/base/jit.cpp src/base/jit_translate*.cpp src/base/wasm_emit.cpp src/base/wasm_block.cpp src/base/wasm_block_mem.cpp src/presets/cinux/cinux_machine.cpp src/kernel/*.cpp src/kernel/*/*.cpp src/arch/x86_64/*.cpp \
+    src/machine.cpp src/engine.cpp src/base/jit.cpp src/base/jit_translate*.cpp src/base/wasm_emit.cpp src/base/wasm_block.cpp src/base/wasm_block_mem.cpp src/base/wasm_block_walk.cpp src/presets/cinux/cinux_machine.cpp src/kernel/*.cpp src/kernel/*/*.cpp src/arch/x86_64/*.cpp \
     src/loader/*.cpp \
     src/wasm/exports.cpp \
+    src/wasm/bridge.cpp \
     -o "${OUT}" \
     -sSTANDALONE_WASM --no-entry \
     -s INITIAL_MEMORY=${INITIAL_MEMORY} \
