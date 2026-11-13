@@ -56,30 +56,33 @@ int main() {
     std::size_t interpreter_only = 0;
     std::size_t decode_failed = 0;
     for (const auto& sourced : collect_cases()) {
+        // A case may carry a whole instruction sequence (setup + target +
+        // hlt); decode and translate every instruction, not just the head.
+        std::size_t offset = 0;
         const auto& code = sourced.case_data.code;
-        const auto insn = micro_forge::arch::x86_64::decode_one(code);
-        if (!insn.has_value()) {
-            ++decode_failed;
-            std::println(stderr, "tplcov: decode failed case={}/{}", sourced.table,
-                         sourced.case_data.name);
-            continue;
-        }
-        ++decoded;
-        const auto lowered = micro_forge::base::translate_insn(*insn, 0);
-        if (!lowered.has_value()) {
-            if (sourced.case_data.require_lowered) {
-                std::println(stderr, "tplcov: expected lowered case={}/{}", sourced.table,
-                             sourced.case_data.name);
-            }
-            ++interpreter_only;
-            continue;
-        }
-        ++translated;
-        const auto* data = lowered->code.data();
-        for (std::size_t i = 0; i < hits.size(); ++i) {
-            if (registry[i].data == data) {
-                ++hits[i];
+        while (offset < code.size()) {
+            const auto insn =
+                micro_forge::arch::x86_64::decode_one(std::span(code).subspan(offset));
+            if (!insn.has_value()) {
+                ++decode_failed;
+                std::println(stderr, "tplcov: decode failed case={}/{} offset={}", sourced.table,
+                             sourced.case_data.name, offset);
                 break;
+            }
+            offset += insn->length;
+            ++decoded;
+            const auto lowered = micro_forge::base::translate_insn(*insn, 0);
+            if (!lowered.has_value()) {
+                ++interpreter_only;
+                continue;
+            }
+            ++translated;
+            const auto* data = lowered->code.data();
+            for (std::size_t i = 0; i < hits.size(); ++i) {
+                if (registry[i].data == data) {
+                    ++hits[i];
+                    break;
+                }
             }
         }
     }

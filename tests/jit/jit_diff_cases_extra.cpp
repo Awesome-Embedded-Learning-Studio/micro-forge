@@ -200,6 +200,55 @@ std::vector<DiffCase> extra_cases() {
         .result_reg = Reg::kRax,
     };
     cases.push_back(push_rax);
+    // imul rcx,[rbx-0x48]: two-operand form with the multiplier in memory.
+    // rbx=kData+0x48, so the read lands exactly on [kData]=kLoaded; the
+    // product 2*kLoaded still fits in a signed 64-bit range, so CF/OF clear
+    // while the arithmetic flags stay seeded.
+    DiffCase imul_mem{
+        .name = "imul_mem",
+        .code = {0x48, 0x0F, 0xAF, 0x4B, 0xB8, 0xF4}, // imul rcx,[rbx-0x48]
+        .initial = 2,
+        .expected = 0xFDB97530ECA86420ULL,
+        .flags = 0xD4,
+        .result_reg = Reg::kRcx,
+        .base_reg = Reg::kRbx,
+    };
+    cases.push_back(imul_mem);
+    // lea eax,[rbx+rcx*4]: the 32-bit destination form zero-extends.
+    DiffCase lea_idx32{
+        .name = "lea_idx32",
+        .code = {0x8D, 0x04, 0x8B, 0xF4}, // lea eax,[rbx+rcx*4]
+        .initial = kLoaded,
+        .expected = kData + 0x48 + 3 * 4,
+        .flags = kFlags,
+        .result_reg = Reg::kRax,
+        .base_reg = Reg::kRbx,
+        .index = 3,
+    };
+    cases.push_back(lea_idx32);
+    // cli: flag-only system instruction; the arithmetic flags must not move.
+    DiffCase cli_flags{
+        .name = "cli_flags",
+        .code = {0xFA, 0xF4}, // cli; hlt
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = kFlags,
+    };
+    cases.push_back(cli_flags);
+    // sgdt [rbx]: the memory-system group writes the descriptor register
+    // out where the memory check can see it (2-byte limit then 8-byte base).
+    DiffCase sgdt_mem{
+        .name = "sgdt_mem",
+        .code = {0x0F, 0x01, 0x1B, 0xF4}, // sgdt [rbx]
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = kFlags,
+        .store = true,
+        .memory_initial = kStored,
+        .base = kData,
+        .base_reg = Reg::kRbx,
+    };
+    cases.push_back(sgdt_mem);
     return cases;
 }
 

@@ -90,6 +90,52 @@ TEST(JitLayoutTest, PushRegHelperAddressesRegisterFileThroughRdi) {
     // base-register load and is not asserted here.
 }
 
+TEST(JitLayoutTest, MemOperandTemplatesAddressRegisterFileThroughRdi) {
+    // Same ABI rule as the push helper above, for the memory-operand group
+    // that ships helper calls: the base-slot load must read [rdi+disp32]
+    // (48 8B B7 after the 57 prologue), never [rax+disp32].
+    namespace jg = micro_forge::base::jit_gen;
+    for (const auto* code : {&jg::kImulMemSlot, &jg::kGrp3MemSlot}) {
+        ASSERT_GE(code->size(), 8U);
+        EXPECT_EQ(0x57, (*code)[0]); // push rdi
+        EXPECT_EQ(0x48, (*code)[1]); // mov rsi,[rdi+disp32]
+        EXPECT_EQ(0x8B, (*code)[2]);
+        EXPECT_EQ(0xB7, (*code)[3]); // modrm: mod=10, reg=rsi, rm=rdi
+    }
+}
+
+TEST(JitLayoutTest, LeaIdxSlot32LoadsAndStoresThroughRdi) {
+    // The 32-bit indexed lea is pure host arithmetic: it must fetch base and
+    // index from the register file ([rdi+disp32] loads, 48 8B 87 / 4C 8B 87)
+    // and store the zero-extended result back through [rdi+disp32] (48 89 87).
+    namespace jg = micro_forge::base::jit_gen;
+    const auto& code = jg::kLeaIdxSlot32;
+    ASSERT_GE(code.size(), 33U);
+    EXPECT_EQ(0x48, code[0]); // mov rax,[rdi+base32]
+    EXPECT_EQ(0x8B, code[1]);
+    EXPECT_EQ(0x87, code[2]);
+    EXPECT_EQ(0x4C, code[7]); // mov r8,[rdi+idx32]
+    EXPECT_EQ(0x8B, code[8]);
+    EXPECT_EQ(0x87, code[9]);
+    EXPECT_EQ(0x89, code[27]); // mov eax,eax zeroes the upper half
+    EXPECT_EQ(0xC0, code[28]);
+    EXPECT_EQ(0x48, code[29]); // mov [rdi+dst32],rax
+    EXPECT_EQ(0x89, code[30]);
+    EXPECT_EQ(0x87, code[31]);
+}
+
+TEST(JitLayoutTest, PortsSlotKeepsRegisterFilePointerOnRdi) {
+    // Flag-only system instructions pass immediates only; the helper ABI
+    // still receives the register file through RDI (48 BF <helper64> then
+    // 41 FF D3 = movabs rdi,helper; call r11), so the prologue must keep the
+    // pointer alive (57 ... 5F) rather than clobber it with a guest value.
+    namespace jg = micro_forge::base::jit_gen;
+    const auto& code = jg::kPortsSlot;
+    ASSERT_GE(code.size(), 35U);
+    EXPECT_EQ(0x57, code[0]);  // push rdi
+    EXPECT_EQ(0x5F, code[34]); // pop rdi
+}
+
 TEST(JitLayoutTest, RejectsBadRelocationsAndPatches) {
     const auto decoded = micro_forge::arch::x86_64::decode_one(
         std::array<uint8_t, 4>{0x48, 0x8B, 0x48, 8}); // mov rcx,[rax+8]

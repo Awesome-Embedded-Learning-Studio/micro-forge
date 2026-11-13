@@ -103,3 +103,23 @@ Base32 魔数是 `0x6b415365`——扫描 4 字节时会在 8 字节魔数的后
 - 内核零命中但测试有的 6 个（`add_mem_slot`、`load_slot_b/w`、
   `load_idx_slot_b/w`、`push_imm_helper`）是老内核没走到的宽度/形态变体，
   属于正常冗余，不是缺口。
+
+## 缺口补齐（2026-11-13）
+
+上面的 8 个缺口补完，`mf-tpl-coverage` 现在 **54/54 全命中**。过程里
+两个教训：
+
+- **审计工具自己也有 bug**：第一版只把每条用例的**第一条**指令喂给
+  translate_insn，而 `div_reg` 这类用例是"setup + 目标指令"的序列，
+  目标指令根本没被喂进去。改成循环解码整条 code 后，8 个缺口里 4 个
+  （`call_reg/grp3_slot/pop_reg/ret_helper`）当场消失——它们有用例，
+  是审计工具漏数。工具数字和直觉冲突时先怀疑工具。
+- 真缺口 4 个，各补一条差分用例（extra 表）：`imul_mem`
+  （imul rcx,[rbx-0x48]，2*kLoaded 不溢出所以 CF/OF 清零而其余标志
+  保持播种值）、`lea_idx32`（32 位目标零扩展）、`cli_flags`（算术
+  标志不许动）、`sgdt_mem`（memory 检查能看见 GDTR 写出）。另按
+  PushRegHelper 的老规矩补了三个 JitLayoutTest 字节断言：
+  `kImulMemSlot/kGrp3MemSlot` 的基址槽读取必须是 `57 48 8B B7`
+  （经 rdi 而非 rax）、`kLeaIdxSlot32` 的取/存必须走 `[rdi+disp32]`
+  且以 `89 C0` 零扩展、`kPortsSlot` 的 prologue/epilogue 必须
+  `57 ... 5F` 保住 rdi。
