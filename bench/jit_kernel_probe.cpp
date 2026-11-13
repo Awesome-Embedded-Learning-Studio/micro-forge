@@ -130,6 +130,27 @@ int main(int argc, const char* const* argv) {
             }
         });
     }
+    // MICRO_FORGE_REGWIN=lo:hi: at every step whose icount lands in [lo,hi),
+    // dump the GPRs so chained/unchained runs can be diffed register-wise.
+    const char* regwin_env = std::getenv("MICRO_FORGE_REGWIN"); // NOLINT(concurrency-mt-unsafe)
+    if (regwin_env != nullptr) {
+        const char* colon = std::strchr(regwin_env, ':');
+        const uint64_t lo = std::strtoull(regwin_env, nullptr, 0);
+        const uint64_t hi = colon != nullptr ? std::strtoull(colon + 1, nullptr, 0) : lo + 1000;
+        cpu.set_trace([&cpu, lo, hi](uint64_t) {
+            const uint64_t now = cpu.icount();
+            if (now < lo || now >= hi) {
+                return;
+            }
+            using R = micro_forge::arch::x86_64::Reg;
+            std::println(stderr,
+                         "rw i={} rip={:#x} rax={:#x} rcx={:#x} rdx={:#x} rbx={:#x} "
+                         "rsi={:#x} rdi={:#x} r8={:#x} r9={:#x} rf={:#x}",
+                         now, cpu.rip(), cpu.gpr(R::kRax), cpu.gpr(R::kRcx), cpu.gpr(R::kRdx),
+                         cpu.gpr(R::kRbx), cpu.gpr(R::kRsi), cpu.gpr(R::kRdi), cpu.gpr(R::kR8),
+                         cpu.gpr(R::kR9), cpu.rflags());
+        });
+    }
     if (!micro_forge::loader::boot_cinux(machine.ram(), cpu, image)) {
         std::println(stderr, "boot_cinux refused the image");
         return 2;
@@ -144,6 +165,18 @@ int main(int argc, const char* const* argv) {
         const auto begin = Clock::now();
         const auto status = cpu.run(budget);
         run_seconds += std::chrono::duration<double>(Clock::now() - begin).count();
+        // MICRO_FORGE_MEMHASH=1: FNV-1a over guest RAM at each budget cutoff,
+        // so a chained and an unchained run can be diffed memory-wide.
+        if (std::getenv("MICRO_FORGE_MEMHASH") != nullptr) { // NOLINT(concurrency-mt-unsafe)
+            uint64_t h = 1469598103934665603ULL;
+            const auto span = machine.ram().peek(0, machine.ram().size());
+            for (const uint8_t b : span) {
+                h ^= b;
+                h *= 1099511628211ULL;
+            }
+            std::println(stderr, "memhash icount={} rip={:#x} h={:#018x}", cpu.icount(), cpu.rip(),
+                         h);
+        }
         const double coverage = cpu.icount() == 0
                                     ? 0.0
                                     : 100.0 * static_cast<double>(cpu.jit_insn_count()) /

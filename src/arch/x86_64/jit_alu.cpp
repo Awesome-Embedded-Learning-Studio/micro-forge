@@ -231,6 +231,12 @@ void Cpu::jit_ports(unsigned mn, unsigned width) {
     case Mnemonic::kPushfq:
     case Mnemonic::kPopfq:
         (void)execute_system(shape, 0); // iret/lgdt need control flow or memory
+        // STI shadow and queued interrupts must hit the retire() path on
+        // the very next instruction boundary; force the chain to surface
+        // at this block's exit so delivery timing stays exact.
+        if (interrupt_pending_ || sti_shadow_) {
+            jit_chain_[2] = 0;
+        }
         return;
     default:
         break;
@@ -246,6 +252,11 @@ void Cpu::jit_ports(unsigned mn, unsigned width) {
         shape.ops[1] = acc;
     }
     (void)execute_ports(shape, 0);
+    // A device may have raised an IRQ line behind this port access; the
+    // acknowledgement and delivery live in retire(), so surface now.
+    if (irq_line_ != nullptr && irq_line_->pending()) {
+        jit_chain_[2] = 0;
+    }
 }
 
 void Cpu::jit_imul_mem(uint64_t vaddr, unsigned dst, unsigned width) {

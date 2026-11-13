@@ -96,6 +96,18 @@ public:
     [[nodiscard]] bool patch(std::size_t offset, std::size_t size, std::uint64_t value);
 
     /**
+     * @brief Copies raw bytes at @p offset while the page is unsealed.
+     *
+     * Block chaining rewrites a block-exit sequence in place; unlike
+     * patch() this takes a byte span, not a scalar.
+     *
+     * @param[in] offset Byte offset inside the page.
+     * @param[in] bytes Byte sequence to copy (may be empty).
+     * @return False when the page is sealed or the range overflows.
+     */
+    [[nodiscard]] bool write_bytes(std::size_t offset, std::span<const std::uint8_t> bytes);
+
+    /**
      * @brief Flips the page back to RW so more blocks can be appended.
      *
      * Shared pages flip between emit and execution; each compile does one

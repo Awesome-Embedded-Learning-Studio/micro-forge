@@ -175,6 +175,17 @@ void Cpu::retire(unsigned n) {
     if (trace_) {
         trace_(insn_rip_);
     }
+    // Chain deadline: instructions the block chain may retire before the
+    // next device event (or a queued interrupt) must surface. Blocks retire
+    // per instruction on the interpreter path, so 1 keeps that granularity.
+    const auto next = scheduler_.next_deadline();
+    const bool wake = interrupt_pending_ || (irq_line_ != nullptr && irq_line_->pending());
+    const auto due = next.has_value() && *next > icount_ ? *next - icount_ : 1;
+    if (wake) {
+        jit_chain_[2] = 1; // interrupt wants the surface at the next check
+    } else {
+        jit_chain_[2] = next.has_value() ? due : UINT64_MAX;
+    }
 }
 
 bool Cpu::fetch(unsigned& got) {
@@ -311,6 +322,7 @@ ExitStatus Cpu::step() {
 
 ExitStatus Cpu::run(uint64_t max_instructions) {
     const kernel::Tick start = icount_;
+    jit_run_end_ = start + max_instructions; // block-chain budget guard
     while (exit_.kind == ExitStatus::Kind::kRunning && icount_ - start < max_instructions) {
         (void)step();
     }

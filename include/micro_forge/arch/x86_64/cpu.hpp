@@ -546,30 +546,27 @@ private:
         /// Blocks share 4 KiB pages (~1.3 KiB each); the shared_ptr keeps
         /// a page alive while any of its blocks lives in the table.
         std::shared_ptr<base::JitPage> page;
-        std::size_t entry = 0;   ///< Block entry offset inside the page.
-        uint64_t length = 0;     ///< Guest bytes covered by the block.
-        unsigned insn_count = 0; ///< Guest instructions covered.
+        std::size_t entry = 0;                        ///< Block entry offset inside the page.
+        uint64_t length = 0;                          ///< Guest bytes covered by the block.
+        unsigned insn_count = 0;                      ///< Guest instructions covered.
+        std::optional<std::size_t> patch_at;          ///< Page offset of the chainable exit
+        uint64_t const_target = 0;                    ///< Compile-time constant exit target
+        bool linked = false, self_accounting = false; ///< Chaining state
+        bool sets_next = false;                       ///< Control-helper exit; guards next_rip_.
     };
-    /// Compiles the block at @p rip (nullopt when nothing lowered).
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     std::optional<JitBlock> compile_block(uint64_t rip);
-
-    void maybe_compile_block(uint64_t rip); // first-visit compile (env gated)
-    [[nodiscard]] bool run_jit_block();     // true when a block ran
-
+    void maybe_compile_block(uint64_t rip);             // first-visit compile
+    [[nodiscard]] bool run_jit_block();                 // true when a block ran
     std::unordered_map<uint64_t, JitBlock> jit_blocks_; // compiled by rip
     std::shared_ptr<base::JitPage> jit_page_;           // page being filled
     std::unordered_set<uint64_t> jit_failed_;           // rips that do not lower
     std::uint64_t jit_insn_count_ = 0;                  // coverage meter
-    std::uint64_t code_lo_ = 0;                         // JIT range, 0 = no filter
-    std::uint64_t code_hi_ = 0;
-    bool jit_requested_ = false; // config switch (env bypasses)
-    /// Invalidates the decode cache when @p paddr hits a code page.
-    void note_store(uint64_t paddr);
+    std::uint64_t code_lo_ = 0, code_hi_ = 0;           // JIT range, 0 = no filter
+    bool jit_requested_ = false;                        // config switch (env bypasses)
+    void note_store(uint64_t paddr); ///< Invalidates decode cache on code stores.
     std::array<uint8_t, 16> last_fault_bytes_{};
-    unsigned last_fault_length_ = 0; // probe: faulting instruction image
-    /// Reads TSS.RSP0: ltr's selector indexes the GDT, offset 4 holds it.
-    [[nodiscard]] uint64_t kernel_stack_top();
+    unsigned last_fault_length_ = 0;                      // probe: faulting instruction image
+    [[nodiscard]] uint64_t kernel_stack_top();            ///< TSS.RSP0 via the GDT (ltr).
     bool raise_page_fault(uint64_t error);                // #PF vector 14; false if no IDT
     uint8_t pending_vector_ = 0;                          // queued interrupt delivery (batch 6c)
     bool interrupt_pending_ = false, sti_shadow_ = false; // STI blocks delivery
@@ -581,16 +578,20 @@ private:
     uint64_t rng_state_ = 0x9E3779B97F4A7C15ULL;          // splitmix64 seed
     uint16_t tss_selector_ = 0, ldt_selector_ = 0;        // 0F 00 group
     uint64_t fs_base_ = 0, gs_base_ = 0, kernel_gs_base_ = 0; // FS/GS bases
-
-    kernel::Tick icount_ = 0;   // virtual time
-    std::vector<char> console_; // serial bytes (diagnostics)
-    std::function<void(uint64_t)> trace_;
-    kernel::IrqLine* irq_line_ = nullptr;             // wiring; snapshots re-attach
-    std::function<void()> irq_hook_;                  // fired while the line is high
-    uint64_t insn_rip_ = 0;                           // executing rip (traces)
-    uint8_t cur_length_ = 0;                          // executing instruction length
+    kernel::Tick icount_ = 0;                                 // virtual time
+    std::vector<char> console_;                               // serial bytes (diagnostics)
+    std::function<void(uint64_t)> trace_;                     // instruction trace hook
+    kernel::IrqLine* irq_line_ = nullptr;                     // wiring; snapshots re-attach
+    std::function<void()> irq_hook_;                          // fired while the line is high
+    uint64_t insn_rip_ = 0;                                   // executing rip (traces)
+    uint8_t cur_length_ = 0;                                  // executing instruction length
     uint64_t jit_next_rip_ = 0;                       // block exit target (ret/call/jmp/jcc)
     bool jit_next_set_ = false, jit_suspend_ = false; // suspend: fault retry
+    uint64_t jit_chain_[3] = {64, 0, UINT64_MAX};     // chain: budget, insns, due
+    uint64_t jit_run_end_ = UINT64_MAX;               // guards run_jit_block()'s loop
+    std::optional<std::size_t> append_exit_tail(base::JitPage& page, bool chainable,
+                                                unsigned count);
+    void try_link(JitBlock& blk);
     ExitStatus exit_{};
     std::array<uint8_t, 16> fetch_buf_{}; // GPR array index of a register enum:
     [[nodiscard]] static unsigned index_of(Reg reg) { return static_cast<unsigned>(reg) & 0xFU; }

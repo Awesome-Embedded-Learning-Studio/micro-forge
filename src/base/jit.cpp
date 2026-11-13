@@ -119,6 +119,14 @@ bool JitPage::patch(std::size_t offset, std::size_t size, std::uint64_t value) {
     return true;
 }
 
+bool JitPage::write_bytes(std::size_t offset, std::span<const std::uint8_t> bytes) {
+    if (data_ == nullptr || executable_ || offset + bytes.size() > used_) {
+        return false;
+    }
+    std::memcpy(data_ + offset, bytes.data(), bytes.size());
+    return true;
+}
+
 bool JitPage::unseal() {
     if (data_ == nullptr || !executable_) {
         return false;

@@ -196,8 +196,11 @@ ExitStatus Cpu::execute_system(const DecodedInsn& insn, uint64_t rip_after) {
         break;
     }
     case Mnemonic::kRdtsc: {
-        // Deterministic virtual clock: TSC derives from icount.
-        const uint64_t stamp = icount_;
+        // Deterministic virtual clock: TSC derives from icount. On a
+        // chained block run the retire counter holds instructions the
+        // block chain retired since the last surface; add them so a
+        // mid-chain rdtsc sees the exact same clock as the interpreter.
+        const uint64_t stamp = icount_ + jit_chain_[1];
         write_gpr(Reg::kRax, 4, true, stamp & 0xFFFFFFFFULL);
         write_gpr(Reg::kRdx, 4, true, stamp >> 32U);
         break;

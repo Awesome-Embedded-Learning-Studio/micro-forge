@@ -12,6 +12,7 @@
 #include <array>
 #include <bit>
 #include <cstdlib>
+#include <cstring>
 #include <print>
 
 #include "micro_forge/arch/x86_64/cpu.hpp"
@@ -31,6 +32,7 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
     uint64_t covered = 0;
     unsigned count = 0;
     bool terminated = false;
+    uint64_t link_target = 0; // nonzero: block ends in a direct jmp
     uint64_t pc = rip;
     const uint64_t saved_rip = rip_;
     // fetch() can latch exception_injected_; keep it out of faults.
@@ -86,6 +88,16 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
             break;
         }
         if (terminated) {
+            // A direct jmp-imm reserves the 45-byte rewritable chain exit
+            // over its template's ret (jit_chain.cpp). Only such blocks are
+            // link targets, so a hop never eats a block without its own
+            // retirement tail -- jcc/ret/call exits stay plain.
+            const bool chainable =
+                decoded->mnemonic == Mnemonic::kJmp && decoded->ops[0].kind == Operand::Kind::kImm;
+            if (chainable) {
+                link_target = pc + static_cast<uint64_t>(decoded->ops[0].disp);
+                budget += 45;
+            }
             break;
         }
     }
@@ -125,9 +137,17 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
             }
         }
     }
-    if (budget > 1) { // unterminated block: append the shared ret
+    if (!terminated) { // unterminated block: append the shared ret
         const std::array<std::uint8_t, 1> ret = {0xC3};
         if (!page.emit_multi(ret, {}).has_value()) {
+            return fail_compile();
+        }
+    }
+    std::optional<std::size_t> patch_at;
+    if (terminated && link_target != 0) {
+        // The rewritable chain exit lives in jit_chain.cpp.
+        patch_at = append_exit_tail(page, true, count);
+        if (!patch_at.has_value()) {
             return fail_compile();
         }
     }
@@ -139,6 +159,11 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
         .entry = entry,
         .length = covered,
         .insn_count = count,
+        .patch_at = patch_at,
+        .const_target = link_target,
+        .linked = false,
+        .self_accounting = patch_at.has_value(),
+        .sets_next = terminated,
     };
 }
 
@@ -439,6 +464,16 @@ void Cpu::maybe_compile_block(uint64_t rip) {
     }
 }
 
+namespace {
+bool chaindbg() {
+    return std::getenv("MICRO_FORGE_JIT_CHAINDBG") != nullptr; // NOLINT(concurrency-mt-unsafe)
+}
+
+bool chaindbg2() {
+    return std::getenv("MICRO_FORGE_JIT_CHAINDBG2") != nullptr; // NOLINT(concurrency-mt-unsafe)
+}
+} // namespace
+
 bool Cpu::run_jit_block() {
     // Empty table is the common case (JIT disabled): skip the hash lookup.
     if (jit_blocks_.empty()) {
@@ -462,16 +497,49 @@ bool Cpu::run_jit_block() {
             std::println(stderr, "jit: run rip=0x{:x} insns={}", rip_, it->second.insn_count);
         }
         it->second.page->invoke(it->second.entry, regs_.data());
+        // Chained jmp blocks retire themselves into the counter (the add in
+        // their exit sequence); surface the total here, exactly once.
+        const std::uint64_t chained = jit_chain_[1];
+        jit_chain_[1] = 0;
+        static const bool cdbg = chaindbg(); // cached: getenv per block exit
+                                             // once cost 12% of the run
+        if (cdbg) {
+            static uint64_t n = 0; // NOLINT(concurrency-mt-unsafe)
+            static const bool every = chaindbg2();
+            ++n;
+            if (n % 50000 == 0 || every) {
+                const auto nd = scheduler_.next_deadline();
+                std::println(stderr,
+                             "cdbg n={} icount={} rip={:#x} budget={} due={} nd={} pend={} shad={}",
+                             n, icount_, rip_, jit_chain_[0], jit_chain_[2],
+                             nd.has_value() ? static_cast<long long>(*nd) : -1LL,
+                             interrupt_pending_, sti_shadow_);
+            }
+        }
         // jit_ret/jit_call record their own exit; others fall through.
-        if (jit_next_set_) {
+        // Only control blocks own jit_next_rip_: a chained jmp's helper
+        // leaves it set, and the fallthrough block it jumps to must not
+        // adopt that stale target as its own exit.
+        if (it->second.sets_next && jit_next_set_) {
             rip_ = jit_next_rip_;
-            jit_next_set_ = false;
         } else {
             rip_ += it->second.length;
         }
-        jit_insn_count_ += it->second.insn_count;
-        retire(it->second.insn_count);
+        jit_next_set_ = false;
+        if (!it->second.self_accounting) {
+            jit_insn_count_ += it->second.insn_count;
+            retire(it->second.insn_count);
+        }
+        if (chained != 0) {
+            jit_insn_count_ += chained;
+            retire(chained);
+        }
         ran_any = true;
+        // First exit through an unlinked direct jmp: wire it straight to
+        // the target block when that block already exists.
+        if (it->second.patch_at.has_value() && !it->second.linked) {
+            try_link(it->second);
+        }
         // A helper faulted mid-block: the next step() re-raises it in the
         // interpreter (mirrors the pre-chaining contract).
         if (jit_suspend_) {
@@ -479,6 +547,12 @@ bool Cpu::run_jit_block() {
             return true;
         }
         if (exit_.kind != ExitStatus::Kind::kRunning) {
+            return true;
+        }
+        // Budget guard: an all-compiled spin loop (jmp $, no interpreter
+        // fallback) would otherwise never leave this frame and run() would
+        // never observe its instruction budget.
+        if (ran_any && icount_ >= jit_run_end_) {
             return true;
         }
     }
