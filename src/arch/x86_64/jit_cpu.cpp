@@ -440,36 +440,48 @@ void Cpu::maybe_compile_block(uint64_t rip) {
 }
 
 bool Cpu::run_jit_block() {
-    // A helper faulted: one interpreter step re-raises; dispatch resumes.
-    if (jit_suspend_) {
-        jit_suspend_ = false;
-        return false;
-    }
     // Empty table is the common case (JIT disabled): skip the hash lookup.
     if (jit_blocks_.empty()) {
         return false;
     }
-    const auto it = jit_blocks_.find(rip_);
-    if (it == jit_blocks_.end()) {
-        mf_jit_note_fail_hit(rip_); // diagnostics: which rip falls back
-        return false;
-    }
     // NOLINTNEXTLINE(concurrency-mt-unsafe) -- single-threaded CPU
     static const bool trace = std::getenv("MICRO_FORGE_JIT_TRACE") != nullptr;
-    if (trace) {
-        std::println(stderr, "jit: run rip=0x{:x} insns={}", rip_, it->second.insn_count);
+    // Block chaining, stage 1: instead of unwinding to step()/run() after
+    // every block exit, resolve the next block right here. The helpers
+    // record the exit target in jit_next_rip_; when that rip also has a
+    // compiled block we invoke it without leaving this frame. Unresolved
+    // targets fall back to the interpreter exactly as before.
+    bool ran_any = false;
+    for (;;) {
+        const auto it = jit_blocks_.find(rip_);
+        if (it == jit_blocks_.end()) {
+            mf_jit_note_fail_hit(rip_); // diagnostics: which rip falls back
+            return ran_any;
+        }
+        if (trace) {
+            std::println(stderr, "jit: run rip=0x{:x} insns={}", rip_, it->second.insn_count);
+        }
+        it->second.page->invoke(it->second.entry, regs_.data());
+        // jit_ret/jit_call record their own exit; others fall through.
+        if (jit_next_set_) {
+            rip_ = jit_next_rip_;
+            jit_next_set_ = false;
+        } else {
+            rip_ += it->second.length;
+        }
+        jit_insn_count_ += it->second.insn_count;
+        retire(it->second.insn_count);
+        ran_any = true;
+        // A helper faulted mid-block: the next step() re-raises it in the
+        // interpreter (mirrors the pre-chaining contract).
+        if (jit_suspend_) {
+            jit_suspend_ = false;
+            return true;
+        }
+        if (exit_.kind != ExitStatus::Kind::kRunning) {
+            return true;
+        }
     }
-    it->second.page->invoke(it->second.entry, regs_.data());
-    // jit_ret/jit_call record their own exit; others fall through.
-    if (jit_next_set_) {
-        rip_ = jit_next_rip_;
-        jit_next_set_ = false;
-    } else {
-        rip_ += it->second.length;
-    }
-    jit_insn_count_ += it->second.insn_count;
-    retire(it->second.insn_count);
-    return true;
 }
 
 } // namespace micro_forge::arch::x86_64
