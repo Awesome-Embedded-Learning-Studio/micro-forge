@@ -546,13 +546,12 @@ private:
         /// Blocks share 4 KiB pages (~1.3 KiB each); the shared_ptr keeps
         /// a page alive while any of its blocks lives in the table.
         std::shared_ptr<base::JitPage> page;
-        std::size_t entry = 0;                        ///< Block entry offset inside the page.
-        uint64_t length = 0;                          ///< Guest bytes covered by the block.
-        unsigned insn_count = 0;                      ///< Guest instructions covered.
-        std::optional<std::size_t> patch_at;          ///< Page offset of the chainable exit
-        uint64_t const_target = 0;                    ///< Compile-time constant exit target
-        bool linked = false, self_accounting = false; ///< Chaining state
-        bool sets_next = false;                       ///< Control-helper exit; guards next_rip_.
+        std::size_t entry = 0;                    ///< Block entry offset inside the page.
+        uint64_t length = 0;                      ///< Guest bytes covered by the block.
+        unsigned insn_count = 0;                  ///< Guest instructions covered.
+        std::optional<std::size_t> patch_at;      ///< Page offset of the exit stub
+        uint64_t const_target = 0, guard_rip = 0; ///< exit / guard rip (jcc)
+        bool linked = false, self_accounting = false, sets_next = false;
     };
     std::optional<JitBlock> compile_block(uint64_t rip);
     void maybe_compile_block(uint64_t rip);             // first-visit compile
@@ -561,11 +560,11 @@ private:
     std::shared_ptr<base::JitPage> jit_page_;           // page being filled
     std::unordered_set<uint64_t> jit_failed_;           // rips that do not lower
     std::uint64_t jit_insn_count_ = 0;                  // coverage meter
-    std::uint64_t code_lo_ = 0, code_hi_ = 0;           // JIT range, 0 = no filter
-    bool jit_requested_ = false;                        // config switch (env bypasses)
-    void note_store(uint64_t paddr); ///< Invalidates decode cache on code stores.
+    std::uint64_t code_lo_ = 0, code_hi_ = 0;           // JIT range; jit_requested_: config
+    bool jit_requested_ = false;                        // switch (env MICRO_FORGE_JIT bypasses)
+    void note_store(uint64_t paddr);                    // invalidates decode cache on code stores
     std::array<uint8_t, 16> last_fault_bytes_{};
-    unsigned last_fault_length_ = 0;                      // probe: faulting instruction image
+    unsigned last_fault_length_ = 0;
     [[nodiscard]] uint64_t kernel_stack_top();            ///< TSS.RSP0 via the GDT (ltr).
     bool raise_page_fault(uint64_t error);                // #PF vector 14; false if no IDT
     uint8_t pending_vector_ = 0;                          // queued interrupt delivery (batch 6c)
@@ -587,11 +586,12 @@ private:
     uint8_t cur_length_ = 0;                                  // executing instruction length
     uint64_t jit_next_rip_ = 0;                       // block exit target (ret/call/jmp/jcc)
     bool jit_next_set_ = false, jit_suspend_ = false; // suspend: fault retry
-    uint64_t jit_chain_[3] = {64, 0, UINT64_MAX};     // chain: budget, insns, due
-    uint64_t jit_run_end_ = UINT64_MAX;               // guards run_jit_block()'s loop
-    std::optional<std::size_t> append_exit_tail(base::JitPage& page, bool chainable,
-                                                unsigned count);
-    void try_link(JitBlock& blk);
+    uint64_t jit_chain_[4] = {64, 0, UINT64_MAX, 0};  // budget, insns, due, next
+    uint64_t jit_run_end_ = UINT64_MAX;               // run() loop budget guard
+    std::optional<std::size_t> append_link_tail(base::JitPage& page, uint64_t target,
+                                                uint64_t guard, unsigned cnt);
+    bool append_plain_tail(base::JitPage& page, unsigned cnt); ///< 19B tail
+    void try_link(JitBlock& blk); ///< links a block's exit to its target
     ExitStatus exit_{};
     std::array<uint8_t, 16> fetch_buf_{}; // GPR array index of a register enum:
     [[nodiscard]] static unsigned index_of(Reg reg) { return static_cast<unsigned>(reg) & 0xFU; }

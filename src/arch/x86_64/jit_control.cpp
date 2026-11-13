@@ -45,6 +45,7 @@ void Cpu::jit_ret(uint64_t sp, uint64_t my_rip) {
     jit_next_rip_ = ok ? target : my_rip;
     jit_suspend_ = !ok; // retry in the interpreter on a faulted pop
     jit_next_set_ = true;
+    jit_chain_[3] = jit_next_rip_; // guard stubs compare this snapshot
 }
 
 void Cpu::jit_call(uint64_t target, uint64_t my_rip, uint64_t ret_addr) {
@@ -54,6 +55,7 @@ void Cpu::jit_call(uint64_t target, uint64_t my_rip, uint64_t ret_addr) {
     jit_next_rip_ = ok ? target : my_rip;
     jit_suspend_ = !ok; // retry in the interpreter on a faulted push
     jit_next_set_ = true;
+    jit_chain_[3] = jit_next_rip_; // guard stubs compare this snapshot
 }
 
 void Cpu::jit_mov_slot_w(uint64_t value, unsigned width, unsigned dst, unsigned zx) {
@@ -70,11 +72,13 @@ void Cpu::jit_mov_slot_w(uint64_t value, unsigned width, unsigned dst, unsigned 
 void Cpu::jit_jmp(uint64_t target) {
     jit_next_rip_ = target;
     jit_next_set_ = true;
+    jit_chain_[3] = jit_next_rip_; // guard stubs compare this snapshot
 }
 
 void Cpu::jit_jcc(uint64_t taken, uint64_t fall, Cc cc) {
     jit_next_rip_ = condition(cc) ? taken : fall;
     jit_next_set_ = true;
+    jit_chain_[3] = jit_next_rip_; // guard stubs compare this snapshot
 }
 
 void Cpu::jit_leave() {

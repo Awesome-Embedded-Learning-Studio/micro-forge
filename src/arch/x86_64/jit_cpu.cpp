@@ -33,6 +33,7 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
     unsigned count = 0;
     bool terminated = false;
     uint64_t link_target = 0; // nonzero: block ends in a direct jmp
+    uint64_t guard_rip = 0;   // nonzero: block ends in a jcc (fallthrough)
     uint64_t pc = rip;
     const uint64_t saved_rip = rip_;
     // fetch() can latch exception_injected_; keep it out of faults.
@@ -88,15 +89,22 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
             break;
         }
         if (terminated) {
-            // A direct jmp-imm reserves the 45-byte rewritable chain exit
-            // over its template's ret (jit_chain.cpp). Only such blocks are
-            // link targets, so a hop never eats a block without its own
-            // retirement tail -- jcc/ret/call exits stay plain.
-            const bool chainable =
-                decoded->mnemonic == Mnemonic::kJmp && decoded->ops[0].kind == Operand::Kind::kImm;
-            if (chainable) {
+            // Exit tails live in jit_chain.cpp. jmp-imm reserves the 45B
+            // rewritable chain exit; jcc reserves a 55B guard stub that
+            // chains its fallthrough exit when the helper took it; every
+            // other terminated exit (ret/call) carries a 19B accounting
+            // tail. A hop eats only blocks that own a retirement tail, and
+            // link targets are restricted to those.
+            if (decoded->mnemonic == Mnemonic::kJmp &&
+                decoded->ops[0].kind == Operand::Kind::kImm) {
                 link_target = pc + static_cast<uint64_t>(decoded->ops[0].disp);
                 budget += 45;
+            } else if (decoded->mnemonic == Mnemonic::kJcc &&
+                       decoded->ops[0].kind == Operand::Kind::kImm) {
+                guard_rip = pc; // fallthrough rip: pc already advanced
+                budget += 55;
+            } else {
+                budget += 19;
             }
             break;
         }
@@ -144,12 +152,14 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
         }
     }
     std::optional<std::size_t> patch_at;
-    if (terminated && link_target != 0) {
-        // The rewritable chain exit lives in jit_chain.cpp.
-        patch_at = append_exit_tail(page, true, count);
+    if (terminated && (link_target != 0 || guard_rip != 0)) {
+        // 45B jmp chain exit or 55B jcc guard stub (jit_chain.cpp).
+        patch_at = append_link_tail(page, link_target, guard_rip, count);
         if (!patch_at.has_value()) {
-            return fail_compile();
+            return fail_compile(); // page ran dry: no tail, no chaining
         }
+    } else if (terminated && !append_plain_tail(page, count)) {
+        return fail_compile(); // 19B accounting tail for ret/call exits
     }
     if (!page.seal()) {
         return std::nullopt;
@@ -161,8 +171,9 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
         .insn_count = count,
         .patch_at = patch_at,
         .const_target = link_target,
+        .guard_rip = guard_rip,
         .linked = false,
-        .self_accounting = patch_at.has_value(),
+        .self_accounting = terminated,
         .sets_next = terminated,
     };
 }
