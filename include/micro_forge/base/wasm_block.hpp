@@ -24,8 +24,18 @@ namespace micro_forge::base {
  * @brief Lowers one decoded instruction to wasm body bytes.
  *
  * Supported today: mov/add/sub/and/or/xor with a register destination and
- * an imm32 source, and ret (emitted as return). Unsupported instructions
- * return nullopt and end the block.
+ * a register or imm32 source, and ret (block terminator). Unsupported
+ * instructions return false and end the block.
+ *
+ * @param[in] insn The decoded instruction.
+ * @param[in,out] body Wasm body bytes appended to.
+ * @param[in,out] terminated Set when the instruction ends the block.
+ * @return False when unsupported.
+ */
+[[nodiscard]] std::size_t wasm_block_flags_slot();
+
+/**
+ * @brief Lowers one decoded instruction to wasm body bytes.
  *
  * @param[in] insn The decoded instruction.
  * @param[in,out] body Wasm body bytes appended to.
@@ -36,13 +46,19 @@ namespace micro_forge::base {
                                     std::vector<std::uint8_t>& body, bool& terminated);
 
 /**
- * @brief Lowers a whole block: appends every supported instruction.
+ * @brief Lowers a whole block into the register-bridged body.
+ *
+ * Sixteen i64 locals bridge the guest GPRs: used slots load on entry,
+ * dirtied slots store back on exit, and the body ends by returning the
+ * next guest rip (all-ones sentinel when a ret ends the block, since the
+ * stack read stays with the interpreter step).
  *
  * @param[in] insns Decoded instructions in execution order.
+ * @param[in] base_rip Guest rip of the first instruction.
  * @param[in,out] body Wasm body bytes (locals vector excluded).
  * @return Number of instructions lowered (the block prefix length).
  */
 [[nodiscard]] std::size_t append_wasm_block(std::span<const arch::x86_64::DecodedInsn> insns,
-                                            std::vector<std::uint8_t>& body);
+                                            uint64_t base_rip, std::vector<std::uint8_t>& body);
 
 } // namespace micro_forge::base

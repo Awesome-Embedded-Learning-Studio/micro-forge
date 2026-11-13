@@ -261,8 +261,34 @@ extern "C" void mf_jit_cmp_mem(void* cpu, uint64_t vaddr, uint64_t slot, unsigne
 
 } // namespace
 
+uint32_t Cpu::flags_code() const {
+    return static_cast<uint32_t>(cf_) | static_cast<uint32_t>(zf_) << 1U |
+           static_cast<uint32_t>(sf_) << 2U | static_cast<uint32_t>(of_) << 3U |
+           static_cast<uint32_t>(pf_) << 4U | static_cast<uint32_t>(af_) << 5U;
+}
+
+void Cpu::set_flags_code(uint32_t code) {
+    cf_ = (code & 1U) != 0;
+    zf_ = (code & 2U) != 0;
+    sf_ = (code & 4U) != 0;
+    of_ = (code & 8U) != 0;
+    pf_ = (code & 16U) != 0;
+    af_ = (code & 32U) != 0;
+}
+
+uint64_t Cpu::event_budget() const {
+    if (interrupt_pending_ || (irq_line_ != nullptr && irq_line_->pending())) {
+        return 1;
+    }
+    const auto next = scheduler_.next_deadline();
+    return next.has_value() && *next > icount_ ? *next - icount_ : UINT64_MAX;
+}
+
 uint64_t Cpu::fetch_paddr(uint64_t vaddr) {
-    const auto translated = translate_access(vaddr, false, true, vaddr);
+    // Probing translation (block fetch / JIT lookups): never raises #PF --
+    // mmu_.translate only walks, the fault latch lives in translate_access.
+    const auto translated =
+        mmu_.translate(vaddr, false, true, cpl_ == 3, cr_[2], cr_[0], efer_value_);
     return translated.ok ? translated.paddr : 0;
 }
 

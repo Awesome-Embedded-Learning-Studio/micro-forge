@@ -298,20 +298,36 @@ uint32_t mf_write_guest(uint32_t paddr, uint32_t src, uint32_t len) {
 /// @param[in] rip_hi High 32 bits of the guest block address.
 /// @param[in] max_insns Upper bound on instructions per block.
 /// @param[out] out_len Module byte length.
+/// @param[out] out_insns Where to store the lowered instruction count.
 /// @return Pointer to the module bytes, or 0.
-uint32_t mf_wasm_block(uint32_t rip_lo, uint32_t rip_hi, uint32_t max_insns, uint32_t* out_len) {
+uint32_t mf_wasm_block2(uint32_t rip_lo, uint32_t rip_hi, uint32_t max_insns, uint32_t* out_len,
+                        uint32_t* out_insns) {
+    if (out_insns != nullptr) {
+        *out_insns = 0;
+    }
+    struct InsnsSaver { // scope guard style: capture count on every return
+        uint32_t* slot = nullptr;
+        uint32_t count = 0;
+        ~InsnsSaver() {
+            if (slot != nullptr) {
+                *slot = count;
+            }
+        }
+    } saver{.slot = out_insns};
     const uint64_t rip = (static_cast<uint64_t>(rip_hi) << 32U) | rip_lo;
     using namespace micro_forge;
     *out_len = 0;
     std::vector<arch::x86_64::DecodedInsn> insns;
     uint64_t pc = rip;
     for (uint32_t step = 0; step < max_insns; ++step) {
-        // rip is taken as a guest-physical address here: the page-side
-        // debug path writes test programs into RAM directly and does not
-        // want to depend on the kernel's page tables.
-        // Low 32 bits of the block address are the physical address on
-        // this debug path (the guest program was written at a low paddr).
-        const auto paddr = static_cast<uint64_t>(static_cast<std::uint32_t>(pc));
+        // Instruction fetch goes through the CPU MMU (pass-through until
+        // paging is enabled), so kernel high-half rips and the page-side
+        // low-paddr debug programs both resolve.
+        const auto paddr = current().cpu().fetch_paddr(pc);
+        if (paddr == 0) {
+            *out_len = 0x102; // translation refused
+            return 0;
+        }
         const auto bytes = current().ram().view(paddr, 16);
         if (bytes.size() != 16) {
             *out_len = 0x102; // physical view out of range
@@ -336,16 +352,26 @@ uint32_t mf_wasm_block(uint32_t rip_lo, uint32_t rip_hi, uint32_t max_insns, uin
         return 0;
     }
     std::vector<std::uint8_t> body;
-    const auto lowered = base::append_wasm_block(insns, body);
+    const auto lowered = base::append_wasm_block(insns, rip, body);
     if (lowered == 0) {
         *out_len = 0x105; // append_wasm_block produced nothing
         return 0;
     }
+    saver.count = static_cast<uint32_t>(lowered);
     base::WasmModule module;
     module.add_memory(1);
     static constexpr std::array<base::WasmModule::ValType, 0> no_params = {};
-    static constexpr std::array<base::WasmModule::ValType, 0> no_results = {};
-    const auto index = module.add_function(no_params, no_results, body);
+    // The block returns the next guest rip (all-ones sentinel on ret).
+    static constexpr std::array<base::WasmModule::ValType, 1> rip_result = {
+        base::WasmModule::ValType::kI64,
+    };
+    using LocalDecl = std::pair<std::uint32_t, base::WasmModule::ValType>;
+    static constexpr std::array<LocalDecl, 3> gpr_locals = {
+        LocalDecl{16U, base::WasmModule::ValType::kI64},
+        LocalDecl{2U, base::WasmModule::ValType::kI64},
+        LocalDecl{1U, base::WasmModule::ValType::kI32},
+    };
+    const auto index = module.add_function(no_params, rip_result, body, gpr_locals);
     module.export_function("block", index);
     module.export_memory("memory");
     const auto bytes = module.bytes();
@@ -357,6 +383,61 @@ uint32_t mf_wasm_block(uint32_t rip_lo, uint32_t rip_hi, uint32_t max_insns, uin
     std::memcpy(buffer, bytes.data(), bytes.size());
     *out_len = static_cast<std::uint32_t>(bytes.size());
     return static_cast<std::uint32_t>(reinterpret_cast<std::uintptr_t>(buffer));
+}
+
+/// @brief Legacy single-out-param variant of mf_wasm_block2.
+std::uint32_t mf_wasm_block(std::uint32_t rip_lo, std::uint32_t rip_hi, std::uint32_t max_insns,
+                            std::uint32_t* out_len) {
+    return mf_wasm_block2(rip_lo, rip_hi, max_insns, out_len, nullptr);
+}
+
+/// @brief Reads one guest GPR slot (0-15) for the block run loop.
+/// @param[in] index Register index (raw Reg value).
+/// @return The 64-bit register content.
+uint64_t mf_gpr_get(uint32_t index) {
+    if (index >= 16) {
+        return 0;
+    }
+    return current().cpu().gpr(static_cast<micro_forge::arch::x86_64::Reg>(index));
+}
+
+/// @brief Writes one guest GPR slot (0-15) for the block run loop.
+/// @param[in] index Register index (raw Reg value).
+/// @param[in] value The 64-bit register content.
+void mf_gpr_set(uint32_t index, uint64_t value) {
+    if (index < 16) {
+        current().cpu().set_gpr(static_cast<micro_forge::arch::x86_64::Reg>(index), value);
+    }
+}
+
+/// @brief Sets the guest RIP (the block loop advances it from block returns).
+void mf_set_rip(uint64_t rip) {
+    current().cpu().set_rip(rip);
+}
+
+/// @brief Guest instructions left before the next device event must surface.
+/// @return The chain budget; the wasm run loop must stay on the interpreter
+///         once a block would outlive it.
+uint64_t mf_event_budget(void) {
+    return current().cpu().event_budget();
+}
+
+/// @brief Retires block instructions through the interpreter accounting.
+/// @param[in] count Instructions the caller executed in wasm form; feeds
+///            the scheduler and interrupt recognition like Cpu::retire.
+void mf_retire(uint32_t count) {
+    current().cpu().retire(count);
+}
+
+/// @brief Reads the six arithmetic flags packed cf|zf<<1|sf<<2|of<<3|pf<<4|af<<5.
+uint32_t mf_flags_get(void) {
+    return current().cpu().flags_code();
+}
+
+/// @brief Writes the six arithmetic flags from the packed layout.
+/// @param[in] code Packed flags (see mf_flags_get).
+void mf_flags_set(uint32_t code) {
+    current().cpu().set_flags_code(code);
 }
 
 /// @brief Restores the machine from a blob at @p src.

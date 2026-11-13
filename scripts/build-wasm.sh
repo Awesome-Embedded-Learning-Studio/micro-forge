@@ -42,7 +42,11 @@ EXPORTS="${EXPORTS},_mf_read_console,_mf_snapshot,_mf_restore"
 EXPORTS="${EXPORTS},_mf_boot_cinux,_mf_inject_serial,_malloc,_free"
 EXPORTS="${EXPORTS},_mf_rip_low,_mf_rip_high,_mf_peek32,_mf_serial_tx"
 EXPORTS="${EXPORTS},_mf_instance_create,_mf_instance_destroy,_mf_instance_use"
-EXPORTS="${EXPORTS},_mf_wasm_block,_mf_write_guest"
+EXPORTS="${EXPORTS},_mf_wasm_block,_mf_wasm_block2,_mf_write_guest"
+EXPORTS="${EXPORTS},_mf_gpr_get,_mf_gpr_set,_mf_set_rip"
+EXPORTS="${EXPORTS},_mf_flags_get,_mf_flags_set"
+EXPORTS="${EXPORTS},_mf_retire"
+EXPORTS="${EXPORTS},_mf_event_budget"
 
 mkdir -p "$(dirname "${OUT}")"
 # shellcheck disable=SC2086

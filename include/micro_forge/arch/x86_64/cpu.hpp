@@ -179,6 +179,15 @@ public:
     // --- state access (tests, and snapshots from batch 4) ---
     /// @brief Reads one GPR (full 64 bits).
     [[nodiscard]] uint64_t gpr(Reg reg) const { return regs_[index_of(reg)]; }
+
+    /// @brief Six arithmetic flags packed cf|zf<<1|sf<<2|of<<3|pf<<4|af<<5.
+    [[nodiscard]] uint32_t flags_code() const;
+    /// @brief Restores the six arithmetic flags from flags_code() layout.
+    void set_flags_code(uint32_t code);
+    /// @brief Guest instructions left before the next event must surface.
+    [[nodiscard]] uint64_t event_budget() const;
+    /// @brief Retires n instructions the caller (JIT or wasm) executed itself.
+    void retire(unsigned n);
     /// Probe-only: byte image of the faulting instruction and its length.
     [[nodiscard]] std::span<const uint8_t> last_fault_bytes() const {
         return {last_fault_bytes_.data(), last_fault_bytes_.size()};
@@ -417,7 +426,6 @@ private:
     /// Applies the FS/GS segment base for a memory operand's EA.
     [[nodiscard]] uint64_t segment_address(const DecodedInsn& insn, uint64_t ea) const;
     /// Retires @p n icount units: clock advance, scheduler dispatch, irq observation, trace.
-    void retire(unsigned n);
     /// Fills fetch_buf_ from rip_; false on bus failure (kFetch fault).
     bool fetch(unsigned& got);
     /// Latches an unsupported-mnemonic stop for the instruction at rip_.
@@ -505,16 +513,9 @@ private:
     std::array<uint64_t, 16> regs_{};
     uint64_t rip_ = 0;
     // Scalar flags; composed into rflags when snapshots need it (batch 4).
-    bool cf_ = false;
-    bool pf_ = false;
-    bool af_ = false;
-    bool zf_ = false;
-    bool sf_ = false;
-    bool of_ = false;
-    bool df_ = false;
-    bool if_ = false, ac_ = false;
-    /// Control registers by enumeration offset (0=CR0, 1=CR2, 2=CR3,
-    /// 3=CR4); values are stored for batch 6a, paging arrives with the MMU.
+    bool cf_ = false, pf_ = false, af_ = false;
+    bool zf_ = false, sf_ = false, of_ = false, df_ = false, if_ = false, ac_ = false;
+    /// Control registers by offset (0=CR0, 1=CR2, 2=CR3, 3=CR4); batch 6a.
     std::array<uint64_t, 4> cr_{};
     /// Debug registers DR0-3/6/7 (indexed by register number).
     std::array<uint64_t, 8> dr_{};
@@ -525,11 +526,8 @@ private:
     std::unordered_map<uint32_t, uint64_t> msr_;
     /// Current privilege level (0 kernel, 3 user); set by sysretq/iretq and syscall (batch 6d).
     unsigned cpl_ = 0;
-    /// Set when #PF was injected instead of latching a fault.
-    bool exception_injected_ = false;
-    /// Recursion depth of #PF injection (a fault inside the injection
-    /// frame is not delivered again; it latches as a terminal fault).
-    unsigned exception_depth_ = 0;
+    bool exception_injected_ = false; // #PF injected instead of latching
+    unsigned exception_depth_ = 0;    // injection recursion; terminal latch
     /// Cached IA32_EFER: a map lookup here dominated the profile.
     uint64_t efer_value_ = 0;
     static constexpr std::size_t kDecodeCacheCapacity = 1024; ///< 512 sets of two entries.
@@ -560,8 +558,8 @@ private:
     std::shared_ptr<base::JitPage> jit_page_;           // page being filled
     std::unordered_set<uint64_t> jit_failed_;           // rips that do not lower
     std::uint64_t jit_insn_count_ = 0;                  // coverage meter
-    std::uint64_t code_lo_ = 0, code_hi_ = 0;           // JIT range; jit_requested_: config
-    bool jit_requested_ = false;                        // switch (env MICRO_FORGE_JIT bypasses)
+    std::uint64_t code_lo_ = 0, code_hi_ = 0;           // JIT range
+    bool jit_requested_ = false;                        // config (env MICRO_FORGE_JIT bypasses)
     void note_store(uint64_t paddr);                    // invalidates decode cache on code stores
     std::array<uint8_t, 16> last_fault_bytes_{};
     unsigned last_fault_length_ = 0;
