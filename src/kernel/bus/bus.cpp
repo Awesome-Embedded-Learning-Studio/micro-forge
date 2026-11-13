@@ -115,13 +115,21 @@ std::expected<uint64_t, BusError> Bus::read_u64(uint64_t address) {
     return rebase(r->region->read_u64(r->offset), r->base);
 }
 
+void Bus::set_write_notifier(std::function<void(uint64_t address)> notifier) {
+    write_notifier_ = std::move(notifier);
+}
+
 std::expected<void, BusError> Bus::write_u8(uint64_t address, uint8_t value) {
     const auto r = resolve(address);
     if (!r) {
         return std::unexpected(
             BusError{.kind = BusError::Kind::kUnmappedWrite, .address = address});
     }
-    return rebase(r->region->write_u8(r->offset, value), r->base);
+    const auto done = rebase(r->region->write_u8(r->offset, value), r->base);
+    if (done.has_value() && write_notifier_) {
+        write_notifier_(address); // device DMA may rewrite executable bytes
+    }
+    return done;
 }
 
 std::expected<void, BusError> Bus::write_u16(uint64_t address, uint16_t value) {
@@ -130,7 +138,11 @@ std::expected<void, BusError> Bus::write_u16(uint64_t address, uint16_t value) {
         return std::unexpected(
             BusError{.kind = BusError::Kind::kUnmappedWrite, .address = address});
     }
-    return rebase(r->region->write_u16(r->offset, value), r->base);
+    const auto done = rebase(r->region->write_u16(r->offset, value), r->base);
+    if (done.has_value() && write_notifier_) {
+        write_notifier_(address); // device DMA may rewrite executable bytes
+    }
+    return done;
 }
 
 std::expected<void, BusError> Bus::write_u32(uint64_t address, uint32_t value) {
@@ -139,7 +151,11 @@ std::expected<void, BusError> Bus::write_u32(uint64_t address, uint32_t value) {
         return std::unexpected(
             BusError{.kind = BusError::Kind::kUnmappedWrite, .address = address});
     }
-    return rebase(r->region->write_u32(r->offset, value), r->base);
+    const auto done = rebase(r->region->write_u32(r->offset, value), r->base);
+    if (done.has_value() && write_notifier_) {
+        write_notifier_(address); // device DMA may rewrite executable bytes
+    }
+    return done;
 }
 
 std::expected<void, BusError> Bus::write_u64(uint64_t address, uint64_t value) {
@@ -148,7 +164,11 @@ std::expected<void, BusError> Bus::write_u64(uint64_t address, uint64_t value) {
         return std::unexpected(
             BusError{.kind = BusError::Kind::kUnmappedWrite, .address = address});
     }
-    return rebase(r->region->write_u64(r->offset, value), r->base);
+    const auto done = rebase(r->region->write_u64(r->offset, value), r->base);
+    if (done.has_value() && write_notifier_) {
+        write_notifier_(address); // device DMA may rewrite executable bytes
+    }
+    return done;
 }
 
 } // namespace micro_forge::kernel

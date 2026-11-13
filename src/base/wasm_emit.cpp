@@ -13,6 +13,7 @@ namespace micro_forge::base {
 namespace {
 
 constexpr std::uint8_t kSectionType = 1;
+constexpr std::uint8_t kSectionImport = 2;
 constexpr std::uint8_t kSectionFunction = 3;
 constexpr std::uint8_t kSectionMemory = 5;
 constexpr std::uint8_t kSectionExport = 7;
@@ -21,6 +22,7 @@ constexpr std::uint8_t kSectionCode = 10;
 constexpr std::uint8_t kFuncType = 0x60;
 constexpr std::uint8_t kExportFunction = 0x00;
 constexpr std::uint8_t kKindFunc = 0x00;
+constexpr std::uint8_t kKindMemory = 0x02;
 constexpr std::uint8_t kLimitsMin = 0x00;
 
 /// Wraps @p payload in a section header.
@@ -79,6 +81,11 @@ void WasmModule::add_memory(std::uint32_t pages) {
     memory_pages_ = pages;
 }
 
+void WasmModule::import_memory(std::string_view module, std::string_view name) {
+    import_module_ = std::string{module};
+    import_name_ = std::string{name};
+}
+
 void WasmModule::export_function(std::string_view name, std::size_t function) {
     exports_.push_back(Export{.name = std::string{name}, .function = function, .is_memory = false});
 }
@@ -112,9 +119,22 @@ std::vector<std::uint8_t> WasmModule::bytes() const {
     for (std::size_t i = 0; i < functions_.size(); ++i) {
         append_uleb(funcs, i);
     }
+    if (!import_module_.empty()) {
+        std::vector<std::uint8_t> imports;
+        append_uleb(imports, 1); // one memory import
+        append_uleb(imports, import_module_.size());
+        imports.insert(imports.end(), import_module_.begin(), import_module_.end());
+        append_uleb(imports, import_name_.size());
+        imports.insert(imports.end(), import_name_.begin(), import_name_.end());
+        imports.push_back(kKindMemory);
+        imports.push_back(kLimitsMin); // min 0: host memory defines the size
+        append_uleb(imports, 0);
+        append_section(out, kSectionImport, imports);
+    }
+
     append_section(out, kSectionFunction, funcs);
 
-    if (memory_pages_ > 0) {
+    if (memory_pages_ > 0 && import_module_.empty()) {
         std::vector<std::uint8_t> memory;
         append_uleb(memory, 1);
         memory.push_back(kLimitsMin);

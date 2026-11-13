@@ -28,8 +28,7 @@ ExitStatus Cpu::execute(const DecodedInsn& insn, uint64_t rip_after) {
     switch (insn.mnemonic) {
     // --- data movement ---
     case Mnemonic::kMov:
-        // Control/debug register moves: the operand bank is outside the
-        // GPR storage, so they bypass read_operand/write_operand.
+        // Control/debug register banks live outside GPR storage: bypass operands.
         if (a.kind == Operand::Kind::kReg && static_cast<unsigned>(a.reg) >= 32U) {
             if (!read_operand(insn, b, rip_after, vb)) {
                 return exit_;
@@ -37,8 +36,8 @@ ExitStatus Cpu::execute(const DecodedInsn& insn, uint64_t rip_after) {
             const auto bank = static_cast<unsigned>(a.reg);
             if (bank >= 32U && bank <= 35U) { // CR0/2/3/4
                 cr_[bank - 32U] = vb;
-                if (bank == 34U) { // CR3 write flushes the TLB
-                    flush_tlb();
+                if (bank == 34U) {
+                    flush_tlb(); // decodes carry a CR3 fingerprint
                 }
             } else if (bank >= 36U && bank <= 41U) { // DR0-3/6/7
                 dr_[bank - 36U] = vb;

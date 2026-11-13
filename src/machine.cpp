@@ -35,6 +35,9 @@ Machine::Machine(const MachineConfig& config)
         !bus_.map(kDebugExitBase, 0x1000, debug_exit_).has_value()) {
         std::abort();
     }
+    // Device DMA writes bypass Cpu::store, so self-modifying-code guards
+    // would never fire for them; forward bus writes to the invalidator.
+    bus_.set_write_notifier([this](uint64_t paddr) { cpu_.note_store(paddr); });
     // Port windows come from the layout: the config decides address, size
     // and presence (size 0 skips the device entirely).
     const auto port_device = [this](MachineDevice slot) -> kernel::PortDevice* {

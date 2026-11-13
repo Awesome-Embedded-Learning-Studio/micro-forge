@@ -59,6 +59,7 @@ add_library(micro_forge
     src/base/jit_translate_movx.cpp
     src/base/wasm_emit.cpp
     src/base/wasm_block.cpp
+    src/base/wasm_block_mem.cpp
     src/presets/cinux/cinux_machine.cpp
     src/kernel/bus/bus.cpp
     src/kernel/device/acpi_tables.cpp

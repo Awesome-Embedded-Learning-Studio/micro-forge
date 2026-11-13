@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <optional>
 #include <span>
 #include <vector>
@@ -133,6 +134,15 @@ public:
     [[nodiscard]] std::expected<void, BusError> write_u64(uint64_t address, uint64_t value);
 
     /**
+     * @brief Installs a post-write observer (device DMA invalidation).
+     *
+     * @param[in] notifier Called with the guest address after every
+     *            successful write; null clears it. CPU stores bypass the
+     *            bus, so this only fires on device-originated writes.
+     */
+    void set_write_notifier(std::function<void(uint64_t address)> notifier);
+
+    /**
      * @brief Resolves a complete access within registered ordinary RAM.
      *
      * @param[in] address Guest physical start.
@@ -150,6 +160,9 @@ public:
     }
 
 private:
+    /// Optional post-write observer (DMA self-modifying-code guard).
+    std::function<void(uint64_t address)> write_notifier_;
+
     struct Mapping {
         uint64_t base;
         uint64_t end; // one past the last address

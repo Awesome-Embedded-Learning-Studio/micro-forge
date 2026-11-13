@@ -72,6 +72,16 @@ public:
     void add_memory(std::uint32_t pages);
 
     /**
+     * @brief Imports the linear memory instead of declaring one.
+     *
+     * The block backend imports the engine memory so compiled blocks
+     * load/store the GPR mirror without any JS-side copying.
+     * @param[in] module Import module name.
+     * @param[in] name Import field name.
+     */
+    void import_memory(std::string_view module, std::string_view name);
+
+    /**
      * @brief Exports a function under @p name.
      * @param[in] name Export name.
      * @param[in] function Function index from add_function().
@@ -103,6 +113,8 @@ private:
     std::vector<Function> functions_;
     std::vector<Export> exports_;
     std::uint32_t memory_pages_ = 0;
+    std::string import_module_;
+    std::string import_name_;
 };
 
 } // namespace micro_forge::base

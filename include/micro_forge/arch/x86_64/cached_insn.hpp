@@ -43,6 +43,9 @@ enum class ExecOp : uint8_t {
 struct CachedInsn {
     DecodedInsn insn{};
     ExecOp op = ExecOp::kGeneric;
+    /// Address-space fingerprint (CR3) at insertion; a vaddr-keyed hit
+    /// under a different CR3 would decode another process's bytes.
+    uint64_t cr3 = 0;
 };
 
 /// Avoid libc++'s general byte hash for uint64_t lookups on wasm32.

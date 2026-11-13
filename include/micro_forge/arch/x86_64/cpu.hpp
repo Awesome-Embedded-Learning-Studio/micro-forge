@@ -87,20 +87,17 @@ enum class FaultId : uint8_t {
  *   write on RAM equals its unlocked form. Locked MMIO semantics arrive
  *   with the device batches.
  */
-// Large by design (snapshots, boot handoff); padding is irrelevant next to
-// the caches it already misses on. Suppress the opt-in padding analyzer.
+// Large by design; padding is irrelevant next to the caches it misses.
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 class Cpu {
 public:
-    /**
-     * @brief Binds the CPU to its bus and scheduler.
-     *
-     * @param[in] bus Guest memory bus (fetch and data both).
-     * @param[in] scheduler icount event queue dispatched on retire.
-     */
+    void note_store(uint64_t paddr); ///< Forwards a guest store to the decode-cache invalidator.
+    void switch_address_space();     ///< CR3 write/remap: drops cached decodes.
+    [[nodiscard]] uint64_t code_epoch() const noexcept { return code_epoch_; }
+    /// @brief Binds the CPU to its bus and scheduler. @param[in] bus Guest
+    /// memory bus (fetch and data both). @param[in] scheduler icount queue.
     Cpu(kernel::Bus& bus, kernel::Scheduler& scheduler, kernel::PortSpace* ports = nullptr)
         : bus_(bus), scheduler_(scheduler), ports_(ports) {}
-
     /**
      * @brief Resets architectural state and loads an entry point.
      *
@@ -126,9 +123,6 @@ public:
      * @param[in] decode_capacity Decode-cache entries (0 = disabled).
      */
     void configure_caches(uint64_t ram_size, std::size_t decode_capacity = 512);
-    /// @brief Decode-cache capacity configured for this CPU.
-    [[nodiscard]] std::size_t decode_cache_capacity() const { return decode_cache_.capacity(); }
-    /// @brief Decode-cache hit/miss counters.
     [[nodiscard]] auto decode_cache_stats() const { return decode_cache_.stats(); }
 
     /**
@@ -179,7 +173,6 @@ public:
     // --- state access (tests, and snapshots from batch 4) ---
     /// @brief Reads one GPR (full 64 bits).
     [[nodiscard]] uint64_t gpr(Reg reg) const { return regs_[index_of(reg)]; }
-
     /// @brief Six arithmetic flags packed cf|zf<<1|sf<<2|of<<3|pf<<4|af<<5.
     [[nodiscard]] uint32_t flags_code() const;
     /// @brief Restores the six arithmetic flags from flags_code() layout.
@@ -203,6 +196,7 @@ public:
     /// @brief Translates an instruction fetch.
     /// @return Physical address, or 0 on failure.
     uint64_t fetch_paddr(uint64_t vaddr);
+
     /// @brief JIT load helper.
     /// @return Width bytes at vaddr, or 0 on failure.
     uint64_t jit_load(uint64_t vaddr, unsigned width);
@@ -323,8 +317,15 @@ public:
     void set_paging(bool enabled) { mmu_.set_paging(enabled); }
     /// @brief Flushes the translation cache (CR3 write).
     void flush_tlb() { mmu_.flush(); }
-    /// @brief Drops one translation (INVLPG).
-    void invalidate_page(uint64_t vaddr) { mmu_.invalidate(vaddr); }
+    /// @brief Drops one translation (INVLPG); same-page decodes die too.
+    void invalidate_page(uint64_t vaddr) {
+        mmu_.invalidate(vaddr);
+        if (decode_cache_.erase_if([vaddr](uint64_t rip) {
+                return (rip >> 12U) == (vaddr >> 12U); // same vaddr page
+            }) != 0U) {
+            ++code_epoch_; // JIT mirrors revalidate lazily
+        }
+    }
     /// @brief CR2 of the last page fault.
     [[nodiscard]] uint64_t page_fault_address() const { return cr2_; }
     /// @brief #PF error code of the last page fault.
@@ -537,6 +538,7 @@ private:
     DecodeCache decode_cache_;
     /// Executed-page bitmap; stores to marked pages invalidate decode.
     std::vector<uint64_t> code_page_bits_;
+    uint64_t code_epoch_ = 0; ///< bumped on decode flush; extern caches sync
     /// Marks @p paddr's page as an executed-from page.
     void mark_code_page(uint64_t paddr);
     /// Compiled block: executable page, entry and guest coverage.
@@ -560,7 +562,6 @@ private:
     std::uint64_t jit_insn_count_ = 0;                  // coverage meter
     std::uint64_t code_lo_ = 0, code_hi_ = 0;           // JIT range
     bool jit_requested_ = false;                        // config (env MICRO_FORGE_JIT bypasses)
-    void note_store(uint64_t paddr);                    // invalidates decode cache on code stores
     std::array<uint8_t, 16> last_fault_bytes_{};
     unsigned last_fault_length_ = 0;
     [[nodiscard]] uint64_t kernel_stack_top();            ///< TSS.RSP0 via the GDT (ltr).

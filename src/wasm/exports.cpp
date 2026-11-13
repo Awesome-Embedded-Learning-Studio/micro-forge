@@ -26,6 +26,7 @@
 
 #include "micro_forge/arch/x86_64/decoder.hpp"
 #include "micro_forge/base/wasm_block.hpp"
+#include "micro_forge/base/wasm_block_detail.hpp"
 #include "micro_forge/base/wasm_emit.hpp"
 #include "micro_forge/loader/cinux_loader.hpp"
 #include "micro_forge/machine.hpp"
@@ -300,10 +301,16 @@ uint32_t mf_write_guest(uint32_t paddr, uint32_t src, uint32_t len) {
 /// @param[out] out_len Module byte length.
 /// @param[out] out_insns Where to store the lowered instruction count.
 /// @return Pointer to the module bytes, or 0.
+uint32_t mf_gpr_bridge_base(void);
+
 uint32_t mf_wasm_block2(uint32_t rip_lo, uint32_t rip_hi, uint32_t max_insns, uint32_t* out_len,
-                        uint32_t* out_insns) {
+                        uint32_t* out_insns, uint32_t* out_masks) {
     if (out_insns != nullptr) {
         *out_insns = 0;
+    }
+    if (out_masks != nullptr) {
+        out_masks[0] = 0;
+        out_masks[1] = 0;
     }
     struct InsnsSaver { // scope guard style: capture count on every return
         uint32_t* slot = nullptr;
@@ -323,22 +330,45 @@ uint32_t mf_wasm_block2(uint32_t rip_lo, uint32_t rip_hi, uint32_t max_insns, ui
         // Instruction fetch goes through the CPU MMU (pass-through until
         // paging is enabled), so kernel high-half rips and the page-side
         // low-paddr debug programs both resolve.
-        const auto paddr = current().cpu().fetch_paddr(pc);
-        if (paddr == 0) {
-            *out_len = 0x102; // translation refused
-            return 0;
+        // Virtual fetch: consecutive vaddr bytes may live on different
+        // physical pages; a flat physical window would read the next
+        // physical page's bytes (wrong imm/displacement across a page
+        // boundary). Translate page by page.
+        std::array<std::uint8_t, 16> vbuf{};
+        for (unsigned i = 0; i < vbuf.size();) {
+            const uint64_t va = pc + i;
+            const auto base = current().cpu().fetch_paddr(va & ~0xFFFULL);
+            if (base == 0) {
+                *out_len = 0x102; // translation refused
+                return 0;
+            }
+            const auto in_page = static_cast<unsigned>(va & 0xFFFULL);
+            const auto want = static_cast<unsigned>(vbuf.size()) - i;
+            const auto chunk = std::min(want, 0x1000U - in_page);
+            const auto bytes =
+                current().ram().view(static_cast<std::uint32_t>(base + in_page), chunk);
+            if (bytes.size() != chunk) {
+                *out_len = 0x102; // physical view out of range
+                return 0;
+            }
+            std::ranges::copy(bytes, vbuf.begin() + static_cast<long>(i));
+            i += chunk;
         }
-        const auto bytes = current().ram().view(paddr, 16);
-        if (bytes.size() != 16) {
-            *out_len = 0x102; // physical view out of range
-            return 0;
-        }
+        const std::span<const std::uint8_t> bytes{vbuf.data(), vbuf.size()};
         const auto decoded = arch::x86_64::decode_one(bytes);
         if (!decoded) {
             *out_len = 0x103; // decode refused the bytes
             return 0;
         }
+        const bool imm_branch =
+            decoded->ops[0].kind == micro_forge::arch::x86_64::Operand::Kind::kImm &&
+            (decoded->mnemonic == arch::x86_64::Mnemonic::kJmp ||
+             decoded->mnemonic == arch::x86_64::Mnemonic::kJcc);
         if (decoded->mnemonic == arch::x86_64::Mnemonic::kRet) {
+            break; // ret stays with the interpreter step (never lowered)
+        }
+        if (imm_branch) {
+            insns.push_back(*decoded); // branches end their block lowered
             break;
         }
         if (decoded->length == 0) {
@@ -352,12 +382,19 @@ uint32_t mf_wasm_block2(uint32_t rip_lo, uint32_t rip_hi, uint32_t max_insns, ui
         return 0;
     }
     std::vector<std::uint8_t> body;
-    const auto lowered = base::append_wasm_block(insns, rip, body);
-    if (lowered == 0) {
+    const auto info = base::append_wasm_block(insns, rip, body, mf_gpr_bridge_base(),
+                                              static_cast<std::uint32_t>(kGuestRam));
+    if (info.lowered == 0) {
         *out_len = 0x105; // append_wasm_block produced nothing
         return 0;
     }
-    saver.count = static_cast<uint32_t>(lowered);
+    saver.count = static_cast<uint32_t>(info.lowered);
+    if (out_masks != nullptr) {
+        // NOLINTNEXTLINE(bugprone-signed-bitwise) -- bit 31 packs flags liveness
+        out_masks[0] = info.used_mask | (info.flags_used ? 1U << 31U : 0U);
+        // NOLINTNEXTLINE(bugprone-signed-bitwise) -- bit 31 packs flags liveness
+        out_masks[1] = info.dirty_mask | (info.flags_dirty ? 1U << 31U : 0U);
+    }
     base::WasmModule module;
     module.add_memory(1);
     static constexpr std::array<base::WasmModule::ValType, 0> no_params = {};
@@ -368,12 +405,12 @@ uint32_t mf_wasm_block2(uint32_t rip_lo, uint32_t rip_hi, uint32_t max_insns, ui
     using LocalDecl = std::pair<std::uint32_t, base::WasmModule::ValType>;
     static constexpr std::array<LocalDecl, 3> gpr_locals = {
         LocalDecl{16U, base::WasmModule::ValType::kI64},
-        LocalDecl{2U, base::WasmModule::ValType::kI64},
+        LocalDecl{9U, base::WasmModule::ValType::kI64},
         LocalDecl{1U, base::WasmModule::ValType::kI32},
     };
     const auto index = module.add_function(no_params, rip_result, body, gpr_locals);
     module.export_function("block", index);
-    module.export_memory("memory");
+    module.import_memory("e", "memory"); // blocks share the engine memory
     const auto bytes = module.bytes();
     auto* buffer = static_cast<std::uint8_t*>(std::malloc(bytes.size()));
     if (buffer == nullptr) {
@@ -388,7 +425,7 @@ uint32_t mf_wasm_block2(uint32_t rip_lo, uint32_t rip_hi, uint32_t max_insns, ui
 /// @brief Legacy single-out-param variant of mf_wasm_block2.
 std::uint32_t mf_wasm_block(std::uint32_t rip_lo, std::uint32_t rip_hi, std::uint32_t max_insns,
                             std::uint32_t* out_len) {
-    return mf_wasm_block2(rip_lo, rip_hi, max_insns, out_len, nullptr);
+    return mf_wasm_block2(rip_lo, rip_hi, max_insns, out_len, nullptr, nullptr);
 }
 
 /// @brief Reads one guest GPR slot (0-15) for the block run loop.
@@ -430,6 +467,91 @@ void mf_retire(uint32_t count) {
 }
 
 /// @brief Reads the six arithmetic flags packed cf|zf<<1|sf<<2|of<<3|pf<<4|af<<5.
+uint32_t mf_gpr_bridge_base(void) {
+    static const std::uint32_t bridge = [] {
+        // 16 qword slots + flags/cr3/cr0/cpl cells for the block bridge
+        // NOLINTNEXTLINE(performance-no-int-to-ptr) -- wasm32 offset of the mirror
+        return static_cast<std::uint32_t>(
+            reinterpret_cast<std::uintptr_t>(std::malloc(micro_forge::base::detail::kMirrorBytes)));
+    }();
+    return bridge;
+}
+
+/// @brief Copies guest GPRs/flags into the linear-memory mirror for a block.
+/// @param[in] mask Bit i set mirrors GPR i; bit 31 mirrors the flags cell.
+void mf_gprs_flush(uint32_t mask) {
+    const std::uint32_t base = mf_gpr_bridge_base();
+    // NOLINTNEXTLINE(performance-no-int-to-ptr) -- wasm32 offset of the mirror
+    auto* slots = reinterpret_cast<std::uint64_t*>(static_cast<std::uintptr_t>(base));
+    const auto& cpu = current().cpu();
+    for (unsigned i = 0; i < 16; ++i) {
+        if ((mask & (1U << i)) != 0U) {
+            slots[i] = cpu.gpr(static_cast<micro_forge::arch::x86_64::Reg>(i));
+        }
+    }
+    if ((mask & (1U << 31U)) != 0U) {
+        // NOLINTNEXTLINE(performance-no-int-to-ptr) -- flags cell lives in the mirror
+        *reinterpret_cast<std::uint32_t*>(static_cast<std::uintptr_t>(base + 256)) =
+            cpu.flags_code();
+    }
+    // The page-table walk root and mode guards ride along on every flush.
+    // NOLINTNEXTLINE(performance-no-int-to-ptr) -- cr3 cell lives in the mirror
+    *reinterpret_cast<std::uint64_t*>(static_cast<std::uintptr_t>(base + 264)) =
+        cpu.control_register(2); // compact bank: CR0/CR2/CR3/CR4
+    // NOLINTNEXTLINE(performance-no-int-to-ptr) -- cr0 cell lives in the mirror
+    *reinterpret_cast<std::uint64_t*>(static_cast<std::uintptr_t>(base + 272)) =
+        cpu.control_register(0);
+    // NOLINTNEXTLINE(performance-no-int-to-ptr) -- cpl cell lives in the mirror
+    *reinterpret_cast<std::uint8_t*>(static_cast<std::uintptr_t>(base + 280)) =
+        static_cast<std::uint8_t>(cpu.cpl());
+}
+
+/// @brief Forwards a guest-store paddr to the decode-cache invalidator.
+/// @param[in] paddr Physical address a wasm block stored to.
+extern "C" void mf_note_store(uint64_t paddr) {
+    current().cpu().note_store(paddr);
+}
+
+/// @brief Monotonic count of decode-cache flushes (self-modifying code).
+/// @return External block caches must recompile when this value changes.
+extern "C" uint64_t mf_code_epoch(void) {
+    return current().cpu().code_epoch();
+}
+
+/// @brief Reads dirty GPRs/flags back from the mirror after a block ran.
+/// @param[in] mask Bit i set commits GPR i; bit 31 commits the flags cell.
+void mf_gprs_commit(uint32_t mask) {
+    const std::uint32_t base = mf_gpr_bridge_base();
+    // NOLINTNEXTLINE(performance-no-int-to-ptr) -- wasm32 offset of the mirror
+    const auto* slots = reinterpret_cast<const std::uint64_t*>(static_cast<std::uintptr_t>(base));
+    auto& cpu = current().cpu();
+    for (unsigned i = 0; i < 16; ++i) {
+        if ((mask & (1U << i)) != 0U) {
+            cpu.set_gpr(static_cast<micro_forge::arch::x86_64::Reg>(i), slots[i]);
+        }
+    }
+    if ((mask & (1U << 31U)) != 0U) {
+        const auto* const flags =
+            reinterpret_cast<const std::uint32_t*>( // NOLINT(performance-no-int-to-ptr)
+                static_cast<std::uintptr_t>(base + 256));
+        cpu.set_flags_code(*flags);
+    }
+}
+
+/// @brief Reads up to 8 guest code bytes at a virtual address (diagnostic).
+/// @param[in] rip_hi High 32 bits of the virtual address.
+/// @param[in] rip_lo Low 32 bits.
+/// @return The first 4 bytes at the translated physical address, or 0.
+uint32_t mf_fetch_peek(uint32_t rip_hi, uint32_t rip_lo) {
+    const auto paddr = current().cpu().fetch_paddr((static_cast<uint64_t>(rip_hi) << 32U) | rip_lo);
+    const auto bytes = current().ram().view(static_cast<uint32_t>(paddr), 4);
+    if (bytes.size() != 4) {
+        return 0;
+    }
+    return static_cast<uint32_t>(bytes[0]) | (static_cast<uint32_t>(bytes[1]) << 8U) |
+           (static_cast<uint32_t>(bytes[2]) << 16U) | (static_cast<uint32_t>(bytes[3]) << 24U);
+}
+
 uint32_t mf_flags_get(void) {
     return current().cpu().flags_code();
 }

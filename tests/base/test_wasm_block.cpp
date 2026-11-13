@@ -8,6 +8,7 @@
 #include <micro_forge/base/wasm_emit.hpp>
 
 #include <array>
+#include <cstdio>
 #include <vector>
 
 namespace {
@@ -29,8 +30,9 @@ TEST(WasmBlockTest, LowersMovAddRet) {
         pc += decoded->length;
     }
     std::vector<std::uint8_t> body;
-    const auto lowered = micro_forge::base::append_wasm_block(insns, 0x1000, body);
-    EXPECT_EQ(insns.size(), lowered);
+    const auto info = micro_forge::base::append_wasm_block(insns, 0x1000, body);
+    EXPECT_EQ(insns.size(), info.lowered);
+    EXPECT_EQ(micro_forge::base::WasmTerm::kStep, info.term);
     EXPECT_FALSE(body.empty());
 
     // Build a module exporting the block as a () -> i64 function holding
@@ -44,7 +46,7 @@ TEST(WasmBlockTest, LowersMovAddRet) {
     using LocalDecl = std::pair<std::uint32_t, WasmModule::ValType>;
     static constexpr std::array<LocalDecl, 3> gpr_locals = {
         LocalDecl{16U, WasmModule::ValType::kI64},
-        LocalDecl{2U, WasmModule::ValType::kI64},
+        LocalDecl{9U, WasmModule::ValType::kI64},
         LocalDecl{1U, WasmModule::ValType::kI32},
     };
     const auto index = module.add_function(no_params, rip_result, body, gpr_locals);
@@ -52,6 +54,63 @@ TEST(WasmBlockTest, LowersMovAddRet) {
     module.export_memory("memory");
     const auto bytes = module.bytes();
     EXPECT_GT(bytes.size(), 40U);
+}
+
+TEST(WasmBlockTest, LowersCmpJccBranch) {
+    // Guest: cmp rax,0 ; jne +4 ; add rdx,3 (past the branch)
+    static constexpr std::array<std::uint8_t, 10> guest = {
+        0x48, 0x83, 0xF8, 0x00, 0x75, 0x04, 0x48, 0x83, 0xC2, 0x03,
+    };
+    std::vector<micro_forge::arch::x86_64::DecodedInsn> insns;
+    std::size_t pc = 0;
+    while (pc < guest.size()) {
+        const auto decoded = micro_forge::arch::x86_64::decode_one(
+            std::span<const std::uint8_t>(guest.data() + pc, guest.size() - pc));
+        ASSERT_TRUE(decoded.has_value());
+        insns.push_back(*decoded);
+        pc += decoded->length;
+    }
+    ASSERT_EQ(std::size_t{3}, insns.size());
+    std::vector<std::uint8_t> body;
+    const auto info = micro_forge::base::append_wasm_block(insns, 0x1000, body);
+    // The jcc terminates the block: two instructions lowered (the add is
+    // past the branch), taken = 0x1000 + 4 + 2 + 4, fallthrough = 0x1006.
+    EXPECT_EQ(std::size_t{2}, info.lowered);
+    EXPECT_EQ(micro_forge::base::WasmTerm::kBranch, info.term);
+    EXPECT_EQ(0x100AU, info.jump_target);
+    EXPECT_EQ(0x1006U, info.fall_rip);
+    EXPECT_TRUE(info.flags_used);
+    EXPECT_TRUE(info.flags_dirty);
+    EXPECT_EQ(1U, info.used_mask);  // rax (slot 0)
+    EXPECT_EQ(0U, info.dirty_mask); // cmp writes no register
+    EXPECT_FALSE(body.empty());
+}
+
+TEST(WasmBlockTest, LowersMemLoadStoreForms) {
+    // Guest: mov esi,[rax] ; mov [rax+rcx*4],esi ; cmp edx,[rdi+0x3C]
+    static constexpr std::array<std::uint8_t, 9> guest = {
+        0x8B, 0x30, 0x89, 0x34, 0x88, 0x3B, 0x57, 0x3C, 0xC3,
+    };
+    std::vector<micro_forge::arch::x86_64::DecodedInsn> insns;
+    std::size_t pc = 0;
+    while (pc < guest.size()) {
+        const auto decoded = micro_forge::arch::x86_64::decode_one(
+            std::span<const std::uint8_t>(guest.data() + pc, guest.size() - pc));
+        ASSERT_TRUE(decoded.has_value());
+        insns.push_back(*decoded);
+        pc += decoded->length;
+    }
+    std::vector<std::uint8_t> body;
+    const auto info = micro_forge::base::append_wasm_block(insns, 0x1000, body);
+    // The three memory forms all lower; ret stops the sweep.
+    EXPECT_EQ(std::size_t{4}, info.lowered);
+    EXPECT_EQ(micro_forge::base::WasmTerm::kStep, info.term);
+    EXPECT_TRUE(info.flags_dirty); // cmp writes the flags cell
+    // Reads: rax, rcx (store base+index), rdx, rdi, and esi (store source).
+    constexpr auto expect_used = 0xC7U; // rax rcx rdx rdi esi
+    EXPECT_EQ(expect_used, info.used_mask);
+    EXPECT_EQ(0x40U, info.dirty_mask); // esi (slot 6) written by the load
+    EXPECT_FALSE(body.empty());
 }
 
 } // namespace

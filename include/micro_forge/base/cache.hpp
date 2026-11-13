@@ -157,6 +157,21 @@ public:
         }
     }
 
+    /// @brief Drops every entry whose key satisfies @p pred.
+    /// @param[in] pred Predicate over keys; true drops the entry.
+    /// @return Number of entries dropped.
+    std::size_t erase_if(const std::function<bool(const Key&)>& pred) {
+        std::size_t dropped = 0;
+        for (std::size_t i = 0; i < entries_.size(); ++i) {
+            Entry& entry = entries_[i];
+            if (entry.valid && pred(entry.key)) {
+                entry.valid = false;
+                ++dropped;
+            }
+        }
+        return dropped;
+    }
+
     /// @brief Drops every entry (keeps the statistics).
     void clear() {
         for (Entry& entry : entries_) {

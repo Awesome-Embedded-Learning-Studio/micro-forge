@@ -6,8 +6,6 @@
 
 #include "micro_forge/arch/x86_64/cpu.hpp"
 
-#include <cstdlib>
-
 #include "micro_forge/arch/x86_64/decoder.hpp"
 
 #include <expected>
@@ -257,8 +255,13 @@ void Cpu::note_store(uint64_t paddr) {
     // The store may have rewritten executable bytes: drop every cached
     // decode and forget the page set (conservative but cheap; stores to
     // code pages are rare after the loader finishes).
+    switch_address_space();
+}
+
+void Cpu::switch_address_space() {
     decode_cache_.clear();
     std::ranges::fill(code_page_bits_, 0ULL);
+    ++code_epoch_;
 }
 
 ExitStatus Cpu::step() {
@@ -271,14 +274,14 @@ ExitStatus Cpu::step() {
     // Decode cache: the hot path repeats the same instructions; a hit
     // skips fetch + decode entirely. The hit path mirrors the slow path
     // exactly (insn_rip_, cur_length_, dispatch by mnemonic).
-    if (const CachedInsn* cached = decode_cache_.find(rip_)) {
-        const DecodedInsn& insn = cached->insn;
-        insn_rip_ = rip_;
-        cur_length_ = insn.length;
-        const uint64_t rip_after = rip_ + insn.length;
+    const CachedInsn* const cached = decode_cache_.find(rip_);
+    if (cached != nullptr && cached->cr3 == cr_[3]) {
         // Insertion already marked the code page. note_store() clears
         // both the bitmap and the cache together, so a live hit cannot
         // need to mark it again.
+        insn_rip_ = rip_;
+        cur_length_ = cached->insn.length;
+        const uint64_t rip_after = rip_ + cached->insn.length;
         rip_ = rip_after;
         return execute_cached(*cached, rip_after);
     }
@@ -315,7 +318,9 @@ ExitStatus Cpu::step() {
         }
     }
     // Repeat visitors skip fetch+decode (and the translation below).
-    decode_cache_.put(rip_, cache_insn(*decoded));
+    CachedInsn entry = cache_insn(*decoded);
+    entry.cr3 = cr_[3];
+    decode_cache_.put(rip_, entry);
     maybe_compile_block(rip_);
     return execute_insn(*decoded, rip_ + decoded->length);
 }
