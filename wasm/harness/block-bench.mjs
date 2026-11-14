@@ -105,7 +105,9 @@ async function compile(rip) {
   if (count === 0) return null; // decode stopped before any instruction
   const repeatedRip = timing && compiledRips.has(rip); // CODEX-TIMING
   const instantiateStart = timing ? performance.now() : 0; // CODEX-TIMING
-  const { instance } = await WebAssembly.instantiate(bytes, { e: { memory: e.memory } });
+  // 同步 Module+Instance：省掉逐块异步实例化的唤醒/调度开销（codex perf
+  // A/B 实测 40M 省 3-5s；块都很小，同步编译毫无压力）。
+  const instance = new WebAssembly.Instance(new WebAssembly.Module(bytes), { e: { memory: e.memory } });
   // CODEX-TIMING: this is wall time including async compilation/wakeup, not main-thread CPU.
   if (timing) {
     const ms = performance.now() - instantiateStart;
