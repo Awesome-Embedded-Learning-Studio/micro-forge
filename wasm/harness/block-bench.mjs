@@ -54,6 +54,11 @@ function cachePut(key, block) {
 }
 const ripNow = () => BigInt(e.mf_rip_high()) << 32n | BigInt(e.mf_rip_low() >>> 0);
 
+// 零进展 handoff 的重探间隔：跳过这么多轮后重跑一次块，看拒绝条件
+// 是否已解除（内核态↔用户态切换）。64 是折中：重探成本 1/64，恢复
+// 延迟平均 32 次调度循环（仍是纯解释器速度，无正确性影响）。
+const SSKIP_PROBE = 64;
+
 // CODEX-TIMING: compilation is infrequent, so time every attempt exactly.
 // Hot operations use random iteration samples (or all calls with --timing 1).
 // The separate diagnostic loop keeps --timing 0 on the original hot path.
@@ -138,8 +143,16 @@ async function runBlocks(budget) {
       if (block) ++compiled; else ++refused;
     }
     if (block) {
+      // 零进展抑制：handoff 且 done=0 的块（编译成功但运行时守卫拒绝，
+      // 如用户态 cpl!=0）什么也没退休、什么也没提交，重跑纯属浪费。
+      // 连续跳过 SKIP_PROBE 次后重探一次，条件恢复（回内核态）就自动
+      // 恢复块执行；跳过期间直接走解释器单步，语义与重跑完全一致。
+      if (block.skipLeft > 0) {
+        --block.skipLeft;
+      } else
       // bridge prepare = flush + event budget in one crossing; flags always
       // flush because a handoff commits them. i64 -> signed BigInt: normalize.
+      {
       const raw = e.mf_bridge_prepare(block.used | 0x80000000);
       const budget = raw < 0n ? raw + (1n << 64n) : raw;
       if (budget >= BigInt(block.count)) {
@@ -156,6 +169,7 @@ async function runBlocks(budget) {
         // handoff: mid-block refusal or a ret terminator hands the rest
         // back; done instructions ran, the runner takes one interp step.
         const done = view.getUint32(bridge + 288, true);
+        if (done === 0) block.skipLeft = SSKIP_PROBE; // CODEX-SKIP: arm suppression
         // bridge finish = commit + store-log drain + rip + retire in one
         // crossing (block stores bypass note_store, so the decode cache
         // needs the drained entries before any block reuse)
@@ -171,6 +185,7 @@ async function runBlocks(budget) {
         ++execs;
         continue;
       }
+      } // else branch: not suppressed — full prepare/run/finish path
     }
     // no block, or the event budget would outlive it: one interpreter step.
     // rep-prefixed insns retire one per iteration, so the actual count comes
