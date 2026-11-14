@@ -419,7 +419,7 @@ uint32_t mf_wasm_block2(uint32_t rip_lo, uint32_t rip_hi, uint32_t max_insns, ui
     static constexpr std::array<LocalDecl, 3> gpr_locals = {
         LocalDecl{16U, base::WasmModule::ValType::kI64},
         LocalDecl{9U, base::WasmModule::ValType::kI64},
-        LocalDecl{1U, base::WasmModule::ValType::kI32},
+        LocalDecl{3U, base::WasmModule::ValType::kI32},
     };
     const auto index = module.add_function(no_params, rip_result, body, gpr_locals);
     module.export_function("block", index);

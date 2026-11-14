@@ -86,7 +86,11 @@ constexpr std::uint32_t kTmpT = 21;
 constexpr std::uint32_t kTmpE = 22;
 /// i64 scratch: translated guest-physical address.
 constexpr std::uint32_t kTmpPd = 23;
-constexpr std::uint32_t kTmpP = 25;              ///< i32 scratch: parity chain.
+constexpr std::uint32_t kTmpP = 25; ///< i32 scratch: parity chain.
+/// i32 scratch: cpl != 0, resolved once at block entry (permission checks).
+constexpr std::uint32_t kPermCpl = 26;
+/// i32 scratch: CR0.WP, resolved once at block entry (write checks).
+constexpr std::uint32_t kPermWp = 27;
 constexpr std::uint32_t kFlagsSlot = 256;        ///< i32 flags cell behind the GPRs.
 constexpr std::uint32_t kCr3Slot = 264;          ///< i64 cr3 cell (walk root).
 constexpr std::uint32_t kCr0Slot = 272;          ///< i64 cr0 cell (WP bit guard).

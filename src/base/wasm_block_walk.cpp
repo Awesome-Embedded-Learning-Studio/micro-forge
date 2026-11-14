@@ -221,15 +221,7 @@ void emit_tlb_probe(std::vector<std::uint8_t>& body, std::uint32_t base, bool wr
     if (write) {
         // CR0.WP=1 turns a kernel write to a read-only page into #PF; the
         // block only checks the page's RW bit and hands the fault back.
-        emit_i32(body, static_cast<std::int32_t>(kCr0Slot + base));
-        body.push_back(kI64Load);
-        body.push_back(kAlign8);
-        append_uleb(body, 0);
-        emit_i64(body, 16);
-        body.push_back(kI64ShrU);
-        body.push_back(kI32Wrap);
-        emit_i32(body, 1);
-        body.push_back(kI32And); // WP
+        emit_local(body, kLocalGet, kPermWp);
         emit_local(body, kLocalGet, kTmpE);
         body.push_back(kI32Wrap);
         body.push_back(kI32Load);
@@ -343,15 +335,7 @@ void emit_walk(std::vector<std::uint8_t>& body, unsigned size, std::uint32_t ram
     if (write) {
         // CR0.WP=1 write to a read-only page: hand the instruction back so
         // the interpreter raises the real #PF.
-        emit_i32(body, static_cast<std::int32_t>(kCr0Slot + ho.base));
-        body.push_back(kI64Load);
-        body.push_back(kAlign8);
-        append_uleb(body, 0);
-        emit_i64(body, 16);
-        body.push_back(kI64ShrU);
-        body.push_back(kI32Wrap);
-        emit_i32(body, 1);
-        body.push_back(kI32And);
+        emit_local(body, kLocalGet, kPermWp);
         emit_local(body, kLocalGet, kTmpE);
         emit_i64(body, 1);
         body.push_back(kI64ShrU);

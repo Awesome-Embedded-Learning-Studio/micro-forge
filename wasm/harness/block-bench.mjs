@@ -228,7 +228,7 @@ async function runBlocks(budget) {
     retired += e.mf_icount() - before;
     if (exit.kind !== EXIT_KIND.RUNNING) return { retired, exit, compiled, refused, execs };
   }
-  return { retired, exit: { kind: 0, code: 0 }, compiled, refused, execs };
+  return { retired, exit: { kind: 0, code: 0 }, compiled, refused, execs, handoffs, partial };
 }
 
 // CODEX-TIMING: diagnostic copy of runBlocks. Accounting uses actual `done`
@@ -338,7 +338,7 @@ async function runBlocksTimed(budget) {
     retired += delta; timing.interpreterInstructions += Number(delta);
     if (exit.kind !== EXIT_KIND.RUNNING) return { retired, exit, compiled, refused, execs };
   }
-  return { retired, exit: { kind: 0, code: 0 }, compiled, refused, execs };
+  return { retired, exit: { kind: 0, code: 0 }, compiled, refused, execs, handoffs, partial };
 }
 
 // CODEX-TIMING: subtract the median empty clock-pair cost from each sample.
@@ -382,14 +382,16 @@ function revict() {
   }
 }
 async function runBlocksEngine(budget) {
-  let compiled = 0, refused = 0, execs = 0;
+  let compiled = 0, refused = 0, execs = 0, handoffs = 0, partial = 0;
   let retired = 0n;
   while (retired < budget) {
     const status = e.mf_runner_run(budget - retired, RUNNER_BURST);
     retired += e.mf_runner_retired();
     execs += e.mf_runner_execs();
+    handoffs += e.mf_runner_handoffs();
+    partial += e.mf_runner_partial_handoffs();
     const exit = decodeExit(e.mf_runner_exit());
-    if (status === 0 || status === 3) return { retired, exit, compiled, refused, execs };
+    if (status === 0 || status === 3) return { retired, exit, compiled, refused, execs, handoffs, partial };
     if (status === 4) continue; // burst limit: straight back in
     const rip = BigInt(e.mf_runner_miss_hi() >>> 0) << 32n | BigInt(e.mf_runner_miss_lo() >>> 0);
     const lo = Number(rip & 0xFFFFFFFFn) >>> 0, hi = Number(rip >> 32n) >>> 0;
@@ -433,7 +435,7 @@ async function runBlocksEngine(budget) {
     }
     if (rcache.size > RCACHE_MAX) revict();
   }
-  return { retired, exit: { kind: 0, code: 0 }, compiled, refused, execs };
+  return { retired, exit: { kind: 0, code: 0 }, compiled, refused, execs, handoffs, partial };
 }
 
 const budget = BigInt(options.instructions);
@@ -503,6 +505,7 @@ if (timing) {
       : "Use exact counters and compile times only. Sparse short-call samples are cold-path observations, not absolute phase estimates.",
     timerPairNs: emptyClockMs * 1e6, ...timing,
     compiled: result.compiled, refused: result.refused, blockExecs: result.execs,
+    blockHandoffs: result.handoffs,
     interpreterSteps: steps, uniqueCompiledRips: compiledRips.size,
     uniqueRefusedRips: refusedRips.size, finalCacheSize: cache.size,
     accountedInstructions: timing.blockInstructions + timing.interpreterInstructions,
@@ -521,6 +524,7 @@ console.log(JSON.stringify({
   exit: result.exit,
   serial: e.mf_serial_tx().toString(),
   compiled: result.compiled, refused: result.refused, blockExecs: result.execs,
+  blockHandoffs: result.handoffs, partialHandoffs: result.partial,
 }));
 
 const top = [...refusedHits.entries()].sort((x, y) => y[1] - x[1]).slice(0, 12);

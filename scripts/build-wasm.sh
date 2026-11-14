@@ -49,7 +49,7 @@ EXPORTS="${EXPORTS},_mf_retire"
 EXPORTS="${EXPORTS},_mf_event_budget"
 EXPORTS="${EXPORTS},_mf_note_store,_mf_code_epoch,_mf_tlb_epoch"
 EXPORTS="${EXPORTS},_mf_runner_reset,_mf_runner_put,_mf_runner_refuse,_mf_runner_remove,_mf_runner_reepoch,_mf_runner_set_batch,_mf_runner_run,_mf_runner_dump"
-EXPORTS="${EXPORTS},_mf_runner_retired,_mf_runner_exit,_mf_runner_miss_lo,_mf_runner_miss_hi,_mf_runner_execs"
+EXPORTS="${EXPORTS},_mf_runner_retired,_mf_runner_exit,_mf_runner_miss_lo,_mf_runner_miss_hi,_mf_runner_execs,_mf_runner_handoffs,_mf_runner_partial_handoffs"
 
 mkdir -p "$(dirname "${OUT}")"
 # shellcheck disable=SC2086

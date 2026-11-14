@@ -61,6 +61,8 @@ std::uint32_t g_next_fn = 0;            ///< next free table slot (assigned upwa
 std::uint64_t g_retired = 0;            ///< instructions retired by the last run.
 std::uint64_t g_exit = 0;               ///< packed terminal exit, if any.
 std::uint32_t g_execs = 0;              ///< block runs started by the last run.
+std::uint32_t g_handoffs = 0;           ///< block runs that handed back.
+std::uint32_t g_partial_handoffs = 0;   ///< handoffs after some instructions ran.
 std::uint64_t g_miss = 0;               ///< rip the caller must compile.
 std::uint64_t g_batch = kFallbackBatch; ///< interpreter batch per fallback.
 
@@ -230,6 +232,16 @@ uint32_t mf_runner_execs() {
     return g_execs;
 }
 
+/// @brief Block runs of the last mf_runner_run call that handed back.
+uint32_t mf_runner_handoffs() {
+    return g_handoffs;
+}
+
+/// @brief Handoffs that happened after some instructions already ran.
+uint32_t mf_runner_partial_handoffs() {
+    return g_partial_handoffs;
+}
+
 /// @brief Dumps the hottest registry entries for offline analysis.
 /// @param[out] out Address of a u32 array, 4 words per entry.
 /// @param[in] max Entry capacity of @p out.
@@ -274,6 +286,9 @@ uint32_t mf_runner_run(uint64_t budget, uint32_t burst) {
     g_retired = 0;
     g_exit = 0;
     g_execs = 0;
+    g_handoffs = 0;
+    g_partial_handoffs = 0;
+    g_handoffs = 0;
     // Hoisted: the epoch cannot change inside a block run (no block lowers a
     // privileged instruction), so one read serves the whole burst.
     const std::uint64_t epoch = mf_code_epoch();
@@ -296,8 +311,14 @@ uint32_t mf_runner_run(uint64_t budget, uint32_t burst) {
                     handed ? mirror_u32(micro_forge::base::detail::kDoneSlot) : p->count;
                 const std::uint32_t hd =
                     handed ? mirror_u32(micro_forge::base::detail::kHandoffDirtySlot) : 0U;
-                if (handed && done == 0U) {
-                    p->skip = kSkipProbe; // zero-progress handoff: suppress
+                if (handed) {
+                    ++g_handoffs;
+                    if (done != 0U) {
+                        ++g_partial_handoffs;
+                    }
+                    if (done == 0U) {
+                        p->skip = kSkipProbe; // zero-progress handoff: suppress
+                    }
                 }
                 mf_bridge_finish(next, done, p->dirty | hd | 0x80000000U);
                 g_retired += done;

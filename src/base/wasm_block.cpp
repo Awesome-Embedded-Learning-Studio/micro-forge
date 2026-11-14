@@ -494,6 +494,22 @@ WasmBlockInfo append_wasm_block(std::span<const arch::x86_64::DecodedInsn> insns
             emit_local(body, kLocalSet, local);
         }
     }
+    // Permission state is block-invariant: resolve once, use per access.
+    emit_i32(body, static_cast<std::int32_t>(detail::kCplSlot + gpr_base));
+    body.push_back(detail::kI32Load8U);
+    body.push_back(detail::kAlign0);
+    append_uleb(body, 0);
+    emit_local(body, detail::kLocalSet, detail::kPermCpl);
+    emit_i32(body, static_cast<std::int32_t>(detail::kCr0Slot + gpr_base));
+    body.push_back(detail::kI64Load);
+    body.push_back(detail::kAlign8);
+    append_uleb(body, 0);
+    emit_i64(body, 16);
+    body.push_back(detail::kI64ShrU);
+    body.push_back(detail::kI32Wrap);
+    emit_i32(body, 1);
+    body.push_back(detail::kI32And);
+    emit_local(body, detail::kLocalSet, detail::kPermWp);
     body.insert(body.end(), code.begin(), code.end());
     // Exit bridge: store dirtied locals back, then report the next rip.
     for (std::uint32_t local = 0; local < kNumGprs; ++local) {
