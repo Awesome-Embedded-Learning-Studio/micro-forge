@@ -64,6 +64,11 @@ std::uint32_t g_execs = 0;                ///< block runs started by the last ru
 std::uint32_t g_handoffs = 0;             ///< block runs that handed back.
 std::uint32_t g_partial_handoffs = 0;     ///< handoffs after some instructions ran.
 std::array<std::uint32_t, 8> g_reasons{}; ///< handoff reasons (see emit_handoff).
+std::uint64_t g_block_retired = 0;        ///< instructions retired inside blocks.
+std::uint64_t g_interp_retired = 0;       ///< instructions retired by mf_run fallbacks.
+std::uint32_t g_fallback_noblock = 0;     ///< fallbacks with no registry entry.
+std::uint32_t g_fallback_skip = 0;        ///< fallbacks from skip suppression.
+std::uint32_t g_fallback_event = 0;       ///< fallbacks with a short event budget.
 std::uint64_t g_miss = 0;                 ///< rip the caller must compile.
 std::uint64_t g_batch = kFallbackBatch;   ///< interpreter batch per fallback.
 
@@ -238,6 +243,30 @@ uint32_t mf_runner_handoffs() {
     return g_handoffs;
 }
 
+/// @brief Fallback causes: 0 none, 1 no entry, 2 skip, 3 short event budget.
+uint32_t mf_runner_fallback_cause(std::uint32_t index) {
+    switch (index) {
+    case 1U:
+        return g_fallback_noblock;
+    case 2U:
+        return g_fallback_skip;
+    case 3U:
+        return g_fallback_event;
+    default:
+        return 0U;
+    }
+}
+
+/// @brief Total instructions retired inside blocks over the last run.
+uint64_t mf_runner_block_retired() {
+    return g_block_retired;
+}
+
+/// @brief Total instructions retired by interpreter fallbacks.
+uint64_t mf_runner_interp_retired() {
+    return g_interp_retired;
+}
+
 /// @brief Count of the last run's handoffs per reason (index = reason code).
 uint32_t mf_runner_reason(std::uint32_t index) {
     return index < g_reasons.size() ? g_reasons[index] : 0U;
@@ -295,6 +324,11 @@ uint32_t mf_runner_run(uint64_t budget, uint32_t burst) {
     g_handoffs = 0;
     g_partial_handoffs = 0;
     g_reasons.fill(0);
+    g_block_retired = 0;
+    g_interp_retired = 0;
+    g_fallback_noblock = 0;
+    g_fallback_skip = 0;
+    g_fallback_event = 0;
     g_handoffs = 0;
     // Hoisted: the epoch cannot change inside a block run (no block lowers a
     // privileged instruction), so one read serves the whole burst.
@@ -309,6 +343,7 @@ uint32_t mf_runner_run(uint64_t budget, uint32_t burst) {
         if (p->state == State::kActive) {
             if (p->skip != 0U) {
                 --p->skip;
+                ++g_fallback_skip;
             } else if (mf_bridge_prepare(p->used | 0x80000000U) >= p->count) {
                 using BlockFn = std::uint64_t (*)();
                 const std::uint64_t next =
@@ -334,13 +369,16 @@ uint32_t mf_runner_run(uint64_t budget, uint32_t burst) {
                 }
                 mf_bridge_finish(next, done, p->dirty | hd | 0x80000000U);
                 g_retired += done;
+                g_block_retired += done;
                 ++p->execs;
                 ++g_execs;
                 if (handed) {
                     // next rip often has a block: single interpreter step
                     const std::uint64_t before = mf_icount();
                     g_exit = mf_run(1);
-                    g_retired += mf_icount() - before;
+                    const std::uint64_t stepped = mf_icount() - before;
+                    g_retired += stepped;
+                    g_interp_retired += stepped;
                     if ((g_exit & 0xFFU) != 0U) {
                         return 3U;
                     }
@@ -348,8 +386,12 @@ uint32_t mf_runner_run(uint64_t budget, uint32_t burst) {
                 continue;
             }
         }
-        if (p != nullptr && p->state == State::kRefused) {
+        if (p == nullptr) {
+            ++g_fallback_noblock;
+        } else if (p->state == State::kRefused) {
             ++p->execs; // diagnostic: how often an unliftable rip comes back
+        } else if (p->state == State::kActive) {
+            ++g_fallback_event; // active but the event budget was too small
         }
         // no block, suppressed, or the event budget would outlive it:
         // short interpreter batch (mf_run caps at its own event budget)
@@ -358,7 +400,9 @@ uint32_t mf_runner_run(uint64_t budget, uint32_t burst) {
         const std::uint64_t batch =
             std::clamp<std::uint64_t>(remain, 1U, g_batch); // always progress
         g_exit = mf_run(batch);
-        g_retired += mf_icount() - before;
+        const std::uint64_t batched = mf_icount() - before;
+        g_retired += batched;
+        g_interp_retired += batched;
         if ((g_exit & 0xFFU) != 0U) {
             return 3U;
         }
