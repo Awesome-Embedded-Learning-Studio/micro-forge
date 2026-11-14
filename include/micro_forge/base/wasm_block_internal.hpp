@@ -26,7 +26,11 @@ struct Handoff {
 
 /// @brief Marks the mirror handed flag and returns @p ho.rip.
 /// Records done/dirty so the runner commits what already ran.
-void emit_handoff(std::vector<std::uint8_t>& body, const Handoff& ho);
+/// @param[in] reason Nonzero tag recorded in kHandoffReasonSlot for
+///            diagnostics (1 = walk out of RAM, 2 = page absent,
+///            3 = paddr out of RAM, 4 = user access to a supervisor page,
+///            5 = write to a read-only page).
+void emit_handoff(std::vector<std::uint8_t>& body, const Handoff& ho, unsigned reason = 0);
 
 /// @brief Emits the effective address of @p op into kTmpV (no guest access).
 /// @param[in,out] body Opcode stream under construction.

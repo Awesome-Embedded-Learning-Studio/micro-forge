@@ -104,10 +104,11 @@ constexpr std::uint32_t kStoreLogSlot = 304;     ///< 8 store paddrs for note_st
 /// below starts after it so the two regions cannot alias.
 constexpr std::uint32_t kTlbEpochSlot = 368; ///< u32 translation generation.
 
-constexpr std::uint32_t kExitDoneSlot = 376; ///< u32 instructions done when the block exited.
-constexpr std::uint32_t kTlbSlot = 384;      ///< First block-TLB entry.
-constexpr std::uint32_t kTlbEntries = 512;   ///< Direct-mapped entries.
-constexpr std::uint32_t kTlbEntryBytes = 24; ///< vaddr page, paddr, gen, permissions.
+constexpr std::uint32_t kExitDoneSlot = 376;      ///< u32 instructions done when the block exited.
+constexpr std::uint32_t kHandoffReasonSlot = 380; ///< u32 why the block handed back.
+constexpr std::uint32_t kTlbSlot = 384;           ///< First block-TLB entry.
+constexpr std::uint32_t kTlbEntries = 512;        ///< Direct-mapped entries.
+constexpr std::uint32_t kTlbEntryBytes = 24;      ///< vaddr page, paddr, gen, permissions.
 constexpr std::uint32_t kMirrorBytes = kTlbSlot + (kTlbEntries * kTlbEntryBytes);
 ///< Total GPR mirror size (GPRs, bridge cells, block TLB).
 

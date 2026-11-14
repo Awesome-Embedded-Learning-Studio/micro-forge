@@ -57,14 +57,15 @@ struct Entry {
 };
 
 std::array<Entry, kSlots> g_entries{};
-std::uint32_t g_next_fn = 0;            ///< next free table slot (assigned upward).
-std::uint64_t g_retired = 0;            ///< instructions retired by the last run.
-std::uint64_t g_exit = 0;               ///< packed terminal exit, if any.
-std::uint32_t g_execs = 0;              ///< block runs started by the last run.
-std::uint32_t g_handoffs = 0;           ///< block runs that handed back.
-std::uint32_t g_partial_handoffs = 0;   ///< handoffs after some instructions ran.
-std::uint64_t g_miss = 0;               ///< rip the caller must compile.
-std::uint64_t g_batch = kFallbackBatch; ///< interpreter batch per fallback.
+std::uint32_t g_next_fn = 0;              ///< next free table slot (assigned upward).
+std::uint64_t g_retired = 0;              ///< instructions retired by the last run.
+std::uint64_t g_exit = 0;                 ///< packed terminal exit, if any.
+std::uint32_t g_execs = 0;                ///< block runs started by the last run.
+std::uint32_t g_handoffs = 0;             ///< block runs that handed back.
+std::uint32_t g_partial_handoffs = 0;     ///< handoffs after some instructions ran.
+std::array<std::uint32_t, 8> g_reasons{}; ///< handoff reasons (see emit_handoff).
+std::uint64_t g_miss = 0;                 ///< rip the caller must compile.
+std::uint64_t g_batch = kFallbackBatch;   ///< interpreter batch per fallback.
 
 /// Hash of a guest rip into the registry (fibonacci-ish, low bits).
 std::uint32_t hash_of(std::uint64_t rip) {
@@ -237,6 +238,11 @@ uint32_t mf_runner_handoffs() {
     return g_handoffs;
 }
 
+/// @brief Count of the last run's handoffs per reason (index = reason code).
+uint32_t mf_runner_reason(std::uint32_t index) {
+    return index < g_reasons.size() ? g_reasons[index] : 0U;
+}
+
 /// @brief Handoffs that happened after some instructions already ran.
 uint32_t mf_runner_partial_handoffs() {
     return g_partial_handoffs;
@@ -288,6 +294,7 @@ uint32_t mf_runner_run(uint64_t budget, uint32_t burst) {
     g_execs = 0;
     g_handoffs = 0;
     g_partial_handoffs = 0;
+    g_reasons.fill(0);
     g_handoffs = 0;
     // Hoisted: the epoch cannot change inside a block run (no block lowers a
     // privileged instruction), so one read serves the whole burst.
@@ -313,6 +320,11 @@ uint32_t mf_runner_run(uint64_t budget, uint32_t burst) {
                     handed ? mirror_u32(micro_forge::base::detail::kHandoffDirtySlot) : 0U;
                 if (handed) {
                     ++g_handoffs;
+                    const std::uint32_t why =
+                        mirror_u32(micro_forge::base::detail::kHandoffReasonSlot);
+                    if (why != 0U && why < g_reasons.size()) {
+                        ++g_reasons[why];
+                    }
                     if (done != 0U) {
                         ++g_partial_handoffs;
                     }

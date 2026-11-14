@@ -20,7 +20,14 @@ namespace micro_forge::base::detail {
 /// Kernel-mode guard: cpl != 0 or CR0.WP=1 returns the sentinel (the
 /// interpreter re-checks user/write permissions we cannot mirror cheaply).
 /// Marks the mirror handed flag, records done/dirty and returns @p ho.rip.
-void emit_handoff(std::vector<std::uint8_t>& body, const Handoff& ho) {
+void emit_handoff(std::vector<std::uint8_t>& body, const Handoff& ho, unsigned reason) {
+    // Always rewrite the tag: a stale nonzero value would mislabel the
+    // next handoff that comes from a different refusal site.
+    emit_i32(body, static_cast<std::int32_t>(kHandoffReasonSlot + ho.base));
+    emit_i32(body, static_cast<std::int32_t>(reason));
+    body.push_back(kI32Store);
+    body.push_back(kAlign4);
+    append_uleb(body, 0);
     // the early return skips the exit bridge: push everything the block
     // has already written back to the mirror before handing control over
     for (std::uint32_t local = 0; local < kNumGprs; ++local) {
@@ -98,7 +105,7 @@ void emit_walk_level(std::vector<std::uint8_t>& body, unsigned shift, std::uint3
     body.push_back(kI64LtU);
     body.push_back(kI32Eqz);
     emit_if_void(body);
-    emit_handoff(body, ho);
+    emit_handoff(body, ho, 1);
     body.push_back(kBlockEnd);
     emit_local(body, kLocalGet, kTmpE);
     body.push_back(kI32Wrap);
@@ -111,7 +118,7 @@ void emit_walk_level(std::vector<std::uint8_t>& body, unsigned shift, std::uint3
     body.push_back(kI64And);
     body.push_back(kI64Eqz);
     emit_if_void(body);
-    emit_handoff(body, ho);
+    emit_handoff(body, ho, 2);
     body.push_back(kBlockEnd);
     // next table frame
     emit_local(body, kLocalGet, kTmpE);
@@ -151,7 +158,7 @@ void emit_paddr_tail(std::vector<std::uint8_t>& body, unsigned size, std::uint32
     body.push_back(kI64LtU);
     body.push_back(kI32Eqz);
     emit_if_void(body);
-    emit_handoff(body, ho);
+    emit_handoff(body, ho, 3);
     body.push_back(kBlockEnd);
     emit_local(body, kLocalGet, kTmpPd);
     body.push_back(kI32Wrap);
@@ -207,7 +214,7 @@ void emit_tlb_probe(std::vector<std::uint8_t>& body, std::uint32_t base, bool wr
     // user-mode permission: cpl != 0 requires the entry's U/S bit, otherwise
     // the access must fall through to the walk (which re-checks and hands
     // the faulting instruction to the interpreter).
-    emit_i32(body, 1); // EXPERIMENT: user mode refused again
+    emit_i32(body, 1); // conservative: supervisor pages always hand back
     emit_local(body, kLocalGet, kTmpE);
     body.push_back(kI32Wrap);
     body.push_back(kI32Load);
@@ -320,7 +327,7 @@ void emit_walk(std::vector<std::uint8_t>& body, unsigned size, std::uint32_t ram
     body.push_back(kBlockEnd); // close the 1GB if
     // user-mode access to a supervisor page: hand the instruction to the
     // interpreter so the real #PF (CR2, error code, kernel handler) fires.
-    emit_i32(body, 1); // EXPERIMENT: user mode refused again
+    emit_i32(body, 1); // conservative: supervisor pages always hand back
     emit_local(body, kLocalGet, kTmpE);
     emit_i64(body, 2);
     body.push_back(kI64ShrU);
@@ -330,7 +337,7 @@ void emit_walk(std::vector<std::uint8_t>& body, unsigned size, std::uint32_t ram
     body.push_back(kI32Eqz); // U/S == 0
     body.push_back(kI32And);
     emit_if_void(body);
-    emit_handoff(body, ho);
+    emit_handoff(body, ho, 4);
     body.push_back(kBlockEnd);
     if (write) {
         // CR0.WP=1 write to a read-only page: hand the instruction back so
@@ -345,7 +352,7 @@ void emit_walk(std::vector<std::uint8_t>& body, unsigned size, std::uint32_t ram
         body.push_back(kI32Eqz);
         body.push_back(kI32And);
         emit_if_void(body);
-        emit_handoff(body, ho);
+        emit_handoff(body, ho, 5);
         body.push_back(kBlockEnd);
     }
     // Park the entry's U/S bit now: kTmpE is about to be reused as the TLB
