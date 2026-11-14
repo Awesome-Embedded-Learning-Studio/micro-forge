@@ -385,21 +385,23 @@ bool lower_memdst_alu(const DecodedInsn& insn, const Operand& mem, const Operand
         return false;
     }
     const std::int64_t mask = width_mask_of(size);
-    // t_a = register source masked to the operand width
+    // x86 evaluates [mem] OP reg as memory op register, and sub/cmp/sbb
+    // are not commutative: operand A must be the loaded memory value.
+    // t_b = register source masked to the operand width
     emit_local(body, kLocalGet, *src);
     if (size < 8) {
         emit_i64(body, mask);
         body.push_back(kI64And);
     }
-    emit_local(body, kLocalSet, kTmpA);
-    // t_b = loaded memory operand (zero-extended by the load)
+    emit_local(body, kLocalSet, kTmpB);
+    // t_a = loaded memory operand (zero-extended by the load)
     if (!emit_vaddr(mem, body)) {
         return false;
     }
     const Handoff ho{.base = base, .done = done, .rip = rip, .dirty_bits = dirty_bits};
     emit_walk(body, mem.size, ram_limit, ho, /*write=*/false);
     emit_guest_load(body, mem.size);
-    emit_local(body, kLocalSet, kTmpB);
+    emit_local(body, kLocalSet, kTmpA);
     emit_carry_in(body, carry, base);
     // t_c = t_a op t_b (+/- carry-in for adc/sbb)
     emit_local(body, kLocalGet, kTmpA);
