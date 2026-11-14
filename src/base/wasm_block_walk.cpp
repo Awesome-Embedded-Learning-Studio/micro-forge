@@ -49,6 +49,24 @@ void emit_handoff(std::vector<std::uint8_t>& body, const Handoff& ho) {
     body.push_back(kReturn);
 }
 
+/// Early block exit with an instruction count (taken side of a jcc).
+void emit_branch_exit(std::vector<std::uint8_t>& body, const Handoff& ho) {
+    for (std::uint32_t local = 0; local < kNumGprs; ++local) {
+        if (((ho.dirty_bits >> local) & 1U) != 0U) {
+            emit_i32(body, static_cast<std::int32_t>(local * 8U));
+            emit_local(body, kLocalGet, local);
+            emit_store(body, ho.base);
+        }
+    }
+    emit_i32(body, static_cast<std::int32_t>(kExitDoneSlot + ho.base));
+    emit_i32(body, static_cast<std::int32_t>(ho.done));
+    body.push_back(kI32Store);
+    body.push_back(kAlign4);
+    append_uleb(body, 0);
+    emit_i64(body, static_cast<std::int64_t>(ho.rip));
+    body.push_back(kReturn);
+}
+
 /// void if whose condition is already on the stack.
 void emit_if_void(std::vector<std::uint8_t>& body) {
     body.push_back(kIfVoid);

@@ -73,16 +73,15 @@ TEST(WasmBlockTest, LowersCmpJccBranch) {
     ASSERT_EQ(std::size_t{3}, insns.size());
     std::vector<std::uint8_t> body;
     const auto info = micro_forge::base::append_wasm_block(insns, 0x1000, body);
-    // The jcc terminates the block: two instructions lowered (the add is
-    // past the branch), taken = 0x1000 + 4 + 2 + 4, fallthrough = 0x1006.
-    EXPECT_EQ(std::size_t{2}, info.lowered);
-    EXPECT_EQ(micro_forge::base::WasmTerm::kBranch, info.term);
-    EXPECT_EQ(0x100AU, info.jump_target);
-    EXPECT_EQ(0x1006U, info.fall_rip);
+    // A jcc no longer ends the block: the taken side exits mid-block with
+    // its own instruction count, so all three instructions lower and the
+    // block falls through to 0x100A.
+    EXPECT_EQ(std::size_t{3}, info.lowered);
+    EXPECT_EQ(micro_forge::base::WasmTerm::kNext, info.term);
     EXPECT_TRUE(info.flags_used);
     EXPECT_TRUE(info.flags_dirty);
-    EXPECT_EQ(1U, info.used_mask);  // rax (slot 0)
-    EXPECT_EQ(0U, info.dirty_mask); // cmp writes no register
+    EXPECT_EQ(5U, info.used_mask);  // rax (slot 0) + rdx (slot 2)
+    EXPECT_EQ(4U, info.dirty_mask); // add rdx,3 (slot 2)
     EXPECT_FALSE(body.empty());
 }
 

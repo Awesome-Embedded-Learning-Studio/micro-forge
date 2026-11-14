@@ -232,9 +232,15 @@ bool lower_insn(const arch::x86_64::DecodedInsn& insn, std::uint64_t rip,
         return true;
     }
     if (insn.mnemonic == Mnemonic::kJcc && insn.ops[0].kind == Operand::Kind::kImm) {
-        term.kind = WasmTerm::kBranch;
-        term.taken = after + static_cast<std::uint64_t>(insn.ops[0].disp);
-        term.fall = after;
+        // The fall path continues inside this block; the taken side exits
+        // here and reports how many instructions actually ran.
+        const std::uint64_t taken = after + static_cast<std::uint64_t>(insn.ops[0].disp);
+        emit_cc(body, insn.cc, base);
+        emit_if_void(body);
+        emit_branch_exit(
+            body,
+            Handoff{.base = base, .done = done + 1U, .rip = taken, .dirty_bits = dirty_so_far});
+        body.push_back(kBlockEnd);
         return true;
     }
     // setcc r8: merge the 0/1 condition byte into the register's high bits

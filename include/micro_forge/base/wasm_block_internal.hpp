@@ -45,6 +45,11 @@ void emit_guest_store(std::vector<std::uint8_t>& body, unsigned size);
 /// @param[in] base GPR mirror base offset.
 void emit_store_log(std::vector<std::uint8_t>& body, std::uint32_t base);
 
+/// @brief Exits the block early to @p ho.rip after @p ho.done instructions.
+/// Stores the dirtied locals, records the count in kExitDoneSlot and
+/// returns; unlike a handoff it keeps the runner on the block path.
+void emit_branch_exit(std::vector<std::uint8_t>& body, const Handoff& ho);
+
 /// @brief Emits a void if whose condition is already on the stack.
 void emit_if_void(std::vector<std::uint8_t>& body);
 
