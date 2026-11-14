@@ -375,11 +375,12 @@ uint32_t mf_wasm_block2(uint32_t rip_lo, uint32_t rip_hi, uint32_t max_insns, ui
             break;
         }
         if (imm_branch) {
-            // Branches end the block. The mid-block inline path exists but is
-            // still being debugged: enabling it here needs the exit condition
-            // direction verified first.
             insns.push_back(*decoded);
-            break;
+            if (decoded->mnemonic == arch::x86_64::Mnemonic::kJmp) {
+                break;
+            }
+            pc += decoded->length;
+            continue;
         }
         if (decoded->length == 0) {
             break;

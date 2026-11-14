@@ -350,7 +350,8 @@ uint32_t mf_runner_run(uint64_t budget, uint32_t burst) {
                     reinterpret_cast<BlockFn>(p->fn)(); // NOLINT(*-no-int-to-ptr)
                 const bool handed = mirror_u32(micro_forge::base::detail::kHandedSlot) == 1U;
                 const std::uint32_t done =
-                    handed ? mirror_u32(micro_forge::base::detail::kDoneSlot) : p->count;
+                    handed ? mirror_u32(micro_forge::base::detail::kDoneSlot)
+                           : mirror_u32(micro_forge::base::detail::kExitDoneSlot);
                 // Both exits report the registers they really dirtied; a jcc
                 // exit covers only the executed part of the slice.
                 const std::uint32_t hd = mirror_u32(micro_forge::base::detail::kHandoffDirtySlot);
