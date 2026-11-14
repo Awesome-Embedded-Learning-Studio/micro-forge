@@ -12,6 +12,7 @@
 extern "C" {
 uint32_t mf_gpr_bridge_base(void);
 void mf_bridge_cpu_state(void);
+
 uint32_t mf_tlb_epoch(void);
 uint32_t mf_tlb_invalidations(void);
 void mf_gprs_flush(uint32_t mask);
@@ -66,35 +67,6 @@ uint64_t mf_bridge_prepare(uint32_t used_mask) {
 /// @param[in] next_rip Guest rip the block exited to.
 /// @param[in] retire Instructions the block executed (wasm form).
 /// @param[in] dirty_mask Bit i set commits GPR i; bit 31 commits flags.
-/// @brief Block epilogue without the register commit.
-///
-/// Leaves the mirror authoritative: the next block reads its inputs straight
-/// out of it, so a run of blocks costs one flush and one commit instead of a
-/// flush and commit per block. The caller commits (mf_bridge_finish) before
-/// handing control to the interpreter.
-/// @param[in] next_rip Guest rip the block exited to.
-/// @param[in] retire Instructions the block executed.
-void mf_bridge_exit(uint64_t next_rip, uint32_t retire) {
-    // Store-log drain still happens here: a self-modifying store must bump
-    // the code epoch before any cached block is reused.
-    const auto base = static_cast<std::uintptr_t>(mf_gpr_bridge_base());
-    // NOLINTNEXTLINE(performance-no-int-to-ptr) -- wasm32 mirror base
-    const auto* mirror = reinterpret_cast<const std::uint8_t*>(base);
-    const auto count = store_log_count(mirror);
-    if (count != 0U) {
-        const auto* const log = reinterpret_cast<const std::uint64_t*>( // NOLINT(*-no-int-to-ptr)
-            base + micro_forge::base::detail::kStoreLogSlot);
-        for (std::uint32_t i = 0; i < count; ++i) {
-            mf_note_store(log[i]);
-        }
-        auto* const cell = reinterpret_cast<std::uint32_t*>( // NOLINT(performance-no-int-to-ptr)
-            base + micro_forge::base::detail::kStoreCountSlot);
-        *cell = 0;
-    }
-    mf_set_rip(next_rip);
-    mf_retire(retire);
-}
-
 void mf_bridge_finish(uint64_t next_rip, uint32_t retire, uint32_t dirty_mask) {
     mf_gprs_commit(dirty_mask);
     // Drain the store log so self-modifying code bumps the code epoch

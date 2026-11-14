@@ -156,7 +156,15 @@ void Cpu::retire(unsigned n) {
     // Batched: a JIT block retires its whole run at once. Scheduler events
     // can slide to the end of the block (<= 64 instructions), which is far
     // below the 100 Hz device tick.
+    retire_deferred(n);
+    retire_poll();
+}
+
+void Cpu::retire_deferred(unsigned n) {
     icount_ += n;
+}
+
+void Cpu::retire_poll() {
     scheduler_.dispatch(icount_);
     if (irq_line_ != nullptr && irq_line_->pending() && irq_hook_) {
         irq_hook_(); // device acknowledgement / EOI hook

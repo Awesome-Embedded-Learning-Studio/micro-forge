@@ -169,17 +169,17 @@ public:
     /// @brief Whether an interrupt request is queued.
     [[nodiscard]] bool interrupt_queued() const { return interrupt_pending_; }
 
-    // --- state access (tests, and snapshots from batch 4) ---
-    /// @brief Reads one GPR (full 64 bits).
-    [[nodiscard]] uint64_t gpr(Reg reg) const { return regs_[index_of(reg)]; }
-    /// @brief Six arithmetic flags packed cf|zf<<1|sf<<2|of<<3|pf<<4|af<<5.
-    [[nodiscard]] uint32_t flags_code() const;
-    /// @brief Restores the six arithmetic flags from flags_code() layout.
+    [[nodiscard]] uint64_t gpr(Reg reg) const { return regs_[index_of(reg)]; } ///< one GPR
+    [[nodiscard]] uint32_t flags_code() const; ///< six flags, packed
+    /// @brief Restores six flags from the flags_code() layout.
     void set_flags_code(uint32_t code);
-    /// @brief Guest instructions left before the next event must surface.
-    [[nodiscard]] uint64_t event_budget() const;
-    /// @brief Retires n instructions the caller (JIT or wasm) executed itself.
+    [[nodiscard]] uint64_t event_budget() const; ///< instructions to next event
+    /// @brief Accounts n instructions and polls events.
     void retire(unsigned n);
+    /// @brief Accounts n instructions only; retire_poll runs the events.
+    void retire_deferred(unsigned n);
+    /// @brief Scheduler dispatch and interrupt delivery after a deferred run.
+    void retire_poll();
     /// Probe-only: byte image of the faulting instruction and its length.
     [[nodiscard]] std::span<const uint8_t> last_fault_bytes() const {
         return {last_fault_bytes_.data(), last_fault_bytes_.size()};

@@ -495,9 +495,7 @@ uint32_t mf_gpr_bridge_base(void) {
     return bridge;
 }
 
-/// @brief Copies guest GPRs/flags into the linear-memory mirror for a block.
-/// @param[in] mask Bit i set mirrors GPR i; bit 31 mirrors the flags cell.
-/// @brief Publishes CR3/CR0/CPL into the mirror (page walk + permission checks).
+/// @brief Publishes CR3/CR0/CPL for the block walk.
 void mf_bridge_cpu_state(void) {
     const std::uint32_t base = mf_gpr_bridge_base();
     const auto& cpu = current().cpu();
