@@ -174,7 +174,7 @@ bool writes_dst(Mnemonic mnemonic) {
     // missing entry leaves the local out of the dirty set and the block
     // exit never writes it back to the mirror.
     return mnemonic == Mnemonic::kMov || mnemonic == Mnemonic::kSetcc ||
-           mnemonic == Mnemonic::kLea || alu_opcode(mnemonic) != 0;
+           mnemonic == Mnemonic::kLea || mnemonic == Mnemonic::kPop || alu_opcode(mnemonic) != 0;
 }
 
 /// Mnemonics whose lowering writes the flags cell or reads CF (bt).
@@ -182,13 +182,6 @@ bool writes_flags(Mnemonic mnemonic) {
     return alu_opcode(mnemonic) != 0 || mnemonic == Mnemonic::kCmp || mnemonic == Mnemonic::kTest ||
            mnemonic == Mnemonic::kBt;
 }
-
-/// Exit shape one terminating instruction reports to the block builder.
-struct TermExit {
-    WasmTerm kind = WasmTerm::kNext;
-    std::uint64_t taken = 0;
-    std::uint64_t fall = 0;
-};
 
 /// ALU flag family of a mnemonic (0 add, 1 sub, 2 logic).
 unsigned alu_kind(Mnemonic mnemonic) {
@@ -221,26 +214,9 @@ bool lower_insn(const arch::x86_64::DecodedInsn& insn, std::uint64_t rip,
                 std::vector<std::uint8_t>& body, TermExit& term, std::uint32_t base,
                 std::uint32_t ram_limit, unsigned done, std::uint32_t dirty_so_far) {
     const std::uint64_t after = rip + insn.length;
-    if (insn.mnemonic == Mnemonic::kRet) {
-        // Pop the return address inside the block: read [rsp] through the
-        // same walk the data instructions use, then retire the frame. A
-        // refusal leaves rsp untouched and hands the ret to the interpreter.
-        const auto rsp_local = local_of(arch::x86_64::Reg::kRsp);
-        if (!rsp_local.has_value()) {
-            return false;
-        }
-        const Handoff ho{.base = base, .done = done, .rip = rip, .dirty_bits = dirty_so_far};
-        emit_local(body, kLocalGet, *rsp_local);
-        emit_local(body, kLocalSet, kTmpV);
-        emit_walk(body, 8, ram_limit, ho, /*write=*/false);
-        emit_guest_load(body, 8);
-        emit_local(body, kLocalSet, kTmpC); // popped return address
-        emit_local(body, kLocalGet, *rsp_local);
-        emit_i64(body, 8);
-        body.push_back(kI64Add);
-        emit_local(body, kLocalSet, *rsp_local);
-        term.kind = WasmTerm::kIndirect;
-        return true;
+    if (insn.mnemonic == Mnemonic::kRet || insn.mnemonic == Mnemonic::kPush ||
+        insn.mnemonic == Mnemonic::kPop) {
+        return lower_stack_insn(insn, rip, body, term, base, ram_limit, done, dirty_so_far);
     }
     if (insn.mnemonic == Mnemonic::kJmp && insn.ops[0].kind == Operand::Kind::kImm) {
         term.kind = WasmTerm::kJump;
@@ -438,7 +414,8 @@ WasmBlockInfo append_wasm_block(std::span<const arch::x86_64::DecodedInsn> insns
                 }
             }
         }
-        if (insn.mnemonic == Mnemonic::kRet) {
+        if (insn.mnemonic == Mnemonic::kRet || insn.mnemonic == Mnemonic::kPush ||
+            insn.mnemonic == Mnemonic::kPop) {
             const auto rsp_local = local_of(arch::x86_64::Reg::kRsp);
             if (rsp_local.has_value()) {
                 mask.mark_used(*rsp_local);

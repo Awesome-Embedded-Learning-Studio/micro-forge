@@ -61,6 +61,7 @@ add_library(micro_forge
     src/base/wasm_block.cpp
     src/base/wasm_block_mem.cpp
     src/base/wasm_block_walk.cpp
+    src/base/wasm_block_stack.cpp
     src/presets/cinux/cinux_machine.cpp
     src/kernel/bus/bus.cpp
     src/kernel/device/acpi_tables.cpp

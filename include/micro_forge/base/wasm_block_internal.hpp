@@ -13,8 +13,16 @@
 #include <vector>
 
 #include "micro_forge/arch/x86_64/decoded.hpp"
+#include "micro_forge/base/wasm_block.hpp"
 
 namespace micro_forge::base::detail {
+
+/// Exit shape one terminating instruction reports to the block builder.
+struct TermExit {
+    WasmTerm kind = WasmTerm::kNext; ///< how the block ends.
+    std::uint64_t taken = 0;         ///< jump/branch target.
+    std::uint64_t fall = 0;          ///< branch fallthrough rip.
+};
 
 /// Facts a mid-block refusal needs to hand the rest back to the runner.
 struct Handoff {
@@ -53,6 +61,24 @@ void emit_guest_store(std::vector<std::uint8_t>& body, unsigned size);
 /// @param[in,out] body Opcode stream under construction.
 /// @param[in] base GPR mirror base offset.
 void emit_store_log(std::vector<std::uint8_t>& body, std::uint32_t base);
+
+/// @brief Lowers a guest stack operation into @p body.
+///
+/// Handles `push r`, `pop r` and `ret`: all three move rsp through the same
+/// page walk the data instructions use, so a refusal leaves the stack
+/// untouched and hands the instruction back to the interpreter.
+/// @param[in] insn Decoded instruction (stack forms only).
+/// @param[in] rip Guest rip of the instruction.
+/// @param[in,out] body Opcode stream under construction.
+/// @param[in,out] term Exit shape (ret reports kIndirect).
+/// @param[in] base GPR mirror base offset.
+/// @param[in] ram_limit First physical address outside guest RAM.
+/// @param[in] done Instructions already complete in this block.
+/// @param[in] dirty_so_far Mirror commit mask so far.
+/// @return true when the form was lowered; false keeps it with the interpreter.
+bool lower_stack_insn(const micro_forge::arch::x86_64::DecodedInsn& insn, std::uint64_t rip,
+                      std::vector<std::uint8_t>& body, TermExit& term, std::uint32_t base,
+                      std::uint32_t ram_limit, unsigned done, std::uint32_t dirty_so_far);
 
 /// @brief Exits the block early to @p ho.rip after @p ho.done instructions.
 /// Stores the dirtied locals, records the count in kExitDoneSlot and
