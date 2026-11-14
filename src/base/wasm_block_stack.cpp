@@ -102,6 +102,16 @@ bool lower_stack_insn(const DecodedInsn& insn, std::uint64_t rip, std::vector<st
         term.kind = WasmTerm::kIndirect; // popped return address
         return true;
     }
+    if (insn.mnemonic == Mnemonic::kCall && insn.ops[0].kind == Operand::Kind::kImm) {
+        // call rel32: push the return address, then jump. The stack write
+        // runs before rsp moves, so a refusal hands the whole call back.
+        term.kind = WasmTerm::kJump;
+        term.taken = rip + insn.length + static_cast<std::uint64_t>(insn.ops[0].disp);
+        emit_i64(body, static_cast<std::int64_t>(rip + insn.length));
+        emit_local(body, kLocalSet, kTmpC);
+        emit_store_frame(body, *rsp, kTmpC, 8, ram_limit, ho, base);
+        return true;
+    }
     return false;
 }
 
