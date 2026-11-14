@@ -239,7 +239,7 @@ uint32_t mf_runner_dump(std::uint32_t out, std::uint32_t max) {
         reinterpret_cast<std::uint32_t*>(static_cast<std::uintptr_t>(out)); // NOLINT
     std::uint32_t written = 0;
     for (const Entry& e : g_entries) {
-        if (e.state != State::kActive || e.execs == 0U) {
+        if (e.state == State::kEmpty || e.execs == 0U) {
             continue;
         }
         const auto quad = [&words](std::uint32_t i) {
@@ -314,6 +314,9 @@ uint32_t mf_runner_run(uint64_t budget, uint32_t burst) {
                 }
                 continue;
             }
+        }
+        if (p != nullptr && p->state == State::kRefused) {
+            ++p->execs; // diagnostic: how often an unliftable rip comes back
         }
         // no block, suppressed, or the event budget would outlive it:
         // short interpreter batch (mf_run caps at its own event budget)
