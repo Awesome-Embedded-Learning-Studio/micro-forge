@@ -187,18 +187,10 @@ void emit_tlb_addr(std::vector<std::uint8_t>& body, std::uint32_t base) {
 /// entry address in kTmpE.
 void emit_tlb_probe(std::vector<std::uint8_t>& body, std::uint32_t base, bool write) {
     emit_tlb_addr(body, base);
-    // gen mismatch -> miss
-    emit_local(body, kLocalGet, kTmpE);
-    body.push_back(kI32Wrap);
-    body.push_back(kI32Load);
-    body.push_back(kAlign4);
-    append_uleb(body, 12);
-    emit_i32(body, static_cast<std::int32_t>(kTlbEpochSlot + base));
-    body.push_back(kI32Load);
-    body.push_back(kAlign4);
-    append_uleb(body, 0);
-    body.push_back(kI32Eq);
-    body.push_back(kI32Eqz);
+    // Entries are only valid for the current mapping generation: prepare
+    // clears the table whenever CR3 or INVLPG changes it, so the probe only
+    // has to match the page. (The generation cell is still published for
+    // that clear decision, just not compared per access.)
     // vaddr-page mismatch -> miss
     emit_local(body, kLocalGet, kTmpE);
     body.push_back(kI32Wrap);
@@ -209,8 +201,7 @@ void emit_tlb_probe(std::vector<std::uint8_t>& body, std::uint32_t base, bool wr
     emit_i64(body, -4096);
     body.push_back(kI64And);
     body.push_back(kI64Eq);
-    body.push_back(kI32Eqz);
-    body.push_back(kI32Or); // miss (generation or page mismatch)
+    body.push_back(kI32Eqz); // miss on page mismatch
     // user-mode permission: cpl != 0 requires the entry's U/S bit, otherwise
     // the access must fall through to the walk (which re-checks and hands
     // the faulting instruction to the interpreter).
@@ -246,7 +237,7 @@ void emit_tlb_probe(std::vector<std::uint8_t>& body, std::uint32_t base, bool wr
 
 /// Fills the TLB entry at kTmpE with the translation of kTmpV to kTmpPd.
 // NOLINTNEXTLINE(misc-use-internal-linkage,misc-const-correctness)
-void emit_tlb_fill(std::vector<std::uint8_t>& body, std::uint32_t base) {
+void emit_tlb_fill(std::vector<std::uint8_t>& body) {
     emit_local(body, kLocalGet, kTmpE);
     body.push_back(kI32Wrap);
     emit_local(body, kLocalGet, kTmpV);
@@ -267,10 +258,7 @@ void emit_tlb_fill(std::vector<std::uint8_t>& body, std::uint32_t base) {
     append_uleb(body, 8);
     emit_local(body, kLocalGet, kTmpE);
     body.push_back(kI32Wrap);
-    emit_i32(body, static_cast<std::int32_t>(kTlbEpochSlot + base));
-    body.push_back(kI32Load);
-    body.push_back(kAlign4);
-    append_uleb(body, 0);
+    emit_i32(body, 0); // generation slot kept for the entry layout
     body.push_back(kI32Store);
     body.push_back(kAlign4);
     append_uleb(body, 12);
@@ -369,7 +357,7 @@ void emit_walk(std::vector<std::uint8_t>& body, unsigned size, std::uint32_t ram
     // entry, then hand the value back as the if result.
     emit_local(body, kLocalSet, kTmpP);
     emit_tlb_addr(body, ho.base);
-    emit_tlb_fill(body, ho.base);
+    emit_tlb_fill(body);
     emit_local(body, kLocalGet, kTmpP);
     body.push_back(kBlockEnd); // close the TLB if
 }
