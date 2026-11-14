@@ -7,6 +7,8 @@
 #include "micro_forge/engine.hpp"
 
 #include "micro_forge/loader/cinux_loader.hpp"
+#include <cstdint>
+#include <span>
 
 namespace micro_forge {
 

@@ -6,6 +6,8 @@
 
 #include "cpu_fixture.hpp"
 
+#include <cstdint>
+#include <gtest/gtest.h>
 #include <micro_forge/arch/x86_64/mmu.hpp>
 
 using micro_forge::arch::x86_64::Mmu;

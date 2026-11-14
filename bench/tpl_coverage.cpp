@@ -4,18 +4,20 @@
 ///        against the template registry. Zero-hit templates are blind spots
 ///        no differential case reaches; the kPushRegHelper [rax] bug hid in
 ///        exactly such a gap.
+#include <cstddef>
+#include <cstdint>
 #include <micro_forge/arch/x86_64/decoder.hpp>
 
-#include <algorithm>
 #include <print>
 #include <span>
-#include <string>
+#include <utility>
 #include <vector>
 
 #include <micro_forge/base/jit_templates_generated.hpp>
 #include <micro_forge/base/jit_translate.hpp>
 
 #include "jit_diff_cases.hpp"
+#include "jit_diff_support.hpp"
 
 namespace {
 

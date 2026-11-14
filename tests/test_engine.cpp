@@ -1,6 +1,10 @@
 /// @file test_engine.cpp
 /// @brief The embedding facade: construct, load, run, observe, snapshot.
 
+#include "micro_forge/arch/x86_64/cpu.hpp"
+#include "micro_forge/arch/x86_64/decoded.hpp"
+#include "micro_forge/base/machine_config.hpp"
+#include <cstdint>
 #include <gtest/gtest.h>
 
 #include <micro_forge/engine.hpp>

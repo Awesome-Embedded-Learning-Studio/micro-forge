@@ -16,7 +16,9 @@
 #include <span>
 #include <vector>
 
+#include "micro_forge/arch/x86_64/cpu.hpp"
 #include "micro_forge/base/machine_config.hpp"
+#include "micro_forge/kernel/snapshot.hpp"
 #include "micro_forge/machine.hpp"
 
 namespace micro_forge {

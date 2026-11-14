@@ -2,11 +2,15 @@
 /// @brief Batch-5 acceptance (native side): the Machine assembly runs the
 ///        bare client in both backing modes and snapshots bit-identically.
 
+#include "micro_forge/base/machine_config.hpp"
+#include "micro_forge/kernel/snapshot.hpp"
+#include <cstdint>
 #include <gtest/gtest.h>
 
+#include <ios>
+#include <iterator>
 #include <micro_forge/arch/x86_64/cpu.hpp>
 #include <micro_forge/machine.hpp>
-#include <micro_forge/presets/cinux_machine.hpp>
 
 #include <cstring>
 #include <fstream>

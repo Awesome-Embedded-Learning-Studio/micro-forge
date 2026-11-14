@@ -1,6 +1,7 @@
 /// @file test_cache.cpp
 /// @brief The generic cache: hits, misses, LRU replacement, invalidation.
 
+#include <cstdint>
 #include <gtest/gtest.h>
 
 #include <micro_forge/base/cache.hpp>

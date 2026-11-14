@@ -7,6 +7,8 @@
 #include "micro_forge/kernel/device/lapic.hpp"
 
 #include "micro_forge/kernel/le_access.hpp"
+#include "micro_forge/kernel/memory/register_region.hpp"
+#include <cstdint>
 
 namespace micro_forge::kernel {
 

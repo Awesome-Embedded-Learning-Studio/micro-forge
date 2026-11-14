@@ -1,11 +1,14 @@
 /// @file test_wasm_emit.cpp
 /// @brief The wasm emitter: bytes match the hand-written reference shape.
 
+#include <cstddef>
+#include <cstdint>
 #include <gtest/gtest.h>
 
 #include <micro_forge/base/wasm_emit.hpp>
 
 #include <array>
+#include <vector>
 
 namespace {
 

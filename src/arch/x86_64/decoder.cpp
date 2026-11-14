@@ -6,10 +6,15 @@
 
 #include "micro_forge/arch/x86_64/decoder.hpp"
 
+#include "micro_forge/arch/x86_64/decode_error.hpp"
+#include "micro_forge/arch/x86_64/decoded.hpp"
 #include "micro_forge/kernel/bit.hpp"
 #include "micro_forge/kernel/le_access.hpp"
 
 #include "arch/x86_64/internal.hpp"
+#include <cstdint>
+#include <expected>
+#include <span>
 
 namespace micro_forge::arch::x86_64 {
 

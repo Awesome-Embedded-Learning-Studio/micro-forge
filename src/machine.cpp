@@ -6,12 +6,19 @@
 
 #include "micro_forge/machine.hpp"
 
+#include "micro_forge/base/machine_config.hpp"
+#include "micro_forge/kernel/bus/port_space.hpp"
+#include "micro_forge/kernel/memory/region.hpp"
+#include "micro_forge/kernel/snapshot.hpp"
 #include "micro_forge/presets/cinux_machine.hpp"
 
 #include "micro_forge/version.hpp"
 
-#include <algorithm>
+#include <cstdint>
 #include <cstdlib>
+#include <optional>
+#include <span>
+#include <vector>
 
 namespace micro_forge {
 

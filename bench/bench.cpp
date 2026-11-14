@@ -18,11 +18,12 @@
  */
 
 #include <algorithm>
-#include <cctype>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
+#include <ios>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <print>

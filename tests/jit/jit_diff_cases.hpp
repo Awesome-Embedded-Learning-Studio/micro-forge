@@ -5,6 +5,7 @@
 #pragma once
 
 #include "jit_diff_support.hpp"
+#include "micro_forge/arch/x86_64/decoded.hpp"
 
 #include <cstdint>
 #include <vector>

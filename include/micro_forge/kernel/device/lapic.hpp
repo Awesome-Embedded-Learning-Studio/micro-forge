@@ -15,6 +15,7 @@
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <utility>
 
 #include "micro_forge/kernel/memory/register_region.hpp"
 

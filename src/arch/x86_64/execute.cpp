@@ -6,10 +6,12 @@
 
 #include "micro_forge/arch/x86_64/cpu.hpp"
 
+#include "micro_forge/arch/x86_64/decoded.hpp"
 #include "micro_forge/kernel/bit.hpp"
 
 #include "internal.hpp"
 #include <bit>
+#include <cstdint>
 
 namespace micro_forge::arch::x86_64 {
 

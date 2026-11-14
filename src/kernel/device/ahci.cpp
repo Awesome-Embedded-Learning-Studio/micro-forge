@@ -12,10 +12,17 @@
 
 #include "micro_forge/kernel/device/ahci.hpp"
 
+#include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cstring>
+#include <functional>
+#include <utility>
+#include <vector>
 
+#include "micro_forge/kernel/bus/bus.hpp"
 #include "micro_forge/kernel/le_access.hpp"
+#include "micro_forge/kernel/memory/register_region.hpp"
 
 namespace micro_forge::kernel {
 

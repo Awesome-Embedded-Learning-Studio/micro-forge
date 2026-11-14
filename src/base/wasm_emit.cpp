@@ -6,7 +6,12 @@
 
 #include "micro_forge/base/wasm_emit.hpp"
 
-#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <span>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace micro_forge::base {
 

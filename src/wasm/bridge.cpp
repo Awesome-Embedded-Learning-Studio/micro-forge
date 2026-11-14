@@ -4,7 +4,6 @@
 
 #include <cstdint>
 #include <cstring>
-#include <memory>
 
 // Mirror-cell layout shared with exports.cpp (wasm_block_detail mirror).
 #include "micro_forge/base/wasm_block_detail.hpp"

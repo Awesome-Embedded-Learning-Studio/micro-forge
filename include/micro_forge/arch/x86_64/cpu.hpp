@@ -7,20 +7,22 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "micro_forge/arch/x86_64/cached_insn.hpp"
+#include "micro_forge/arch/x86_64/decoded.hpp"
 #include "micro_forge/arch/x86_64/mmu.hpp"
 #include "micro_forge/base/cache.hpp"
 #include "micro_forge/base/jit.hpp"
-#include "micro_forge/base/jit_translate.hpp"
-#include "micro_forge/kernel/bit.hpp"
 #include "micro_forge/kernel/bus/bus.hpp"
 #include "micro_forge/kernel/bus/irq_line.hpp"
 #include "micro_forge/kernel/bus/port_space.hpp"
@@ -95,8 +97,7 @@ public:
     [[nodiscard]] uint64_t code_epoch() const noexcept { return code_epoch_; }
     [[nodiscard]] std::uint32_t tlb_epoch() const noexcept { return tlb_epoch_; }
     /// @brief Binds the CPU to its guest bus and icount queue.
-    Cpu(kernel::Bus& bus, kernel::Scheduler& scheduler, kernel::PortSpace* ports = nullptr)
-        : bus_(bus), scheduler_(scheduler), ports_(ports) {}
+    Cpu(kernel::Bus& bus, kernel::Scheduler& scheduler, kernel::PortSpace* ports = nullptr);
     /**
      * @brief Resets architectural state and loads an entry point.
      *
@@ -139,7 +140,7 @@ public:
      *
      * @param[in] trace Called once per retired instruction with its RIP.
      */
-    void set_trace(std::function<void(uint64_t rip)> trace) { trace_ = std::move(trace); }
+    void set_trace(std::function<void(uint64_t rip)> trace);
 
     /**
      * @brief Attaches an interrupt line with its receiving hook.
@@ -162,10 +163,7 @@ public:
     /// @brief Whether the attached IRQ line is high.
     [[nodiscard]] bool irq_pending() const { return irq_line_ != nullptr && irq_line_->pending(); }
     /// @brief Queue one interrupt vector for the next retire boundary.
-    void request_interrupt(uint8_t vector) {
-        pending_vector_ = vector;
-        interrupt_pending_ = true;
-    }
+    void request_interrupt(uint8_t vector);
     /// @brief Whether an interrupt request is queued.
     [[nodiscard]] bool interrupt_queued() const { return interrupt_pending_; }
 

@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <expected>
 #include <functional>
+#include <utility>
 
 #include "micro_forge/kernel/bus/bus_error.hpp"
 #include "micro_forge/kernel/memory/region.hpp"

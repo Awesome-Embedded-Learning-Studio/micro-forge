@@ -4,11 +4,14 @@
  * @version 0.1.0
  */
 
+#include <cstdint>
 #include <gtest/gtest.h>
 
-#include <array>
+#include <initializer_list>
 #include <string>
+#include <vector>
 
+#include "micro_forge/arch/x86_64/decoded.hpp"
 #include "micro_forge/arch/x86_64/decoder.hpp"
 
 namespace mf = micro_forge::arch::x86_64;

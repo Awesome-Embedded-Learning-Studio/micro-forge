@@ -5,10 +5,16 @@
 
 #include "cpu_fixture.hpp"
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <gtest/gtest.h>
 #include <micro_forge/kernel/memory/register_region.hpp>
 
 #include <array>
+#include <span>
 #include <string>
+#include <vector>
 
 namespace {
 

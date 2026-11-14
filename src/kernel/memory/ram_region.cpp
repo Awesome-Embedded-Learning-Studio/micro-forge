@@ -1,7 +1,15 @@
 #include "micro_forge/kernel/memory/ram_region.hpp"
+#include "micro_forge/kernel/bus/bus_error.hpp"
 #include "micro_forge/kernel/le_access.hpp"
+#include "micro_forge/kernel/snapshot.hpp"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <expected>
+#include <optional>
+#include <span>
+#include <vector>
 
 namespace micro_forge::kernel {
 

@@ -5,6 +5,8 @@
  */
 
 #include "cpu_fixture.hpp"
+#include <cstdint>
+#include <gtest/gtest.h>
 
 namespace {
 

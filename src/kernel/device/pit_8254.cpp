@@ -5,6 +5,7 @@
  */
 
 #include "micro_forge/kernel/device/pit_8254.hpp"
+#include <cstdint>
 
 namespace micro_forge::kernel {
 

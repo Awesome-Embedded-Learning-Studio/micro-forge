@@ -12,10 +12,12 @@
 #include "micro_forge/loader/cinux_loader.hpp"
 
 #include <array>
-#include <cstring>
+#include <cstdint>
 #include <expected>
+#include <span>
 
 #include "micro_forge/arch/x86_64/cpu.hpp"
+#include "micro_forge/arch/x86_64/decoded.hpp"
 #include "micro_forge/kernel/device/acpi_tables.hpp"
 #include "micro_forge/kernel/le_access.hpp"
 #include "micro_forge/kernel/memory/ram_region.hpp"

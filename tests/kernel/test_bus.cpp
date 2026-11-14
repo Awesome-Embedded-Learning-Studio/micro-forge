@@ -1,3 +1,5 @@
+#include "micro_forge/kernel/bus/bus_error.hpp"
+#include <expected>
 #include <gtest/gtest.h>
 
 #include <micro_forge/kernel/bus/bus.hpp>

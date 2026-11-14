@@ -10,6 +10,8 @@
 #include "micro_forge/arch/x86_64/cpu.hpp"
 
 #include "arch/x86_64/sse_ops.hpp"
+#include "micro_forge/arch/x86_64/decoded.hpp"
+#include <cstdint>
 
 namespace micro_forge::arch::x86_64 {
 

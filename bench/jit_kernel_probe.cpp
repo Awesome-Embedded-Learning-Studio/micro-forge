@@ -1,8 +1,14 @@
 /// @file jit_kernel_probe.cpp
 /// @brief Native JIT coverage, Cpu::run throughput and flat-image profile.
 
+#include "micro_forge/arch/x86_64/decoded.hpp"
+#include <cstdint>
 #include <cstring>
+#include <ios>
+#include <iterator>
 #include <micro_forge/arch/x86_64/decoder.hpp>
+#include <span>
+#include <utility>
 /// @brief Coverage diagnostics exported from the core (env gated).
 extern "C" void mf_jit_dump_fail_hits();
 extern "C" void mf_jit_dump_template_hits();

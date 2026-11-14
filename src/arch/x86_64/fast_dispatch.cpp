@@ -4,7 +4,10 @@
  * @version 0.1.0
  */
 
+#include "micro_forge/arch/x86_64/cached_insn.hpp"
 #include "micro_forge/arch/x86_64/cpu.hpp"
+#include "micro_forge/arch/x86_64/decoded.hpp"
+#include <cstdint>
 
 namespace micro_forge::arch::x86_64 {
 namespace {

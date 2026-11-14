@@ -4,8 +4,10 @@
 
 #include "cpu_fixture.hpp"
 
+#include <cstdint>
 #include <cstring>
 
+#include <gtest/gtest.h>
 #include <micro_forge/kernel/device/acpi_tables.hpp>
 #include <micro_forge/kernel/device/io_apic.hpp>
 #include <micro_forge/kernel/device/lapic.hpp>
@@ -13,6 +15,7 @@
 #include <micro_forge/kernel/device/pit_8254.hpp>
 #include <micro_forge/kernel/device/rtc.hpp>
 #include <micro_forge/kernel/device/serial_16550.hpp>
+#include <vector>
 
 namespace {
 

@@ -12,9 +12,11 @@
 #include "micro_forge/kernel/device/acpi_tables.hpp"
 
 #include <array>
+#include <cstdint>
 #include <cstring>
 
 #include "micro_forge/kernel/le_access.hpp"
+#include "micro_forge/kernel/memory/ram_region.hpp"
 
 namespace micro_forge::kernel {
 

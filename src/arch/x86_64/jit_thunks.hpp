@@ -10,7 +10,6 @@
 #ifndef MICRO_FORGE_ARCH_X86_64_JIT_THUNKS_HPP
 #define MICRO_FORGE_ARCH_X86_64_JIT_THUNKS_HPP
 
-#include <cstddef>
 #include <cstdint>
 
 #include <micro_forge/base/jit_translate.hpp>

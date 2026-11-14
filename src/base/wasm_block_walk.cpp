@@ -11,6 +11,7 @@
 
 #include "micro_forge/base/wasm_block_detail.hpp"
 #include "micro_forge/base/wasm_block_internal.hpp"
+#include "micro_forge/base/wasm_emit.hpp"
 
 #include <cstdint>
 #include <vector>

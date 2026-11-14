@@ -11,11 +11,17 @@
 #include "jit_translate_mov.hpp"
 #include "jit_translate_movx.hpp"
 
+#include "micro_forge/arch/x86_64/decoded.hpp"
+#include "micro_forge/base/jit.hpp"
 #include "micro_forge/base/jit_templates_generated.hpp"
 
 #include <algorithm>
 #include <bit>
+#include <cstddef>
 #include <cstdint>
+#include <optional>
+#include <utility>
+#include <vector>
 
 namespace micro_forge::base {
 

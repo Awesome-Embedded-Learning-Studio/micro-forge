@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 
 #include "micro_forge/base/wasm_block_detail.hpp"

@@ -6,7 +6,11 @@
 
 #include "micro_forge/kernel/device/io_apic.hpp"
 
-#include "micro_forge/kernel/le_access.hpp"
+#include "micro_forge/kernel/bus/bus_error.hpp"
+#include "micro_forge/kernel/memory/register_region.hpp"
+#include <array>
+#include <cstdint>
+#include <expected>
 
 namespace micro_forge::kernel {
 

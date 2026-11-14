@@ -5,6 +5,9 @@
  */
 
 #include "micro_forge/arch/x86_64/cpu.hpp"
+#include "micro_forge/arch/x86_64/decoded.hpp"
+#include "micro_forge/arch/x86_64/mmu.hpp"
+#include <cstdint>
 
 namespace micro_forge::arch::x86_64 {
 

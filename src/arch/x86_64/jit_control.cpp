@@ -1,11 +1,11 @@
 // Control-flow JIT helpers: ret/call/jmp/jcc/leave lower into thunks that
 // record the block exit target (jit_next_rip_) so run_jit_block can jump
 // instead of falling through. This file pairs with jit_cpu.cpp.
+#include <cstdint>
 #include <micro_forge/arch/x86_64/cpu.hpp>
 
-#include <micro_forge/base/jit.hpp>
-
 #include "jit_thunks.hpp"
+#include "micro_forge/arch/x86_64/decoded.hpp"
 
 namespace micro_forge::arch::x86_64 {
 namespace {

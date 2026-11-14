@@ -6,8 +6,6 @@
 
 #pragma once
 
-#include <cstdint>
-
 namespace micro_forge::kernel {
 
 /**

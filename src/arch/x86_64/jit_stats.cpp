@@ -4,12 +4,13 @@
 /// Enabled only when MICRO_FORGE_JIT_FAILSTATS is set; the counters are
 /// process-wide and single-threaded like the rest of the core.
 #include <algorithm>
-#include <array>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <print>
 #include <span>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <micro_forge/base/jit_templates_generated.hpp>

@@ -6,12 +6,14 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <optional>
 #include <span>
 #include <vector>
 
+#include "micro_forge/kernel/bus/bus_error.hpp"
 #include "micro_forge/kernel/memory/region.hpp"
 #include "micro_forge/kernel/snapshot.hpp"
 

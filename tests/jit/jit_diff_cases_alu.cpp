@@ -2,7 +2,14 @@
 /// @file jit_diff_cases_alu.cpp
 /// @brief ALU-family case table split from jit_diff_cases.cpp (file budget).
 
+#include <array>
+#include <cstdint>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "jit_diff_cases.hpp"
+#include "jit_diff_support.hpp"
 
 namespace jit_diff_cases {
 

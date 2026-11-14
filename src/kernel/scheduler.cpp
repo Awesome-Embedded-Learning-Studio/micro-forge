@@ -5,7 +5,15 @@
  * @version 0.2.0
  */
 
+#include <algorithm>
+#include <optional>
+#include <utility>
+#include <vector>
+
+#include <cstdint>
+
 #include "micro_forge/kernel/scheduler.hpp"
+#include "micro_forge/kernel/snapshot.hpp"
 
 namespace micro_forge::kernel {
 

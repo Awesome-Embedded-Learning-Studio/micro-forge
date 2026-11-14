@@ -9,8 +9,6 @@
 
 #include <cstdint>
 
-#include "micro_forge/arch/x86_64/decode_error.hpp"
-
 namespace micro_forge::arch::x86_64 {
 
 /// @brief Condition codes for jcc/setcc/cmovcc, hardware-encoded 0-15.

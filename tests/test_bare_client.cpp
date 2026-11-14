@@ -4,11 +4,13 @@
  * @version 0.1.0
  */
 
+#include <cstdint>
 #include <gtest/gtest.h>
 
-#include <cstdio>
 #include <fstream>
-#include <map>
+#include <ios>
+#include <iterator>
+#include <span>
 #include <vector>
 
 #include "micro_forge/arch/x86_64/decoder.hpp"

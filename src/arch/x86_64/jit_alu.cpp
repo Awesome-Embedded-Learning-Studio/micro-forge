@@ -1,9 +1,11 @@
 /// @file jit_alu.cpp
 /// @brief ALU JIT helpers that reuse the interpreter's flag modelling.
+#include <cstdint>
 #include <micro_forge/arch/x86_64/cpu.hpp>
 
 #include "internal.hpp"
 #include "jit_thunks.hpp"
+#include "micro_forge/arch/x86_64/decoded.hpp"
 
 namespace micro_forge::arch::x86_64 {
 namespace {

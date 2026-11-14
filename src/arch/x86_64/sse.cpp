@@ -17,7 +17,10 @@
 #include "arch/x86_64/sse_ops.hpp"
 
 #include "internal.hpp"
+#include "micro_forge/arch/x86_64/decoded.hpp"
 #include "micro_forge/kernel/le_access.hpp"
+#include <array>
+#include <cstdint>
 
 namespace micro_forge::arch::x86_64 {
 

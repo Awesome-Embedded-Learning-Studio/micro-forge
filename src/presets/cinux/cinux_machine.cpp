@@ -5,6 +5,9 @@
  */
 
 #include "micro_forge/presets/cinux_machine.hpp"
+#include "micro_forge/base/machine_config.hpp"
+#include <cstdint>
+#include <optional>
 
 namespace micro_forge {
 

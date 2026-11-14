@@ -10,8 +10,10 @@
  * raises the fault (or succeeds) through the one true implementation.
  */
 
+#include "micro_forge/arch/x86_64/decoded.hpp"
 #include "micro_forge/base/wasm_block_detail.hpp"
 #include "micro_forge/base/wasm_block_internal.hpp"
+#include "micro_forge/base/wasm_emit.hpp"
 
 #include <cstdint>
 #include <vector>

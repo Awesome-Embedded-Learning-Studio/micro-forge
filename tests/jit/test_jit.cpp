@@ -1,13 +1,19 @@
 /// @file test_jit.cpp
 /// @brief Copy-and-patch skeleton: emit a template, seal, invoke, verify.
 
+#include <cstddef>
+#include <cstdint>
 #include <gtest/gtest.h>
 
+#include <ios>
 #include <micro_forge/arch/x86_64/decoder.hpp>
 #include <micro_forge/base/jit.hpp>
 #include <micro_forge/base/jit_translate.hpp>
 
 #include <array>
+#include <optional>
+#include <span>
+#include <string>
 
 namespace {
 

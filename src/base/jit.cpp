@@ -7,10 +7,12 @@
 #include "micro_forge/base/jit.hpp"
 
 #include <array>
+#include <cstdint>
 #include <cstring>
 
+#include <optional>
+#include <span>
 #include <sys/mman.h>
-#include <unistd.h>
 
 namespace micro_forge::base {
 

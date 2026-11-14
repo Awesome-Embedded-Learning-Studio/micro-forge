@@ -7,7 +7,10 @@
 #include "micro_forge/arch/x86_64/cpu.hpp"
 
 #include "internal.hpp"
+#include "micro_forge/arch/x86_64/decoded.hpp"
+#include "micro_forge/kernel/bit.hpp"
 #include <bit>
+#include <cstdint>
 
 namespace micro_forge::arch::x86_64 {
 
@@ -565,35 +568,6 @@ ExitStatus Cpu::execute(const DecodedInsn& insn, uint64_t rip_after) {
     }
     retire(1);
     return exit_;
-}
-ExitStatus Cpu::execute_insn(const DecodedInsn& insn, uint64_t rip_after) {
-    switch (insn.mnemonic) {
-    case Mnemonic::kMovsb:
-    case Mnemonic::kMovsw:
-    case Mnemonic::kMovsd:
-    case Mnemonic::kMovsq:
-    case Mnemonic::kStosb:
-    case Mnemonic::kStosw:
-    case Mnemonic::kStosd:
-    case Mnemonic::kStosq:
-    case Mnemonic::kLodsb:
-    case Mnemonic::kLodsw:
-    case Mnemonic::kLodsd:
-    case Mnemonic::kLodsq:
-    case Mnemonic::kScasb:
-    case Mnemonic::kScasw:
-    case Mnemonic::kScasd:
-    case Mnemonic::kScasq:
-    case Mnemonic::kCmpsb:
-    case Mnemonic::kCmpsw:
-    case Mnemonic::kCmpsd:
-    case Mnemonic::kCmpsq:
-        return execute_string(insn, rip_after);
-    case Mnemonic::kSyscall:
-        return execute_syscall(rip_after);
-    default:
-        return execute(insn, rip_after);
-    }
 }
 
 } // namespace micro_forge::arch::x86_64

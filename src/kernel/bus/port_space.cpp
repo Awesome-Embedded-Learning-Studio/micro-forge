@@ -7,6 +7,7 @@
 #include "micro_forge/kernel/bus/port_space.hpp"
 
 #include <cstdint>
+#include <expected>
 
 namespace micro_forge::kernel {
 

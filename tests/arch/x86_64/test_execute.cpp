@@ -4,8 +4,14 @@
 ///        memory, push/pop, call/ret), and two identical runs produce a
 ///        bit-identical instruction trace (determinism contract).
 
+#include "micro_forge/arch/x86_64/decoded.hpp"
+#include <algorithm>
+#include <cstdlib>
 #include <gtest/gtest.h>
 
+#include <initializer_list>
+#include <ios>
+#include <iterator>
 #include <micro_forge/arch/x86_64/cpu.hpp>
 #include <micro_forge/kernel/bus/bus.hpp>
 #include <micro_forge/kernel/memory/ram_region.hpp>
@@ -14,7 +20,7 @@
 #include <cstdint>
 #include <fstream>
 #include <functional>
-#include <tuple>
+#include <span>
 #include <vector>
 
 namespace {

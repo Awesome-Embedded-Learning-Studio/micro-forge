@@ -6,13 +6,38 @@
 
 #include "micro_forge/arch/x86_64/cpu.hpp"
 
+#include "micro_forge/arch/x86_64/cached_insn.hpp"
+#include "micro_forge/arch/x86_64/decoded.hpp"
 #include "micro_forge/arch/x86_64/decoder.hpp"
+#include "micro_forge/kernel/bit.hpp"
+#include "micro_forge/kernel/bus/bus.hpp"
+#include "micro_forge/kernel/bus/port_space.hpp"
+#include "micro_forge/kernel/scheduler.hpp"
+#include "micro_forge/kernel/snapshot.hpp"
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <expected>
+#include <functional>
 #include <limits>
 #include <span>
+#include <utility>
+#include <vector>
 
 namespace micro_forge::arch::x86_64 {
+
+Cpu::Cpu(kernel::Bus& bus, kernel::Scheduler& scheduler, kernel::PortSpace* ports)
+    : bus_(bus), scheduler_(scheduler), ports_(ports) {}
+
+void Cpu::set_trace(std::function<void(uint64_t rip)> trace) {
+    trace_ = std::move(trace);
+}
+
+void Cpu::request_interrupt(uint8_t vector) {
+    pending_vector_ = vector;
+    interrupt_pending_ = true;
+}
 
 void Cpu::reset(uint64_t rip, uint64_t rsp) {
     regs_.fill(0);

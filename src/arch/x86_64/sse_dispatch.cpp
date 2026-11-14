@@ -5,6 +5,7 @@
  */
 
 #include "micro_forge/arch/x86_64/cpu.hpp"
+#include "micro_forge/arch/x86_64/decoded.hpp"
 
 namespace micro_forge::arch::x86_64 {
 

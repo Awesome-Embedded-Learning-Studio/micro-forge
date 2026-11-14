@@ -1,7 +1,9 @@
+#include <cstddef>
 #include <gtest/gtest.h>
 
 #include <micro_forge/kernel/scheduler.hpp>
 
+#include <optional>
 #include <vector>
 
 namespace {

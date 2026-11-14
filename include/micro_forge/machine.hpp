@@ -16,6 +16,7 @@
 #include <functional>
 #include <optional>
 #include <span>
+#include <utility>
 #include <vector>
 
 #include "micro_forge/arch/x86_64/cpu.hpp"

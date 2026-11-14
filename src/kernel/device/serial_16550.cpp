@@ -5,6 +5,7 @@
  */
 
 #include "micro_forge/kernel/device/serial_16550.hpp"
+#include <cstdint>
 
 namespace micro_forge::kernel {
 

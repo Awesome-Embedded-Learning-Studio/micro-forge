@@ -4,6 +4,8 @@
 
 #include <gtest/gtest.h>
 
+#include <ios>
+#include <iterator>
 #include <micro_forge/arch/x86_64/cpu.hpp>
 #include <micro_forge/kernel/bus/bus.hpp>
 #include <micro_forge/kernel/memory/ram_region.hpp>

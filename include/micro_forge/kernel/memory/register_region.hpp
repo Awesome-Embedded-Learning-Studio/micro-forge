@@ -12,11 +12,12 @@
 
 #pragma once
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 
-#include "micro_forge/kernel/bus/bus.hpp"
+#include "micro_forge/kernel/bus/bus_error.hpp"
+#include "micro_forge/kernel/memory/region.hpp"
 
 namespace micro_forge::kernel {
 

@@ -6,6 +6,8 @@
 #ifndef MICRO_FORGE_BASE_JIT_TRANSLATE_MOV_HPP
 #define MICRO_FORGE_BASE_JIT_TRANSLATE_MOV_HPP
 
+#include "micro_forge/arch/x86_64/decoded.hpp"
+#include <cstdint>
 #include <micro_forge/base/jit_templates_generated.hpp>
 #include <micro_forge/base/jit_translate.hpp>
 

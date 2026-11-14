@@ -5,6 +5,7 @@
  */
 
 #include "micro_forge/kernel/device/rtc.hpp"
+#include <cstdint>
 
 namespace micro_forge::kernel {
 

@@ -16,8 +16,6 @@
 #include <algorithm>
 #include <cstdint>
 #include <initializer_list>
-#include <span>
-#include <vector>
 
 using micro_forge::arch::x86_64::Cpu;
 using micro_forge::arch::x86_64::ExitStatus;

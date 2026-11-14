@@ -9,11 +9,11 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <span>
 
-#include "micro_forge/arch/x86_64/decode_error.hpp"
 #include "micro_forge/arch/x86_64/decoded.hpp"
 #include "micro_forge/kernel/bit.hpp"
 
@@ -33,6 +33,12 @@ namespace width_util {
 /// Sign-extends value from width bytes to 64 bits.
 [[nodiscard]] inline uint64_t sign_extend(uint64_t value, unsigned width) {
     return micro_forge::kernel::bit::sign_extend(value, 8U * width);
+}
+/// 8/16-bit writes keep the destination's upper bytes; 32-bit writes
+/// zero-extend, exactly like the interpreter's write_operand.
+[[nodiscard]] inline uint64_t merge_width(uint64_t dst, uint64_t result, unsigned width) {
+    const uint64_t mask = width == 1U ? 0xFFULL : 0xFFFFULL;
+    return width == 4U || width == 8U ? result : (dst & ~mask) | result;
 }
 } // namespace width_util
 

@@ -1,6 +1,8 @@
 /// @file test_wasm_block.cpp
 /// @brief Guest block to wasm body: bytes and a compile-ready module.
 
+#include "micro_forge/arch/x86_64/decoded.hpp"
+#include <cstdint>
 #include <gtest/gtest.h>
 
 #include <micro_forge/arch/x86_64/decoder.hpp>
@@ -9,6 +11,8 @@
 
 #include <array>
 #include <cstdio>
+#include <span>
+#include <utility>
 #include <vector>
 
 namespace {

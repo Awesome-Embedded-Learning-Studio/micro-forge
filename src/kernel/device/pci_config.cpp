@@ -5,6 +5,7 @@
  */
 
 #include "micro_forge/kernel/device/pci_config.hpp"
+#include <cstdint>
 
 namespace micro_forge::kernel {
 

@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 #include <micro_forge/version.hpp>
+#include <string_view>
 
 namespace {
 

@@ -20,7 +20,6 @@
 #include <array>
 #include <cstdint>
 #include <functional>
-#include <span>
 #include <vector>
 
 #include "micro_forge/kernel/bus/bus.hpp"

@@ -3,6 +3,11 @@
 ///        verified against GNU as (encodings cross-checked with objdump).
 
 #include "cpu_fixture.hpp"
+#include <algorithm>
+#include <array>
+#include <cstdint>
+#include <gtest/gtest.h>
+#include <vector>
 
 namespace {
 

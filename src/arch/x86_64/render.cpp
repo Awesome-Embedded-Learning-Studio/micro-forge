@@ -6,9 +6,12 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cstdlib>
 #include <string>
+#include <string_view>
 
+#include "micro_forge/arch/x86_64/decoded.hpp"
 #include "micro_forge/arch/x86_64/decoder.hpp"
 #include "micro_forge/kernel/bit.hpp"
 

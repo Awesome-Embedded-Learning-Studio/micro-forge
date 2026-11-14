@@ -19,19 +19,32 @@
  * whole 4 GiB guest physical space by construction.
  */
 
+#include <algorithm>
+#include <array>
+#include <bit>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <memory>
+#include <span>
+#include <utility>
 #include <vector>
 
+#include "micro_forge/arch/x86_64/cpu.hpp"
+#include "micro_forge/arch/x86_64/decoded.hpp"
 #include "micro_forge/arch/x86_64/decoder.hpp"
 #include "micro_forge/base/wasm_block.hpp"
 #include "micro_forge/base/wasm_block_detail.hpp"
 #include "micro_forge/base/wasm_emit.hpp"
+#include "micro_forge/kernel/snapshot.hpp"
 #include "micro_forge/loader/cinux_loader.hpp"
 #include "micro_forge/machine.hpp"
-#include "micro_forge/presets/cinux_machine.hpp"
 #include "micro_forge/version.hpp"
+
+#include "guest_ram.hpp"
+#include "instance_table.hpp"
+
+using micro_forge::wasm::current;
+using micro_forge::wasm::kGuestRam;
 
 // ---------------------------------------------------------------------------
 // ABI contract (v1). Every convention consumers depend on, in one place:
@@ -57,37 +70,18 @@ static_assert(static_cast<int>(micro_forge::arch::x86_64::ExitStatus::Kind::kFau
 // must stay one number (batch-5 review F3).
 static_assert(micro_forge::Machine::kLfbSize == 0x400000);
 
-// The wasm recipe always defines GUEST_RAM_MB explicitly. The default
-// below only serves static analysis runs that compile this file without
-// the recipe (clang-tidy has no build entry for it).
-#ifndef GUEST_RAM_MB
-#    define GUEST_RAM_MB 512
-#endif
+// The wasm recipe always defines GUEST_RAM_MB explicitly; the fallback
+// and the constant live in guest_ram.hpp so instance_table.cpp sees the
+// same number. The recipe's 0x400000 LFB constant and this artifact's
+// layout must stay one number (batch-5 review F3).
+static_assert(micro_forge::Machine::kLfbSize == 0x400000);
 
 namespace {
-
-constexpr uint64_t kGuestRam = static_cast<uint64_t>(GUEST_RAM_MB) << 20U;
 
 // All guest-memory traffic from this surface goes through the machine's
 // RAM region helpers (copy_in / view): they carry the integer-base
 // discipline that keeps window-mode stores away from null-constant
 // pointer arithmetic, which the optimizer is free to delete.
-
-// Instance table: one Machine per handle, current() is the one the legacy
-// exports act on. Instance 0 stays the lazily created default so the older
-// single-machine ABI keeps working unchanged.
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-std::vector<std::unique_ptr<micro_forge::Machine>> g_instances;
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-std::size_t g_current = 0;
-
-/// Creates the default instance on first use (the legacy ABI's machine).
-micro_forge::Machine& current() {
-    if (g_instances.empty()) {
-        g_instances.push_back(std::make_unique<micro_forge::Machine>(kGuestRam, uintptr_t{0}));
-    }
-    return *g_instances[g_current];
-}
 
 /// Packs an exit status into the u64 the ABI returns: kind in the low
 /// byte, code in the upper 56.
@@ -98,44 +92,6 @@ uint64_t pack_exit(const micro_forge::arch::x86_64::ExitStatus& status) {
 } // namespace
 
 extern "C" {
-
-/// @brief Creates a machine instance over the guest window.
-///
-/// @param[in] ram_size Usable guest RAM in bytes (0 selects the default).
-/// @param[in] window Host window base (0 selects the default window).
-/// @return A handle >= 1, or 0 when allocation failed.
-uint32_t mf_instance_create(uint32_t ram_size, uint32_t window) {
-    const uint64_t ram = ram_size == 0 ? kGuestRam : ram_size;
-    auto instance = std::make_unique<micro_forge::Machine>(
-        micro_forge::cinux_machine_config(ram, static_cast<uintptr_t>(window)));
-    g_instances.push_back(std::move(instance));
-    return static_cast<uint32_t>(g_instances.size()); // handle = index + 1
-}
-
-/// @brief Destroys an instance; the default instance is never destroyed.
-/// @param[in] handle Handle from mf_instance_create.
-void mf_instance_destroy(uint32_t handle) {
-    if (handle == 0 || handle > g_instances.size() || handle - 1 == 0) {
-        return; // default instance lives for the module
-    }
-    g_instances[handle - 1].reset();
-}
-
-/// @brief Selects the instance the legacy exports act on.
-/// @param[in] handle Handle from mf_instance_create (0 = default).
-/// @return 1 on success, 0 for an unknown handle.
-uint32_t mf_instance_use(uint32_t handle) {
-    const std::size_t index = handle == 0 ? 0 : handle - 1;
-    if (index >= g_instances.size() && index != 0) {
-        return 0;
-    }
-    (void)current(); // ensure the default exists
-    if (index >= g_instances.size()) {
-        return 0;
-    }
-    g_current = index;
-    return 1;
-}
 
 /// @brief ABI version of this export surface; bumps on breaking changes.
 uint32_t mf_abi_version(void) {

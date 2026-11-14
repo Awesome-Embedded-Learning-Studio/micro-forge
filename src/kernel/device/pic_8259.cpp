@@ -5,6 +5,7 @@
  */
 
 #include "micro_forge/kernel/device/pic_8259.hpp"
+#include <cstdint>
 
 namespace micro_forge::kernel {
 

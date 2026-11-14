@@ -6,7 +6,12 @@
 
 #include "arch/x86_64/internal.hpp"
 
+#include "micro_forge/arch/x86_64/decoded.hpp"
+#include "micro_forge/kernel/bit.hpp"
 #include "micro_forge/kernel/le_access.hpp"
+#include <array>
+#include <cstdint>
+#include <optional>
 
 namespace micro_forge::arch::x86_64::detail {
 namespace {

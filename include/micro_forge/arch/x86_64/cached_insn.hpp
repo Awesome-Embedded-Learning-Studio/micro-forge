@@ -7,6 +7,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 
 #include "micro_forge/arch/x86_64/decoded.hpp"
 

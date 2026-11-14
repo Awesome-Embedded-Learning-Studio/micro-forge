@@ -1,3 +1,4 @@
+#include "micro_forge/kernel/memory/region.hpp"
 #include <gtest/gtest.h>
 
 #include <micro_forge/kernel/bus/bus.hpp>

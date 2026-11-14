@@ -6,7 +6,11 @@
 
 #include "micro_forge/kernel/memory/register_region.hpp"
 
+#include "micro_forge/kernel/bus/bus_error.hpp"
 #include "micro_forge/kernel/le_access.hpp"
+#include <cstddef>
+#include <cstdint>
+#include <expected>
 
 namespace micro_forge::kernel {
 

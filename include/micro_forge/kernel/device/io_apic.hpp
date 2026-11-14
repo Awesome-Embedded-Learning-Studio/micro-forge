@@ -13,7 +13,9 @@
 
 #include <array>
 #include <cstdint>
+#include <expected>
 
+#include "micro_forge/kernel/bus/bus_error.hpp"
 #include "micro_forge/kernel/memory/register_region.hpp"
 
 namespace micro_forge::kernel {

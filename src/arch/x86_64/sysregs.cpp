@@ -7,8 +7,12 @@
 #include "micro_forge/arch/x86_64/cpu.hpp"
 
 #include "internal.hpp"
+#include "micro_forge/arch/x86_64/decoded.hpp"
+#include "micro_forge/kernel/bit.hpp"
 #include <algorithm>
 #include <array>
+#include <cstdint>
+#include <optional>
 
 namespace micro_forge::arch::x86_64 {
 
