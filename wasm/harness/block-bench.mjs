@@ -2,12 +2,16 @@
 // in JS; interpreter fallback for non-lowerable prefixes and block ends.
 // usage: node block-bench.mjs engine.wasm --kernel F --disk F [--instructions N]
 //        [--mode interp|blocks] [--chunk N]
-import { readFileSync } from "node:fs";
+// CODEX-TIMING: [--timing 1024 --timing-out /tmp/counts.json] for counts/compile;
+//              --timing 1 clocks every phase (much slower; approximate phase costs).
+import { readFileSync, writeFileSync } from "node:fs"; // CODEX-TIMING: optional report file
+import { performance } from "node:perf_hooks"; // CODEX-TIMING: monotonic sample clock
 import { loadEngine, decodeExit, EXIT_KIND } from "/home/charliechen/micro-forge/wasm/harness/engine.mjs";
 
 const options = {
   kernel: process.env.MF_KERNEL_BIN, disk: process.env.MF_DISK_IMG,
   instructions: "40000000", chunk: "2000000", mode: "blocks",
+  timing: "0", "timing-out": "", // CODEX-TIMING: 0 = original loop; N = mean sample interval
 };
 const artifacts = [];
 for (let i = 2; i < process.argv.length; ++i) {
@@ -50,11 +54,46 @@ function cachePut(key, block) {
 }
 const ripNow = () => BigInt(e.mf_rip_high()) << 32n | BigInt(e.mf_rip_low() >>> 0);
 
+// CODEX-TIMING: compilation is infrequent, so time every attempt exactly.
+// Hot operations use random iteration samples (or all calls with --timing 1).
+// The separate diagnostic loop keeps --timing 0 on the original hot path.
+const timingInterval = Number(options.timing);
+if (!Number.isSafeInteger(timingInterval) || timingInterval < 0) throw new Error("bad --timing");
+if (timingInterval && options.mode !== "blocks") throw new Error("--timing requires --mode blocks"); // CODEX-TIMING
+const timing = timingInterval ? {
+  interval: timingInterval, loops: 0, prepares: 0, handoffs: 0,
+  refusedSteps: 0, eventSteps: 0, blockInstructions: 0,
+  staticBlockInstructions: 0, handoffInstructions: 0, interpreterInstructions: 0,
+  zeroDoneHandoffs: 0,
+  epochInvalidations: 0, evictions: 0, evictedBlocks: 0,
+  dataViewRebuilds: 0, moduleBytes: 0, compileAttempts: 0,
+  compileWallMs: 0, lowerMs: 0, instantiateMs: 0, compileBookkeepingMs: 0,
+  firstInstantiateMs: 0, repeatInstantiateMs: 0, refusedLowerMs: 0,
+  compileJsMs: 0, compileCounts: {}, refusalReasons: {}, sampled: {},
+} : null;
+const compiledRips = new Set(), refusedRips = new Set(); // CODEX-TIMING
+function recordSample(name, since) { // CODEX-TIMING
+  const ms = performance.now() - since;
+  const s = timing.sampled[name] ??= { samples: 0, totalMs: 0, maxMs: 0 };
+  ++s.samples; s.totalMs += ms; s.maxMs = Math.max(s.maxMs, ms);
+}
+
 async function compile(rip) {
   const lo = Number(rip & 0xFFFFFFFFn) >>> 0, hi = Number(rip >> 32n) >>> 0;
+  const lowerStart = timing ? performance.now() : 0; // CODEX-TIMING
   const ptr = e.mf_wasm_block2(lo, hi, 16, outLen, outInsns, outMasks);
+  const lowerMs = timing ? performance.now() - lowerStart : 0; // CODEX-TIMING
+  if (timing) { ++timing.compileAttempts; timing.lowerMs += lowerMs; } // CODEX-TIMING
   const len = new DataView(e.memory.buffer).getUint32(outLen, true);
-  if (ptr === 0) return null;
+  if (ptr === 0) {
+    // CODEX-TIMING: include unsuccessful lowering and its reason.
+    if (timing) {
+      refusedRips.add(rip);
+      timing.refusedLowerMs += lowerMs;
+      timing.refusalReasons[len] = (timing.refusalReasons[len] ?? 0) + 1;
+    }
+    return null;
+  }
   const view = new DataView(e.memory.buffer);
   const count = view.getUint32(outInsns, true);
   const used = view.getUint32(outMasks, true) & 0x7FFFFFFF;
@@ -64,7 +103,18 @@ async function compile(rip) {
   const bytes = new Uint8Array(e.memory.buffer, ptr, len).slice();
   e.free(ptr);
   if (count === 0) return null; // decode stopped before any instruction
+  const repeatedRip = timing && compiledRips.has(rip); // CODEX-TIMING
+  const instantiateStart = timing ? performance.now() : 0; // CODEX-TIMING
   const { instance } = await WebAssembly.instantiate(bytes, { e: { memory: e.memory } });
+  // CODEX-TIMING: this is wall time including async compilation/wakeup, not main-thread CPU.
+  if (timing) {
+    const ms = performance.now() - instantiateStart;
+    timing.instantiateMs += ms;
+    if (repeatedRip) timing.repeatInstantiateMs += ms; else timing.firstInstantiateMs += ms;
+    timing.moduleBytes += len;
+    compiledRips.add(rip);
+    timing.compileCounts[count] = (timing.compileCounts[count] ?? 0) + 1;
+  }
   return { run: instance.exports.block, count, used, dirty, flagsUsed, flagsDirty };
 }
 
@@ -132,6 +182,132 @@ async function runBlocks(budget) {
   return { retired, exit: { kind: 0, code: 0 }, compiled, refused, execs };
 }
 
+// CODEX-TIMING: diagnostic copy of runBlocks. Accounting uses actual `done`
+// on handoff, and mf_icount deltas for REP; static block.count is separate.
+async function runBlocksTimed(budget) {
+  let retired = 0n, compiled = 0, refused = 0, execs = 0;
+  let countdown = 1, rng = 0x12345678;
+  while (retired < budget) {
+    const sampled = --countdown === 0;
+    if (sampled) {
+      rng ^= rng << 13; rng ^= rng >>> 17; rng ^= rng << 5;
+      countdown = 1 + (rng >>> 0) % Math.max(1, 2 * timingInterval - 1);
+    }
+    let stamp = sampled ? performance.now() : 0;
+    const rip = ripNow(), key = rip;
+    let block = cache.get(key);
+    if (block !== null && block !== undefined && block.epoch !== e.mf_code_epoch()) {
+      cache.delete(key); block = undefined; ++timing.epochInvalidations;
+    }
+    ++timing.loops;
+    if (sampled) recordSample("dispatch", stamp);
+    if (block === undefined) {
+      const compileStart = performance.now();
+      block = await compile(rip);
+      timing.compileWallMs += performance.now() - compileStart;
+      const bookkeepingStart = performance.now();
+      if (block) block.epoch = e.mf_code_epoch();
+      // Observe the same eviction policy as cachePut, without changing it.
+      if (cache.size === CACHE_MAX) {
+        let seen = 0;
+        for (const old of cache.values()) {
+          ++timing.evictions; if (old) ++timing.evictedBlocks;
+          if (++seen >= CACHE_MAX + 1 - Math.floor(CACHE_MAX * 2 / 3)) break;
+        }
+      }
+      cachePut(key, block);
+      timing.compileBookkeepingMs += performance.now() - bookkeepingStart;
+      if (block) ++compiled; else ++refused;
+    }
+    if (block) {
+      stamp = sampled ? performance.now() : 0;
+      const raw = e.mf_bridge_prepare(block.used | 0x80000000);
+      ++timing.prepares;
+      if (sampled) recordSample("bridgePrepare", stamp);
+      stamp = sampled ? performance.now() : 0;
+      const remaining = raw < 0n ? raw + (1n << 64n) : raw;
+      const fits = remaining >= BigInt(block.count);
+      if (sampled) recordSample("budgetGate", stamp);
+      if (fits) {
+        stamp = sampled ? performance.now() : 0;
+        const next = block.run();
+        if (sampled) recordSample("blockRun", stamp);
+        stamp = sampled ? performance.now() : 0;
+        if (view0.buffer !== e.memory.buffer) {
+          view0 = new DataView(e.memory.buffer); ++timing.dataViewRebuilds;
+        }
+        const handed = view0.getUint32(bridge0 + 292, true) === 1;
+        const hd = handed ? view0.getUint32(bridge0 + 300, true) : 0;
+        const done = handed ? view0.getUint32(bridge0 + 288, true) : block.count;
+        if (sampled) recordSample("mirrorRead", stamp);
+        stamp = sampled ? performance.now() : 0;
+        e.mf_bridge_finish(next, done, block.dirty | hd | 0x80000000);
+        if (sampled) recordSample("bridgeFinish", stamp);
+        ++execs;
+        timing.staticBlockInstructions += block.count;
+        timing.blockInstructions += done;
+        retired += BigInt(done);
+        if (handed) {
+          ++timing.handoffs; timing.handoffInstructions += done;
+          if (done === 0) ++timing.zeroDoneHandoffs;
+          stamp = sampled ? performance.now() : 0;
+          const before = e.mf_icount();
+          if (sampled) recordSample("icountRead", stamp);
+          stamp = sampled ? performance.now() : 0;
+          const packed = e.mf_run(1n);
+          if (sampled) recordSample("handoffRun", stamp);
+          stamp = sampled ? performance.now() : 0;
+          const exit = decodeExit(packed);
+          if (sampled) recordSample("decodeExit", stamp);
+          stamp = sampled ? performance.now() : 0;
+          const after = e.mf_icount();
+          if (sampled) recordSample("icountRead", stamp);
+          const delta = after - before;
+          retired += delta; timing.interpreterInstructions += Number(delta);
+          if (exit.kind !== EXIT_KIND.RUNNING) return { retired, exit, compiled, refused, execs };
+        }
+        continue;
+      }
+      ++timing.eventSteps;
+    } else ++timing.refusedSteps;
+    stamp = sampled ? performance.now() : 0;
+    refusedHits.set(key, (refusedHits.get(key) ?? 0) + 1);
+    if (sampled) recordSample("refusedHitsMap", stamp);
+    stamp = sampled ? performance.now() : 0;
+    const before = e.mf_icount();
+    if (sampled) recordSample("icountRead", stamp);
+    stamp = sampled ? performance.now() : 0;
+    const packed = e.mf_run(1n);
+    if (sampled) recordSample(block ? "eventRun" : "refusedRun", stamp);
+    stamp = sampled ? performance.now() : 0;
+    const exit = decodeExit(packed);
+    if (sampled) recordSample("decodeExit", stamp);
+    stamp = sampled ? performance.now() : 0;
+    const after = e.mf_icount();
+    if (sampled) recordSample("icountRead", stamp);
+    const delta = after - before;
+    retired += delta; timing.interpreterInstructions += Number(delta);
+    if (exit.kind !== EXIT_KIND.RUNNING) return { retired, exit, compiled, refused, execs };
+  }
+  return { retired, exit: { kind: 0, code: 0 }, compiled, refused, execs };
+}
+
+// CODEX-TIMING: subtract the median empty clock-pair cost from each sample.
+// Estimates remain approximate (JIT, GC and timer perturbation); exact wall
+// time and exact counts are reported alongside them, without normalization.
+let emptyClockMs = 0;
+if (timing) {
+  const batches = [];
+  for (let batch = 0; batch < 9; ++batch) {
+    let sum = 0;
+    for (let i = 0; i < 20000; ++i) {
+      const stamp = performance.now(); sum += performance.now() - stamp;
+    }
+    batches.push(sum / 20000);
+  }
+  emptyClockMs = batches.sort((a, b) => a - b)[4];
+}
+
 const budgetOf = (e) => {
     const raw = e.mf_event_budget(); // i64 -> signed BigInt: UINT64_MAX reads -1n
     return raw < 0n ? raw + (1n << 64n) : raw;
@@ -141,7 +317,7 @@ const budget = BigInt(options.instructions);
 const start = process.hrtime.bigint();
 let result;
 if (options.mode === "blocks") {
-  result = await runBlocks(budget);
+  result = await (timing ? runBlocksTimed(budget) : runBlocks(budget)); // CODEX-TIMING
 } else {
   const chunk = BigInt(options.chunk);
   let exit = { kind: 0, code: 0 };
@@ -153,6 +329,42 @@ if (options.mode === "blocks") {
   result = { retired: e.mf_icount(), exit, compiled: 0, refused: 0, execs: 0 };
 }
 const seconds = Number(process.hrtime.bigint() - start) / 1e9;
+// CODEX-TIMING: diagnostics are serialized after stopping the benchmark clock.
+if (timing) {
+  const steps = timing.handoffs + timing.refusedSteps + timing.eventSteps;
+  const calls = {
+    dispatch: timing.loops, bridgePrepare: timing.prepares, budgetGate: timing.prepares,
+    blockRun: result.execs, mirrorRead: result.execs, bridgeFinish: result.execs,
+    icountRead: 2 * steps, handoffRun: timing.handoffs, refusedRun: timing.refusedSteps,
+    eventRun: timing.eventSteps, decodeExit: steps,
+    refusedHitsMap: timing.refusedSteps + timing.eventSteps,
+  };
+  for (const [name, s] of Object.entries(timing.sampled)) {
+    s.calls = calls[name];
+    // Sparse timing branches run cold; extrapolating their nanosecond costs
+    // greatly overstates hot-loop costs. Only expose estimates for full timing.
+    if (timingInterval === 1) {
+      s.estimatedMs = Math.max(0, s.totalMs / s.samples - emptyClockMs) * s.calls;
+      s.estimatedNsPerCall = s.estimatedMs * 1e6 / s.calls;
+    }
+  }
+  timing.compileJsMs = timing.compileWallMs - timing.lowerMs - timing.instantiateMs;
+  const report = {
+    mode: options.mode, instructions: options.instructions, seconds,
+    timingCaveat: timingInterval === 1
+      ? "Phase estimates subtract empty clock-pair cost; JIT/GC/timer perturbation remains. Use an untimed run for throughput."
+      : "Use exact counters and compile times only. Sparse short-call samples are cold-path observations, not absolute phase estimates.",
+    timerPairNs: emptyClockMs * 1e6, ...timing,
+    compiled: result.compiled, refused: result.refused, blockExecs: result.execs,
+    interpreterSteps: steps, uniqueCompiledRips: compiledRips.size,
+    uniqueRefusedRips: refusedRips.size, finalCacheSize: cache.size,
+    accountedInstructions: timing.blockInstructions + timing.interpreterInstructions,
+    engineIcount: e.mf_icount().toString(), retired: result.retired.toString(),
+  };
+  const json = JSON.stringify(report, null, 2);
+  if (options["timing-out"]) writeFileSync(options["timing-out"], json + "\n");
+  else console.error("CODEX-TIMING " + json);
+}
 console.log(JSON.stringify({
   mode: options.mode, seconds: seconds.toFixed(3),
   mips: (Number(result.retired) / seconds / 1e6).toFixed(2),
