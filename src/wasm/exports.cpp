@@ -497,6 +497,21 @@ uint32_t mf_gpr_bridge_base(void) {
 
 /// @brief Copies guest GPRs/flags into the linear-memory mirror for a block.
 /// @param[in] mask Bit i set mirrors GPR i; bit 31 mirrors the flags cell.
+/// @brief Publishes CR3/CR0/CPL into the mirror (page walk + permission checks).
+void mf_bridge_cpu_state(void) {
+    const std::uint32_t base = mf_gpr_bridge_base();
+    const auto& cpu = current().cpu();
+    auto& cr = *reinterpret_cast<std::uint64_t*>( // NOLINT(performance-no-int-to-ptr)
+        static_cast<std::uintptr_t>(base + 264));
+    cr = cpu.control_register(2);                 // compact bank: CR0/CR2/CR3/CR4
+    auto& wp = *reinterpret_cast<std::uint64_t*>( // NOLINT(performance-no-int-to-ptr)
+        static_cast<std::uintptr_t>(base + 272));
+    wp = cpu.control_register(0);
+    auto& ring = *reinterpret_cast<std::uint8_t*>( // NOLINT(performance-no-int-to-ptr)
+        static_cast<std::uintptr_t>(base + 280));
+    ring = static_cast<std::uint8_t>(cpu.cpl());
+}
+
 void mf_gprs_flush(uint32_t mask) {
     const std::uint32_t base = mf_gpr_bridge_base();
     // NOLINTNEXTLINE(performance-no-int-to-ptr) -- wasm32 offset of the mirror
@@ -513,16 +528,7 @@ void mf_gprs_flush(uint32_t mask) {
         *reinterpret_cast<std::uint32_t*>(static_cast<std::uintptr_t>(base + 256)) =
             cpu.flags_code();
     }
-    // The page-table walk root and mode guards ride along on every flush.
-    // NOLINTNEXTLINE(performance-no-int-to-ptr) -- cr3 cell lives in the mirror
-    *reinterpret_cast<std::uint64_t*>(static_cast<std::uintptr_t>(base + 264)) =
-        cpu.control_register(2); // compact bank: CR0/CR2/CR3/CR4
-    // NOLINTNEXTLINE(performance-no-int-to-ptr) -- cr0 cell lives in the mirror
-    *reinterpret_cast<std::uint64_t*>(static_cast<std::uintptr_t>(base + 272)) =
-        cpu.control_register(0);
-    // NOLINTNEXTLINE(performance-no-int-to-ptr) -- cpl cell lives in the mirror
-    *reinterpret_cast<std::uint8_t*>(static_cast<std::uintptr_t>(base + 280)) =
-        static_cast<std::uint8_t>(cpu.cpl());
+    mf_bridge_cpu_state();
 }
 
 /// @brief Forwards a guest-store paddr to the decode-cache invalidator.
