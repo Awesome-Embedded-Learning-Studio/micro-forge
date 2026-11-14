@@ -502,10 +502,11 @@ void mf_gprs_flush(uint32_t mask) {
     // NOLINTNEXTLINE(performance-no-int-to-ptr) -- wasm32 offset of the mirror
     auto* slots = reinterpret_cast<std::uint64_t*>(static_cast<std::uintptr_t>(base));
     const auto& cpu = current().cpu();
-    for (unsigned i = 0; i < 16; ++i) {
-        if ((mask & (1U << i)) != 0U) {
-            slots[i] = cpu.gpr(static_cast<micro_forge::arch::x86_64::Reg>(i));
-        }
+    // Walk the set bits only: a typical block touches three or four GPRs, so
+    // this beats a fixed 16-iteration sweep.
+    for (std::uint32_t bits = mask & 0xFFFFU; bits != 0U; bits &= bits - 1U) {
+        const auto i = static_cast<unsigned>(std::countr_zero(bits));
+        slots[i] = cpu.gpr(static_cast<micro_forge::arch::x86_64::Reg>(i));
     }
     if ((mask & (1U << 31U)) != 0U) {
         // NOLINTNEXTLINE(performance-no-int-to-ptr) -- flags cell lives in the mirror
@@ -543,10 +544,9 @@ void mf_gprs_commit(uint32_t mask) {
     // NOLINTNEXTLINE(performance-no-int-to-ptr) -- wasm32 offset of the mirror
     const auto* slots = reinterpret_cast<const std::uint64_t*>(static_cast<std::uintptr_t>(base));
     auto& cpu = current().cpu();
-    for (unsigned i = 0; i < 16; ++i) {
-        if ((mask & (1U << i)) != 0U) {
-            cpu.set_gpr(static_cast<micro_forge::arch::x86_64::Reg>(i), slots[i]);
-        }
+    for (std::uint32_t bits = mask & 0xFFFFU; bits != 0U; bits &= bits - 1U) {
+        const auto i = static_cast<unsigned>(std::countr_zero(bits));
+        cpu.set_gpr(static_cast<micro_forge::arch::x86_64::Reg>(i), slots[i]);
     }
     if ((mask & (1U << 31U)) != 0U) {
         const auto* const flags =
