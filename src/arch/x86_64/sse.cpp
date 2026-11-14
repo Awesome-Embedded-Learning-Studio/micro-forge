@@ -561,7 +561,8 @@ ExitStatus Cpu::execute_sse(const DecodedInsn& insn, uint64_t rip_after) {
     default:
         return execute_sse_ext(insn, rip_after); // 2026-11 face: sse_ext.cpp
     }
-    return exit_; // kRunning: the caller retires the instruction
+    retire(1); // Successful SSE instructions share the scalar retirement contract.
+    return exit_;
 }
 
 } // namespace micro_forge::arch::x86_64

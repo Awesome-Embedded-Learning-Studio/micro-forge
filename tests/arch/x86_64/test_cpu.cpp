@@ -498,4 +498,46 @@ TEST_F(CpuTest, DecodeRefusalSurfacesAsDecodeError) {
     EXPECT_EQ(ExitStatus::Kind::kDecodeError, cpu_.exit_status().kind);
 }
 
+TEST_F(CpuTest, SseInstructionsRetireExactlyOnce) {
+    // Both SSE executors must stop run(1) before the following instruction.
+    load({
+        0x0F,
+        0x10,
+        0x07, // movups xmm0,[rdi]
+        0x0F,
+        0x11,
+        0x07, // movups [rdi],xmm0
+        0x66,
+        0x0F,
+        0xEF,
+        0xC0, // pxor xmm0,xmm0
+        0x0F,
+        0x12,
+        0xC1, // movhlps xmm0,xmm1 (extension executor)
+        0xB8,
+        0x01,
+        0x00,
+        0x00,
+        0x00,
+    }); // mov eax,1
+    cpu_.set_gpr(Reg::kRdi, 0x80000);
+    for (const auto length : {3U, 3U, 4U, 3U}) {
+        const auto before = cpu_.icount();
+        const auto rip = cpu_.rip();
+        EXPECT_EQ(ExitStatus::Kind::kRunning, cpu_.run(1).kind);
+        EXPECT_EQ(before + 1U, cpu_.icount());
+        EXPECT_EQ(rip + length, cpu_.rip());
+        EXPECT_EQ(0U, cpu_.gpr(Reg::kRax));
+    }
+}
+
+TEST_F(CpuTest, FaultingMovupsDoesNotRetireOrChangeXmm) {
+    load({0x0F, 0x10, 0x07}); // second lane lies outside RAM
+    cpu_.set_gpr(Reg::kRdi, ram_.size() - 8U);
+    cpu_.set_xmm(Reg::kXmm0, {0x1234, 0x5678});
+    EXPECT_EQ(ExitStatus::Kind::kFault, cpu_.step().kind);
+    EXPECT_EQ(0U, cpu_.icount());
+    EXPECT_EQ((std::array<uint64_t, 2>{0x1234, 0x5678}), cpu_.xmm(Reg::kXmm0));
+}
+
 } // namespace
