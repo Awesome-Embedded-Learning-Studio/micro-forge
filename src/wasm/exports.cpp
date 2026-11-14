@@ -348,6 +348,9 @@ uint32_t mf_wasm_block2(uint32_t rip_lo, uint32_t rip_hi, uint32_t max_insns, ui
             const auto bytes =
                 current().ram().view(static_cast<std::uint32_t>(base + in_page), chunk);
             if (bytes.size() != chunk) {
+                if (!insns.empty()) {
+                    break; // keep what already decoded, stop the slice here
+                }
                 *out_len = 0x102; // physical view out of range
                 return 0;
             }
@@ -357,6 +360,9 @@ uint32_t mf_wasm_block2(uint32_t rip_lo, uint32_t rip_hi, uint32_t max_insns, ui
         const std::span<const std::uint8_t> bytes{vbuf.data(), vbuf.size()};
         const auto decoded = arch::x86_64::decode_one(bytes);
         if (!decoded) {
+            if (!insns.empty()) {
+                break; // fall path ran into undecodable bytes: stop here
+            }
             *out_len = 0x103; // decode refused the bytes
             return 0;
         }
@@ -368,7 +374,9 @@ uint32_t mf_wasm_block2(uint32_t rip_lo, uint32_t rip_hi, uint32_t max_insns, ui
             break; // ret stays with the interpreter step (never lowered)
         }
         if (imm_branch) {
-            insns.push_back(*decoded); // branches end their block lowered
+            // A conditional branch no longer ends the slice: the fall path
+            // continues, the taken side exits mid-block with its own count.
+            insns.push_back(*decoded);
             break;
         }
         if (decoded->length == 0) {
@@ -394,6 +402,10 @@ uint32_t mf_wasm_block2(uint32_t rip_lo, uint32_t rip_hi, uint32_t max_insns, ui
         out_masks[0] = info.used_mask | (info.flags_used ? 1U << 31U : 0U);
         // NOLINTNEXTLINE(bugprone-signed-bitwise) -- bit 31 packs flags liveness
         out_masks[1] = info.dirty_mask | (info.flags_dirty ? 1U << 31U : 0U);
+        // diagnostic extension slot: how many instructions the block holds
+        // and which terminator stopped it (kNext/kStep/kJump/kBranch).
+        out_masks[2] = static_cast<uint32_t>(info.term);
+        out_masks[3] = info.stopped_at;
     }
     base::WasmModule module;
     module.add_memory(1);
@@ -464,6 +476,11 @@ uint64_t mf_event_budget(void) {
 ///            the scheduler and interrupt recognition like Cpu::retire.
 void mf_retire(uint32_t count) {
     current().cpu().retire(count);
+}
+
+/// @brief Translation generation: changes on every CR3 write or INVLPG.
+uint32_t mf_tlb_epoch(void) {
+    return current().cpu().tlb_epoch();
 }
 
 /// @brief Reads the six arithmetic flags packed cf|zf<<1|sf<<2|of<<3|pf<<4|af<<5.

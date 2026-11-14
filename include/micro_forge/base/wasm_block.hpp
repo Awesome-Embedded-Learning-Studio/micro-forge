@@ -38,6 +38,7 @@ struct WasmBlockInfo {
     WasmTerm term = WasmTerm::kNext; ///< Exit shape of the block.
     std::uint64_t jump_target = 0;   ///< kJump / kBranch taken rip.
     std::uint64_t fall_rip = 0;      ///< kBranch fallthrough rip.
+    std::uint32_t stopped_at = 0;    ///< Mnemonic code that stopped the slice.
 };
 
 /**

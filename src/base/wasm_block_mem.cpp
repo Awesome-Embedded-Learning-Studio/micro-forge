@@ -25,6 +25,8 @@ using arch::x86_64::Mnemonic;
 using arch::x86_64::Operand;
 using arch::x86_64::Seg;
 
+} // namespace
+
 /// Effective-address computation of @p op into kTmpV (base+index*scale+disp).
 bool emit_vaddr(const Operand& op, std::vector<std::uint8_t>& body) {
     if (op.rip_relative) {
@@ -64,6 +66,8 @@ bool emit_vaddr(const Operand& op, std::vector<std::uint8_t>& body) {
     return true;
 }
 
+namespace {
+
 /// Zero-extending guest load of @p size bytes at the address on the stack.
 void emit_guest_load(std::vector<std::uint8_t>& body, unsigned size) {
     bool extend = false;
@@ -96,6 +100,8 @@ void emit_guest_load(std::vector<std::uint8_t>& body, unsigned size) {
 
 /// Appends kTmpPd to the mirror store-log so the runner can invalidate the
 /// interpreter decode cache (self-modifying code) after the block returns.
+} // namespace
+
 void emit_store_log(std::vector<std::uint8_t>& body, std::uint32_t base) {
     emit_i32(body, static_cast<std::int32_t>(kStoreCountSlot + base));
     body.push_back(kI32Load);
@@ -152,7 +158,7 @@ void emit_guest_store(std::vector<std::uint8_t>& body, unsigned size) {
     append_uleb(body, 0);
 }
 
-} // namespace
+namespace {} // namespace
 
 void emit_handoff(std::vector<std::uint8_t>& body, std::uint32_t base, unsigned done,
                   std::uint64_t rip, std::uint32_t dirty_bits) {
@@ -395,8 +401,7 @@ bool lower_memdst_alu(const DecodedInsn& insn, const Operand& mem, const Operand
         return false;
     }
     const Handoff ho{.base = base, .done = done, .rip = rip, .dirty_bits = dirty_bits};
-    emit_mode_guard(body, ho);
-    emit_walk(body, mem.size, ram_limit, ho);
+    emit_walk(body, mem.size, ram_limit, ho, /*write=*/false);
     emit_guest_load(body, mem.size);
     emit_local(body, kLocalSet, kTmpB);
     emit_carry_in(body, carry, base);
@@ -422,8 +427,7 @@ bool lower_memdst_alu(const DecodedInsn& insn, const Operand& mem, const Operand
         if (!emit_vaddr(mem, body)) {
             return false;
         }
-        emit_mode_guard(body, ho);
-        emit_walk(body, mem.size, ram_limit, ho);
+        emit_walk(body, mem.size, ram_limit, ho, /*write=*/true);
         emit_local(body, kLocalGet, kTmpC);
         emit_guest_store(body, mem.size);
         emit_store_log(body, base);
@@ -466,8 +470,7 @@ bool lower_mem_insn(const DecodedInsn& insn, std::uint64_t rip, std::vector<std:
             return false;
         }
         const Handoff ho{.base = base, .done = done, .rip = rip, .dirty_bits = dirty_bits};
-        emit_mode_guard(body, ho);
-        emit_walk(body, mem.size, ram_limit, ho);
+        emit_walk(body, mem.size, ram_limit, ho, /*write=*/true);
         if (other.kind == Operand::Kind::kImm) {
             emit_i64(body, other.disp);
         } else {
@@ -507,8 +510,8 @@ bool lower_mem_insn(const DecodedInsn& insn, std::uint64_t rip, std::vector<std:
     }
 
     const Handoff ho{.base = base, .done = done, .rip = rip, .dirty_bits = dirty_bits};
-    emit_mode_guard(body, ho);
-    emit_walk(body, mem.size, ram_limit, ho);
+    // guard already ran at block entry (cpl/CR0.WP are block-invariant)
+    emit_walk(body, mem.size, ram_limit, ho, /*write=*/false);
     emit_guest_load(body, mem.size);
     emit_local(body, kLocalSet, kTmpB); // t_b = loaded source (zero-extended)
     emit_local(body, kLocalGet, *dst);

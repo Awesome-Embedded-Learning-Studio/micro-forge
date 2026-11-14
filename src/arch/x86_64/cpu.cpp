@@ -262,6 +262,7 @@ void Cpu::switch_address_space() {
     decode_cache_.clear();
     std::ranges::fill(code_page_bits_, 0ULL);
     ++code_epoch_;
+    ++tlb_epoch_; // every translation derived from the old CR3 is stale
 }
 
 ExitStatus Cpu::step() {

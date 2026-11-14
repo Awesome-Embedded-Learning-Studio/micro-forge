@@ -12,6 +12,8 @@
 #include <cstdint>
 #include <vector>
 
+#include "micro_forge/arch/x86_64/decoded.hpp"
+
 namespace micro_forge::base::detail {
 
 /// Facts a mid-block refusal needs to hand the rest back to the runner.
@@ -26,13 +28,25 @@ struct Handoff {
 /// Records done/dirty so the runner commits what already ran.
 void emit_handoff(std::vector<std::uint8_t>& body, const Handoff& ho);
 
+/// @brief Emits the effective address of @p op into kTmpV (no guest access).
+/// @param[in,out] body Opcode stream under construction.
+/// @param[in] op Memory operand (base + index*scale + disp).
+/// @return false when the operand uses a form the block cannot address
+///         (rip-relative, or a register outside the bridged set).
+bool emit_vaddr(const micro_forge::arch::x86_64::Operand& op, std::vector<std::uint8_t>& body);
+
+/// @brief Emits a guest store of @p size bytes (address then value on stack).
+/// @param[in,out] body Opcode stream under construction.
+/// @param[in] size Access width in bytes (1/2/4/8).
+void emit_guest_store(std::vector<std::uint8_t>& body, unsigned size);
+
+/// @brief Records the paddr in kTmpPd in the store log (SMC detection).
+/// @param[in,out] body Opcode stream under construction.
+/// @param[in] base GPR mirror base offset.
+void emit_store_log(std::vector<std::uint8_t>& body, std::uint32_t base);
+
 /// @brief Emits a void if whose condition is already on the stack.
 void emit_if_void(std::vector<std::uint8_t>& body);
-
-/// @brief Kernel-mode guard for one guest memory operand.
-/// cpl != 0 or CR0.WP=1 hands the rest back to the runner; the interpreter
-/// re-checks user/write permissions the block cannot mirror cheaply.
-void emit_mode_guard(std::vector<std::uint8_t>& body, const Handoff& ho);
 
 /**
  * @brief Full four-level page walk from kTmpV to a wrapped i32 paddr.
@@ -42,6 +56,6 @@ void emit_mode_guard(std::vector<std::uint8_t>& body, const Handoff& ho);
  * @param[in] ho Handoff facts for the out-of-RAM early return.
  */
 void emit_walk(std::vector<std::uint8_t>& body, unsigned size, std::uint32_t ram_limit,
-               const Handoff& ho);
+               const Handoff& ho, bool write);
 
 } // namespace micro_forge::base::detail

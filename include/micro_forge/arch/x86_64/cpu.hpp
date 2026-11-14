@@ -87,15 +87,14 @@ enum class FaultId : uint8_t {
  *   write on RAM equals its unlocked form. Locked MMIO semantics arrive
  *   with the device batches.
  */
-// Large by design; padding is irrelevant next to the caches it misses.
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 class Cpu {
 public:
-    void note_store(uint64_t paddr); ///< Forwards a guest store to the decode-cache invalidator.
+    void note_store(uint64_t paddr); ///< Guest store -> decode-cache invalidator.
     void switch_address_space();     ///< CR3 write/remap: drops cached decodes.
     [[nodiscard]] uint64_t code_epoch() const noexcept { return code_epoch_; }
-    /// @brief Binds the CPU to its bus and scheduler. @param[in] bus Guest
-    /// memory bus (fetch and data both). @param[in] scheduler icount queue.
+    [[nodiscard]] std::uint32_t tlb_epoch() const noexcept { return tlb_epoch_; }
+    /// @brief Binds the CPU to its guest bus and icount queue.
     Cpu(kernel::Bus& bus, kernel::Scheduler& scheduler, kernel::PortSpace* ports = nullptr)
         : bus_(bus), scheduler_(scheduler), ports_(ports) {}
     /**
@@ -189,8 +188,7 @@ public:
     [[nodiscard]] unsigned last_fault_length() const { return last_fault_length_; }
     /// @brief Writes one full GPR.
     void set_gpr(Reg reg, uint64_t value) { regs_[index_of(reg)] = value; }
-    /// @brief Current rip.
-    [[nodiscard]] uint64_t rip() const { return rip_; }
+    [[nodiscard]] uint64_t rip() const { return rip_; } ///< current rip
     /// @brief Sets rip (jump before run).
     void set_rip(uint64_t value) { rip_ = value; }
     /// @brief Translates an instruction fetch.
@@ -315,11 +313,15 @@ public:
     void set_control_register(unsigned index, uint64_t value) { cr_[index] = value; }
     /// @brief Enables paging (boot shim) or returns to pass-through.
     void set_paging(bool enabled) { mmu_.set_paging(enabled); }
-    /// @brief Flushes the translation cache (CR3 write).
-    void flush_tlb() { mmu_.flush(); }
+    /// @brief CR3 write: drop translations.
+    void flush_tlb() {
+        mmu_.flush();
+        ++tlb_epoch_;
+    }
     /// @brief Drops one translation (INVLPG); same-page decodes die too.
     void invalidate_page(uint64_t vaddr) {
         mmu_.invalidate(vaddr);
+        ++tlb_epoch_; // block-side TLB clears on the next block run
         if (decode_cache_.erase_if([vaddr](uint64_t rip) {
                 return (rip >> 12U) == (vaddr >> 12U); // same vaddr page
             }) != 0U) {
@@ -538,10 +540,9 @@ private:
     DecodeCache decode_cache_;
     /// Executed-page bitmap; stores to marked pages invalidate decode.
     std::vector<uint64_t> code_page_bits_;
-    uint64_t code_epoch_ = 0; ///< bumped on decode flush; extern caches sync
-    /// Marks @p paddr's page as an executed-from page.
+    uint64_t code_epoch_ = 0;     ///< bumped on decode flush; extern caches sync
+    std::uint32_t tlb_epoch_ = 1; ///< bumped on CR3 writes and INVLPG; block TLB follows
     void mark_code_page(uint64_t paddr);
-    /// Compiled block: executable page, entry and guest coverage.
     struct JitBlock {
         /// Blocks share 4 KiB pages (~1.3 KiB each); the shared_ptr keeps
         /// a page alive while any of its blocks lives in the table.

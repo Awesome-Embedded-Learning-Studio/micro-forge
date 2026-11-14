@@ -37,7 +37,8 @@ constexpr std::uint8_t kLocalGet = 0x20;
 constexpr std::uint8_t kLocalSet = 0x21;
 constexpr std::uint8_t kReturn = 0x0F;
 constexpr std::uint8_t kAlign8 = 0x03;
-constexpr std::uint8_t kIfVoid = 0x04;
+constexpr std::uint8_t kIfVoid = 0x04;        ///< if (void result).
+constexpr std::uint8_t kI32ResultType = 0x7F; ///< block type: one i32 result.
 constexpr std::uint8_t kElse = 0x05;
 constexpr std::uint8_t kBlockEnd = 0x0B;
 // Flags-chain opcodes (parity, shifts, packing into the flags cell).
@@ -48,6 +49,9 @@ constexpr std::uint8_t kI32Shl = 0x74;
 constexpr std::uint8_t kI32Add = 0x6A;
 constexpr std::uint8_t kI32ShrU = 0x76;
 constexpr std::uint8_t kI64Eqz = 0x50;
+constexpr std::uint8_t kI64Eq = 0x51;  ///< i64.eq
+constexpr std::uint8_t kI32Eq = 0x46;  ///< i32.eq
+constexpr std::uint8_t kI32GeU = 0x4F; ///< i32.ge_u
 constexpr std::uint8_t kI64LtU = 0x54;
 constexpr std::uint8_t kI64ShrU = 0x88;
 constexpr std::uint8_t kI64ShlOp = 0x86;
@@ -92,7 +96,16 @@ constexpr std::uint32_t kHandedSlot = 292;       ///< i32 handoff flag (1 = hand
 constexpr std::uint32_t kStoreCountSlot = 296;   ///< u32 guest stores pending invalidation.
 constexpr std::uint32_t kHandoffDirtySlot = 300; ///< u32 dirty_bits written back at handoff.
 constexpr std::uint32_t kStoreLogSlot = 304;     ///< 8 store paddrs for note_store.
-constexpr std::uint32_t kMirrorBytes = 372;      ///< Total GPR mirror size.
+/// Store log occupies [kStoreLogSlot, kStoreLogSlot + 8*8); everything
+/// below starts after it so the two regions cannot alias.
+constexpr std::uint32_t kTlbEpochSlot = 368; ///< u32 translation generation.
+
+constexpr std::uint32_t kExitDoneSlot = 376; ///< u32 instructions done when the block exited.
+constexpr std::uint32_t kTlbSlot = 384;      ///< First block-TLB entry.
+constexpr std::uint32_t kTlbEntries = 512;   ///< Direct-mapped entries.
+constexpr std::uint32_t kTlbEntryBytes = 24; ///< vaddr page, paddr, gen, permissions.
+constexpr std::uint32_t kMirrorBytes = kTlbSlot + (kTlbEntries * kTlbEntryBytes);
+///< Total GPR mirror size (GPRs, bridge cells, block TLB).
 
 /// Local index of a guest GPR, or nothing when outside the 16-GPR map.
 inline std::optional<std::uint32_t> local_of(arch::x86_64::Reg reg) {

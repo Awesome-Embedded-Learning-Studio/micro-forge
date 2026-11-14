@@ -11,6 +11,7 @@
 #include <span>
 
 #include "micro_forge/base/wasm_block_detail.hpp"
+#include "micro_forge/base/wasm_block_internal.hpp"
 #include "micro_forge/base/wasm_emit.hpp"
 
 namespace micro_forge::base {
@@ -169,7 +170,11 @@ void emit_cc(std::vector<std::uint8_t>& body, arch::x86_64::Cc cc, std::uint32_t
 
 /// Mnemonics that write ops[0] (cmp/test only consume their operands).
 bool writes_dst(Mnemonic mnemonic) {
-    return mnemonic == Mnemonic::kMov || mnemonic == Mnemonic::kSetcc || alu_opcode(mnemonic) != 0;
+    // every lowering that stores a result into ops[0] belongs here: a
+    // missing entry leaves the local out of the dirty set and the block
+    // exit never writes it back to the mirror.
+    return mnemonic == Mnemonic::kMov || mnemonic == Mnemonic::kSetcc ||
+           mnemonic == Mnemonic::kLea || alu_opcode(mnemonic) != 0;
 }
 
 /// Mnemonics whose lowering writes the flags cell or reads CF (bt).
@@ -232,45 +237,6 @@ bool lower_insn(const arch::x86_64::DecodedInsn& insn, std::uint64_t rip,
         term.fall = after;
         return true;
     }
-    // bt r,r: CF-only update, every other flag stays untouched
-    if (insn.mnemonic == Mnemonic::kBt && reg_reg(insn)) {
-        const auto dst0 = local_of(insn.ops[0].reg);
-        const auto src1 = local_of(insn.ops[1].reg);
-        if (!dst0.has_value() || !src1.has_value() || !mirror_ok(insn, insn.ops[0]) ||
-            !mirror_ok(insn, insn.ops[1])) {
-            return false;
-        }
-        const unsigned size = insn.ops[0].size;
-        emit_local(body, kLocalGet, *dst0);
-        if (size < 8) {
-            emit_i64(body, width_mask_of(size));
-            body.push_back(kI64And);
-        }
-        emit_local(body, kLocalSet, kTmpA);
-        emit_local(body, kLocalGet, *src1);
-        emit_local(body, kLocalSet, kTmpB);
-        // pos = index % bits; bit = (t_a >> pos) & 1
-        emit_local(body, kLocalGet, kTmpB);
-        emit_i64(body, static_cast<std::int64_t>(size) * 8);
-        body.push_back(kI64RemU);
-        emit_local(body, kLocalSet, kTmpE);
-        // cell = (cell & ~1) | bit
-        emit_i32(body, static_cast<std::int32_t>(kFlagsSlot + base));
-        emit_load_flags(body, base);
-        emit_i32(body, -2);
-        body.push_back(kI32And);
-        emit_local(body, kLocalGet, kTmpA);
-        emit_local(body, kLocalGet, kTmpE);
-        body.push_back(kI64ShrU);
-        body.push_back(kI32Wrap);
-        emit_i32(body, 1);
-        body.push_back(kI32And);
-        body.push_back(kI32Or);
-        body.push_back(kI32Store);
-        body.push_back(kAlign4);
-        append_uleb(body, 0);
-        return true;
-    }
     // setcc r8: merge the 0/1 condition byte into the register's high bits
     if (insn.mnemonic == Mnemonic::kSetcc && reglike(insn.ops[0]) && insn.ops[0].size == 1) {
         const auto dst = local_of(insn.ops[0].reg);
@@ -284,6 +250,29 @@ bool lower_insn(const arch::x86_64::DecodedInsn& insn, std::uint64_t rip,
         body.push_back(kI64ExtendI32U);
         emit_local(body, kLocalSet, kTmpC);
         emit_dst_write(body, *dst, kTmpC, 1);
+        return true;
+    }
+    // lea r, [m]: effective address only, no guest access, flags untouched
+    if (insn.mnemonic == Mnemonic::kLea && reglike(insn.ops[0]) &&
+        insn.ops[1].kind == Operand::Kind::kMem) {
+        const auto dst = local_of(insn.ops[0].reg);
+        if (!dst.has_value() || !mirror_ok(insn, insn.ops[0])) {
+            return false;
+        }
+        const auto& mem = insn.ops[1];
+        if (mem.rip_relative) {
+            // the address is a compile-time constant: instruction end + disp
+            emit_i64(body, static_cast<std::int64_t>(rip + insn.length) +
+                               static_cast<std::int64_t>(mem.disp));
+            emit_local(body, kLocalSet, kTmpC);
+        } else {
+            if (!emit_vaddr(mem, body)) {
+                return false;
+            }
+            emit_local(body, kLocalGet, kTmpV);
+            emit_local(body, kLocalSet, kTmpC);
+        }
+        emit_dst_write(body, *dst, kTmpC, insn.ops[0].size);
         return true;
     }
     if (insn.ops[0].kind == Operand::Kind::kMem || insn.ops[1].kind == Operand::Kind::kMem) {
@@ -386,6 +375,12 @@ WasmBlockInfo append_wasm_block(std::span<const arch::x86_64::DecodedInsn> insns
         const std::size_t before = code.size();
         if (!lower_insn(insn, next_rip, code, term, gpr_base, ram_limit, done, mask.mask_dirty())) {
             code.resize(before); // half-emitted unsupported form
+            // pack mnemonic + operand shape so the harness can histogram
+            // exactly which form stopped the slice
+            info.stopped_at = static_cast<std::uint32_t>(insn.mnemonic) |
+                              (static_cast<std::uint32_t>(insn.ops[0].kind) << 8U) |
+                              (static_cast<std::uint32_t>(insn.ops[1].kind) << 12U) |
+                              (static_cast<std::uint32_t>(insn.ops[0].size) << 16U);
             break;
         }
         if (insn.mnemonic != Mnemonic::kRet && insn.mnemonic != Mnemonic::kJmp &&
@@ -420,6 +415,16 @@ WasmBlockInfo append_wasm_block(std::span<const arch::x86_64::DecodedInsn> insns
                     mask.mark_dirty(*dst);
                 }
             }
+        }
+        if (insn.mnemonic == Mnemonic::kCall && insn.ops[0].kind == Operand::Kind::kImm) {
+            const auto rsp_local = local_of(arch::x86_64::Reg::kRsp);
+            if (rsp_local.has_value()) {
+                mask.mark_used(*rsp_local);
+                mask.mark_dirty(*rsp_local);
+            }
+        }
+        if (insn.mnemonic == Mnemonic::kJcc) {
+            info.flags_used = true;
         }
         if (writes_flags(insn.mnemonic)) {
             info.flags_used = true; // the chain reads t_a/t_b and the cell
@@ -491,6 +496,13 @@ WasmBlockInfo append_wasm_block(std::span<const arch::x86_64::DecodedInsn> insns
         body.push_back(kSelect);
         break;
     }
+    // Record how many instructions the block actually retired: the runner
+    // reads this instead of assuming the whole slice ran.
+    emit_i32(body, static_cast<std::int32_t>(detail::kExitDoneSlot + gpr_base));
+    emit_i32(body, static_cast<std::int32_t>(info.lowered));
+    body.push_back(detail::kI32Store);
+    body.push_back(detail::kAlign4);
+    append_uleb(body, 0);
     body.push_back(kReturn);
     return info;
 }
