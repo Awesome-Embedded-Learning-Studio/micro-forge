@@ -57,7 +57,12 @@ const ripNow = () => BigInt(e.mf_rip_high()) << 32n | BigInt(e.mf_rip_low() >>> 
 // 零进展 handoff 的重探间隔：跳过这么多轮后重跑一次块，看拒绝条件
 // 是否已解除（内核态↔用户态切换）。64 是折中：重探成本 1/64，恢复
 // 延迟平均 32 次调度循环（仍是纯解释器速度，无正确性影响）。
-const SSKIP_PROBE = 64;
+const SKIP_PROBE = 64;
+
+// 无块/skip/预算不足时给解释器的短批次：mf_run 逐条处理设备/中断/异常
+// 且自带预算截断，批次只是隔多少条再回 JS 查一次块机会。32 是 codex
+// 固定 CPU 对照的保守选择（8/32/64 递增收益，32 起波动加大）。
+const FALLBACK_BATCH = 32n;
 
 // CODEX-TIMING: compilation is infrequent, so time every attempt exactly.
 // Hot operations use random iteration samples (or all calls with --timing 1).
@@ -169,7 +174,7 @@ async function runBlocks(budget) {
         // handoff: mid-block refusal or a ret terminator hands the rest
         // back; done instructions ran, the runner takes one interp step.
         const done = view.getUint32(bridge + 288, true);
-        if (done === 0) block.skipLeft = SSKIP_PROBE; // CODEX-SKIP: arm suppression
+        if (done === 0) block.skipLeft = SKIP_PROBE; // CODEX-SKIP: arm suppression
         // bridge finish = commit + store-log drain + rip + retire in one
         // crossing (block stores bypass note_store, so the decode cache
         // needs the drained entries before any block reuse)
@@ -187,12 +192,17 @@ async function runBlocks(budget) {
       }
       } // else branch: not suppressed — full prepare/run/finish path
     }
-    // no block, or the event budget would outlive it: one interpreter step.
+    // no block, or the event budget would outlive it: short interpreter
+    // batch. mf_run itself handles devices/IRQs/exceptions per instruction
+    // and caps at its argument, so the only cost of a batch is re-checking
+    // for a block opportunity every FALLBACK_BATCH insns instead of every
+    // one — measured well worth it (avg block retires < 2 insns anyway).
     // rep-prefixed insns retire one per iteration, so the actual count comes
     // from mf_icount, not the step itself
     refusedHits.set(key, (refusedHits.get(key) ?? 0) + 1);
     const before = e.mf_icount();
-    const exit = decodeExit(e.mf_run(1n));
+    const remain = budget - retired;
+    const exit = decodeExit(e.mf_run(remain >= FALLBACK_BATCH ? FALLBACK_BATCH : remain < 1n ? 1n : remain));
     retired += e.mf_icount() - before;
     if (exit.kind !== EXIT_KIND.RUNNING) return { retired, exit, compiled, refused, execs };
   }
