@@ -48,6 +48,8 @@ EXPORTS="${EXPORTS},_mf_flags_get,_mf_flags_set"
 EXPORTS="${EXPORTS},_mf_retire"
 EXPORTS="${EXPORTS},_mf_event_budget"
 EXPORTS="${EXPORTS},_mf_note_store,_mf_code_epoch"
+EXPORTS="${EXPORTS},_mf_runner_reset,_mf_runner_put,_mf_runner_refuse,_mf_runner_remove,_mf_runner_run"
+EXPORTS="${EXPORTS},_mf_runner_retired,_mf_runner_exit,_mf_runner_miss_lo,_mf_runner_miss_hi,_mf_runner_execs"
 
 mkdir -p "$(dirname "${OUT}")"
 # shellcheck disable=SC2086
@@ -58,6 +60,7 @@ em++ -std=c++23 -O3 "${OPT_FLAGS[@]}" -fno-exceptions -fno-rtti \
     src/loader/*.cpp \
     src/wasm/exports.cpp \
     src/wasm/bridge.cpp \
+    src/wasm/block_runner.cpp \
     -o "${OUT}" \
     -sSTANDALONE_WASM --no-entry \
     -s INITIAL_MEMORY=${INITIAL_MEMORY} \
@@ -65,7 +68,8 @@ em++ -std=c++23 -O3 "${OPT_FLAGS[@]}" -fno-exceptions -fno-rtti \
     -s TOTAL_STACK=262144 \
     -s EXPORTED_FUNCTIONS=${EXPORTS} \
     -Wl,--global-base=${GLOBAL_BASE} \
-    -Wl,--export-memory
+    -Wl,--export-memory \
+    -Wl,--growable-table
 
 echo "[build-wasm] ${OUT} ($(stat -c%s "${OUT}") bytes)"
 echo "[build-wasm] guest window [0, ${GUEST_END}) ram=${GUEST_RAM_MB}MiB, engine base ${GLOBAL_BASE}"

@@ -12,6 +12,7 @@ const options = {
   kernel: process.env.MF_KERNEL_BIN, disk: process.env.MF_DISK_IMG,
   instructions: "40000000", chunk: "2000000", mode: "blocks",
   timing: "0", "timing-out": "", // CODEX-TIMING: 0 = original loop; N = mean sample interval
+  runner: "1", // 1 = engine-side scheduler (C++), 0 = JS loop
 };
 const artifacts = [];
 for (let i = 2; i < process.argv.length; ++i) {
@@ -63,6 +64,11 @@ const SKIP_PROBE = 64;
 // 且自带预算截断，批次只是隔多少条再回 JS 查一次块机会。32 是 codex
 // 固定 CPU 对照的保守选择（8/32/64 递增收益，32 起波动加大）。
 const FALLBACK_BATCH = 32n;
+
+// 引擎侧调度（src/wasm/block_runner.cpp）：JS 只处理 miss 编译与表注册，
+// 调度循环（缓存探测/epoch 校验/桥/回退批次）全在引擎模块内。
+// --runner 0 退回本文件的 JS 调度循环（A/B 对照用）。
+const RUNNER_BURST = 4096;
 
 // CODEX-TIMING: compilation is infrequent, so time every attempt exactly.
 // Hot operations use random iteration samples (or all calls with --timing 1).
@@ -340,11 +346,66 @@ const budgetOf = (e) => {
     return raw < 0n ? raw + (1n << 64n) : raw;
 };
 
+// runner registry bookkeeping: rip -> {block, fn slot} for eviction
+const rcache = new Map();
+const RCACHE_MAX = 4096;
+const rtable = e.__indirect_function_table;
+e.mf_runner_reset(rtable.length); // low slots are the engine's own
+function rdrop(rip) {
+  const old = rcache.get(rip);
+  e.mf_runner_remove(Number(rip & 0xFFFFFFFFn) >>> 0, Number(rip >> 32n) >>> 0);
+  if (old && old.fn !== undefined) rtable.set(old.fn, null);
+  rcache.delete(rip);
+}
+function revict() {
+  let n = rcache.size - Math.floor(RCACHE_MAX * 2 / 3);
+  for (const rip of rcache.keys()) {
+    if (n-- <= 0) break;
+    rdrop(rip);
+  }
+}
+async function runBlocksEngine(budget) {
+  let compiled = 0, refused = 0, execs = 0;
+  let retired = 0n;
+  while (retired < budget) {
+    const status = e.mf_runner_run(budget - retired, RUNNER_BURST);
+    retired += e.mf_runner_retired();
+    execs += e.mf_runner_execs();
+    const exit = decodeExit(e.mf_runner_exit());
+    if (status === 0 || status === 3) return { retired, exit, compiled, refused, execs };
+    if (status === 4) continue; // burst limit: straight back in
+    const rip = BigInt(e.mf_runner_miss_hi() >>> 0) << 32n | BigInt(e.mf_runner_miss_lo() >>> 0);
+    const lo = Number(rip & 0xFFFFFFFFn) >>> 0, hi = Number(rip >> 32n) >>> 0;
+    if (status === 2) rdrop(rip); // stale epoch: compile replaces it
+    const block = await compile(rip);
+    if (block) {
+      ++compiled;
+      let slot = e.mf_runner_put(lo, hi, block.count, block.used, block.dirty);
+      if (slot < 0) { // registry full: evict a third and retry once
+        revict();
+        slot = e.mf_runner_put(lo, hi, block.count, block.used, block.dirty);
+        if (slot < 0) { ++refused; continue; }
+      }
+      while (rtable.length <= slot) rtable.grow(1024);
+      rtable.set(slot, block.run);
+      rcache.set(rip, { block, fn: slot });
+    } else {
+      ++refused;
+      e.mf_runner_refuse(lo, hi);
+      rcache.set(rip, { block: null });
+      refusedHits.set(rip, (refusedHits.get(rip) ?? 0) + 1);
+    }
+    if (rcache.size > RCACHE_MAX) revict();
+  }
+  return { retired, exit: { kind: 0, code: 0 }, compiled, refused, execs };
+}
+
 const budget = BigInt(options.instructions);
 const start = process.hrtime.bigint();
 let result;
 if (options.mode === "blocks") {
-  result = await (timing ? runBlocksTimed(budget) : runBlocks(budget)); // CODEX-TIMING
+  result = await (timing ? runBlocksTimed(budget)
+    : options.runner === "1" ? runBlocksEngine(budget) : runBlocks(budget));
 } else {
   const chunk = BigInt(options.chunk);
   let exit = { kind: 0, code: 0 };
