@@ -66,8 +66,6 @@ bool emit_vaddr(const Operand& op, std::vector<std::uint8_t>& body) {
     return true;
 }
 
-namespace {
-
 /// Zero-extending guest load of @p size bytes at the address on the stack.
 void emit_guest_load(std::vector<std::uint8_t>& body, unsigned size) {
     bool extend = false;
@@ -100,8 +98,6 @@ void emit_guest_load(std::vector<std::uint8_t>& body, unsigned size) {
 
 /// Appends kTmpPd to the mirror store-log so the runner can invalidate the
 /// interpreter decode cache (self-modifying code) after the block returns.
-} // namespace
-
 void emit_store_log(std::vector<std::uint8_t>& body, std::uint32_t base) {
     emit_i32(body, static_cast<std::int32_t>(kStoreCountSlot + base));
     body.push_back(kI32Load);

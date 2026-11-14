@@ -32,7 +32,8 @@ TEST(WasmBlockTest, LowersMovAddRet) {
     std::vector<std::uint8_t> body;
     const auto info = micro_forge::base::append_wasm_block(insns, 0x1000, body);
     EXPECT_EQ(insns.size(), info.lowered);
-    EXPECT_EQ(micro_forge::base::WasmTerm::kStep, info.term);
+    // ret now pops its target inside the block instead of handing back
+    EXPECT_EQ(micro_forge::base::WasmTerm::kIndirect, info.term);
     EXPECT_FALSE(body.empty());
 
     // Build a module exporting the block as a () -> i64 function holding
@@ -101,14 +102,16 @@ TEST(WasmBlockTest, LowersMemLoadStoreForms) {
     }
     std::vector<std::uint8_t> body;
     const auto info = micro_forge::base::append_wasm_block(insns, 0x1000, body);
-    // The three memory forms all lower; ret stops the sweep.
+    // The three memory forms all lower; ret stops the sweep and pops its own
+    // target (kIndirect) instead of handing back.
     EXPECT_EQ(std::size_t{4}, info.lowered);
-    EXPECT_EQ(micro_forge::base::WasmTerm::kStep, info.term);
+    EXPECT_EQ(micro_forge::base::WasmTerm::kIndirect, info.term);
     EXPECT_TRUE(info.flags_dirty); // cmp writes the flags cell
-    // Reads: rax, rcx (store base+index), rdx, rdi, and esi (store source).
-    constexpr auto expect_used = 0xC7U; // rax rcx rdx rdi esi
+    // Reads: rax, rcx (store base+index), rdx, rdi, esi (store source) and
+    // rsp (ret pops its target through the bridge).
+    constexpr auto expect_used = 0xD7U; // rax rcx rdx rdi rsp esi
     EXPECT_EQ(expect_used, info.used_mask);
-    EXPECT_EQ(0x40U, info.dirty_mask); // esi (slot 6) written by the load
+    EXPECT_EQ(0x50U, info.dirty_mask); // esi (load) and rsp (ret pop)
     EXPECT_FALSE(body.empty());
 }
 

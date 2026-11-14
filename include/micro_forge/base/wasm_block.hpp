@@ -22,10 +22,11 @@ namespace micro_forge::base {
 
 /// @brief How a lowered block ends.
 enum class WasmTerm : std::uint8_t {
-    kNext,   ///< Ran out of instructions: returns the next sequential rip.
-    kStep,   ///< Ends on ret: returns the all-ones sentinel, caller steps.
-    kJump,   ///< Ends on jmp imm: returns the constant target rip.
-    kBranch, ///< Ends on jcc: returns taken or fallthrough rip by flags.
+    kNext,     ///< Ran out of instructions: returns the next sequential rip.
+    kStep,     ///< Ends on ret: returns the all-ones sentinel, caller steps.
+    kJump,     ///< Ends on jmp imm: returns the constant target rip.
+    kBranch,   ///< Ends on jcc: returns taken or fallthrough rip by flags.
+    kIndirect, ///< Ends on ret: returns the rip popped from the guest stack.
 };
 
 /// @brief Liveness and exit facts the JS run loop bridges with.

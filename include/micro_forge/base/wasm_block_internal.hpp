@@ -35,6 +35,11 @@ void emit_handoff(std::vector<std::uint8_t>& body, const Handoff& ho);
 ///         (rip-relative, or a register outside the bridged set).
 bool emit_vaddr(const micro_forge::arch::x86_64::Operand& op, std::vector<std::uint8_t>& body);
 
+/// @brief Emits a guest load of @p size bytes (address on stack, value left).
+/// @param[in,out] body Opcode stream under construction.
+/// @param[in] size Access width in bytes (1/2/4/8).
+void emit_guest_load(std::vector<std::uint8_t>& body, unsigned size);
+
 /// @brief Emits a guest store of @p size bytes (address then value on stack).
 /// @param[in,out] body Opcode stream under construction.
 /// @param[in] size Access width in bytes (1/2/4/8).

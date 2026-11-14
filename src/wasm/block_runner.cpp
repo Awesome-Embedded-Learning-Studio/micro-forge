@@ -274,10 +274,13 @@ uint32_t mf_runner_run(uint64_t budget, uint32_t burst) {
     g_retired = 0;
     g_exit = 0;
     g_execs = 0;
+    // Hoisted: the epoch cannot change inside a block run (no block lowers a
+    // privileged instruction), so one read serves the whole burst.
+    const std::uint64_t epoch = mf_code_epoch();
     for (std::uint32_t i = 0; i < burst && g_retired < budget; ++i) {
         const std::uint64_t rip = (static_cast<std::uint64_t>(mf_rip_high()) << 32U) | mf_rip_low();
         Entry* p = find(rip);
-        if (p == nullptr || (p->state == State::kActive && p->epoch != mf_code_epoch())) {
+        if (p == nullptr || (p->state == State::kActive && p->epoch != epoch)) {
             g_miss = rip;
             return p == nullptr ? 1U : 2U;
         }

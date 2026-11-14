@@ -371,7 +371,8 @@ uint32_t mf_wasm_block2(uint32_t rip_lo, uint32_t rip_hi, uint32_t max_insns, ui
             (decoded->mnemonic == arch::x86_64::Mnemonic::kJmp ||
              decoded->mnemonic == arch::x86_64::Mnemonic::kJcc);
         if (decoded->mnemonic == arch::x86_64::Mnemonic::kRet) {
-            break; // ret stays with the interpreter step (never lowered)
+            insns.push_back(*decoded); // ret ends the block; nothing follows
+            break;
         }
         if (imm_branch) {
             // A conditional branch no longer ends the slice: the fall path
