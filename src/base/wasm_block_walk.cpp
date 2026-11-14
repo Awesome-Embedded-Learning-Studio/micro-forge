@@ -70,6 +70,12 @@ void emit_branch_exit(std::vector<std::uint8_t>& body, const Handoff& ho) {
     body.push_back(kI32Store);
     body.push_back(kAlign4);
     append_uleb(body, 0);
+    // Only the part of the slice that ran may reach the CPU.
+    emit_i32(body, static_cast<std::int32_t>(kHandoffDirtySlot + ho.base));
+    emit_i32(body, static_cast<std::int32_t>(ho.dirty_bits));
+    body.push_back(kI32Store);
+    body.push_back(kAlign4);
+    append_uleb(body, 0);
     emit_i64(body, static_cast<std::int64_t>(ho.rip));
     body.push_back(kReturn);
 }

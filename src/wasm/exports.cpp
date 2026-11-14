@@ -375,8 +375,9 @@ uint32_t mf_wasm_block2(uint32_t rip_lo, uint32_t rip_hi, uint32_t max_insns, ui
             break;
         }
         if (imm_branch) {
-            // A conditional branch no longer ends the slice: the fall path
-            // continues, the taken side exits mid-block with its own count.
+            // Branches end the block. The mid-block inline path exists but is
+            // still being debugged: enabling it here needs the exit condition
+            // direction verified first.
             insns.push_back(*decoded);
             break;
         }

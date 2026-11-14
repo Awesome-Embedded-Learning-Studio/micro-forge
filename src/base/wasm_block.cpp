@@ -529,10 +529,16 @@ WasmBlockInfo append_wasm_block(std::span<const arch::x86_64::DecodedInsn> insns
         body.push_back(kSelect);
         break;
     }
-    // Record how many instructions the block actually retired: the runner
-    // reads this instead of assuming the whole slice ran.
+    // Record how many instructions actually ran and which registers they
+    // dirtied: a jcc exit commits only the part of the slice that executed,
+    // so the runner must never commit the whole dirty set.
     emit_i32(body, static_cast<std::int32_t>(detail::kExitDoneSlot + gpr_base));
     emit_i32(body, static_cast<std::int32_t>(info.lowered));
+    body.push_back(detail::kI32Store);
+    body.push_back(detail::kAlign4);
+    append_uleb(body, 0);
+    emit_i32(body, static_cast<std::int32_t>(detail::kHandoffDirtySlot + gpr_base));
+    emit_i32(body, static_cast<std::int32_t>(info.dirty_mask));
     body.push_back(detail::kI32Store);
     body.push_back(detail::kAlign4);
     append_uleb(body, 0);

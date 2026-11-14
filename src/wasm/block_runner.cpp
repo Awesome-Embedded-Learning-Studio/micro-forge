@@ -351,8 +351,9 @@ uint32_t mf_runner_run(uint64_t budget, uint32_t burst) {
                 const bool handed = mirror_u32(micro_forge::base::detail::kHandedSlot) == 1U;
                 const std::uint32_t done =
                     handed ? mirror_u32(micro_forge::base::detail::kDoneSlot) : p->count;
-                const std::uint32_t hd =
-                    handed ? mirror_u32(micro_forge::base::detail::kHandoffDirtySlot) : 0U;
+                // Both exits report the registers they really dirtied; a jcc
+                // exit covers only the executed part of the slice.
+                const std::uint32_t hd = mirror_u32(micro_forge::base::detail::kHandoffDirtySlot);
                 if (handed) {
                     ++g_handoffs;
                     const std::uint32_t why =
@@ -367,7 +368,7 @@ uint32_t mf_runner_run(uint64_t budget, uint32_t burst) {
                         p->skip = kSkipProbe; // zero-progress handoff: suppress
                     }
                 }
-                mf_bridge_finish(next, done, p->dirty | hd | 0x80000000U);
+                mf_bridge_finish(next, done, hd | 0x80000000U);
                 g_retired += done;
                 g_block_retired += done;
                 ++p->execs;
