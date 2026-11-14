@@ -214,7 +214,7 @@ void emit_tlb_probe(std::vector<std::uint8_t>& body, std::uint32_t base, bool wr
     // user-mode permission: cpl != 0 requires the entry's U/S bit, otherwise
     // the access must fall through to the walk (which re-checks and hands
     // the faulting instruction to the interpreter).
-    emit_i32(body, 1); // conservative: supervisor pages always hand back
+    emit_i32(body, 1); // conservative: supervisor pages hand back
     emit_local(body, kLocalGet, kTmpE);
     body.push_back(kI32Wrap);
     body.push_back(kI32Load);
@@ -327,7 +327,7 @@ void emit_walk(std::vector<std::uint8_t>& body, unsigned size, std::uint32_t ram
     body.push_back(kBlockEnd); // close the 1GB if
     // user-mode access to a supervisor page: hand the instruction to the
     // interpreter so the real #PF (CR2, error code, kernel handler) fires.
-    emit_i32(body, 1); // conservative: supervisor pages always hand back
+    emit_i32(body, 1); // conservative: supervisor pages hand back
     emit_local(body, kLocalGet, kTmpE);
     emit_i64(body, 2);
     body.push_back(kI64ShrU);

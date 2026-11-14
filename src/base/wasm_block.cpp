@@ -486,6 +486,14 @@ WasmBlockInfo append_wasm_block(std::span<const arch::x86_64::DecodedInsn> insns
     body.push_back(detail::kI32Store);
     body.push_back(detail::kAlign4);
     append_uleb(body, 0);
+    // The exit count needs the same reset: a block that never reaches its
+    // exit sequence would otherwise leave the previous block's count and
+    // the runner would retire too many instructions.
+    emit_i32(body, static_cast<std::int32_t>(detail::kExitDoneSlot + gpr_base));
+    emit_i32(body, 0);
+    body.push_back(detail::kI32Store);
+    body.push_back(detail::kAlign4);
+    append_uleb(body, 0);
     // Entry bridge: load every used GPR slot into its local.
     for (std::uint32_t local = 0; local < kNumGprs; ++local) {
         if (mask.used_ok(local)) {
