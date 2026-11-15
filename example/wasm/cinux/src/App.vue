@@ -114,7 +114,7 @@ const pump = (): void => {
         // public/engine.wasm cannot know instructions the kernel now uses.
         status.value =
           `引擎不认识 0x${rip} 处的指令：engine.wasm 可能比内核旧，` +
-          '请重新执行 scripts/build-wasm.sh 并复制产物后刷新页面';
+          '请重新构建 wasm（emcmake cmake -S . -B build-wasm && cmake --build build-wasm）并复制产物后刷新页面';
       } else {
         status.value = `guest stopped (kind=${exit.kind}, code=0x${rip})`;
       }

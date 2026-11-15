@@ -38,17 +38,25 @@ include(cmake/tools/generators.cmake)
 include(cmake/meta/version.cmake)
 
 add_subdirectory(src)
-add_subdirectory(tests)
-add_subdirectory(tools)
 
-# example/: guest-specific glue (the Cinux loader shim and its terminal
-# front end). The core library must not know about it.
-add_subdirectory(example)
+if(EMSCRIPTEN)
+    # Wasm configure: the engine artifact only. Host tools and the test
+    # suite do not cross-compile meaningfully; native configure builds them.
+    add_subdirectory(wasm)
+else()
+    add_subdirectory(tests)
+    add_subdirectory(tools)
+
+    # example/: guest-specific glue (the Cinux loader shim and its terminal
+    # front end). The core library must not know about it.
+    add_subdirectory(example)
+endif()
 
 # --- Install / export: micro_forge as an embeddable library -------------
 # Consumers get the public headers, the static library, and a package
 # config: find_package(micro_forge CONFIG REQUIRED), then
 # target_link_libraries(<app> PRIVATE micro_forge::micro_forge).
+if(NOT EMSCRIPTEN)
 include(GNUInstallDirs)
 install(TARGETS micro_forge
     EXPORT micro_forgeTargets
@@ -64,3 +72,4 @@ install(EXPORT micro_forgeTargets
     NAMESPACE micro_forge::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/micro_forge
 )
+endif()
