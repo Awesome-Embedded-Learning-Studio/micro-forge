@@ -115,50 +115,64 @@ void Cpu::save(kernel::SnapshotWriter& writer) const {
     writer.bytes({reinterpret_cast<const uint8_t*>(console_.data()), console_.size()});
 }
 bool Cpu::restore(kernel::SnapshotReader& reader) {
-    bool ok = true;
-    rip_ = reader.u64(ok);
-    for (uint64_t& r : regs_) {
-        r = reader.u64(ok);
+    const auto rip = reader.u64();
+    if (!rip) {
+        return false;
     }
-    const uint64_t flags = reader.u8(ok);
-    const uint64_t flags2 = reader.u8(ok);
-    if_ = (flags2 & kernel::bit::mask_bit(0)) != 0;
-    ac_ = (flags2 & kernel::bit::mask_bit(1)) != 0;
-    cf_ = kernel::bit::extract(flags, {
+    rip_ = *rip;
+    for (uint64_t& r : regs_) {
+        const auto v = reader.u64();
+        if (!v) {
+            return false;
+        }
+        r = *v;
+    }
+    const auto flags = reader.u8();
+    const auto flags2 = reader.u8();
+    if (!flags || !flags2) {
+        return false;
+    }
+    if_ = (*flags2 & kernel::bit::mask_bit(0)) != 0;
+    ac_ = (*flags2 & kernel::bit::mask_bit(1)) != 0;
+    cf_ = kernel::bit::extract(*flags, {
                                           .low = 0,
                                           .width = 1,
                                       }) != 0;
-    pf_ = kernel::bit::extract(flags, {
+    pf_ = kernel::bit::extract(*flags, {
                                           .low = 1,
                                           .width = 1,
                                       }) != 0;
-    af_ = kernel::bit::extract(flags, {
+    af_ = kernel::bit::extract(*flags, {
                                           .low = 2,
                                           .width = 1,
                                       }) != 0;
-    zf_ = kernel::bit::extract(flags, {
+    zf_ = kernel::bit::extract(*flags, {
                                           .low = 3,
                                           .width = 1,
                                       }) != 0;
-    sf_ = kernel::bit::extract(flags, {
+    sf_ = kernel::bit::extract(*flags, {
                                           .low = 4,
                                           .width = 1,
                                       }) != 0;
-    of_ = kernel::bit::extract(flags, {
+    of_ = kernel::bit::extract(*flags, {
                                           .low = 5,
                                           .width = 1,
                                       }) != 0;
-    df_ = kernel::bit::extract(flags, {
+    df_ = kernel::bit::extract(*flags, {
                                           .low = 6,
                                           .width = 1,
                                       }) != 0;
-    icount_ = reader.u64(ok);
-    const std::vector<uint8_t> console = reader.bytes(ok);
-    console_.assign(console.begin(), console.end());
+    const auto icount = reader.u64();
+    const auto console = reader.bytes();
+    if (!icount || !console) {
+        return false;
+    }
+    icount_ = *icount;
+    console_.assign(console->begin(), console->end());
     insn_rip_ = rip_; // next step() refreshes both instruction-local fields
     cur_length_ = 0;
     exit_ = ExitStatus{};
-    return ok;
+    return true;
 }
 
 void Cpu::request_debug_exit(uint32_t encoded_code) {

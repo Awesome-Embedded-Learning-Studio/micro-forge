@@ -159,40 +159,40 @@ std::vector<uint8_t> Machine::snapshot() const {
     return writer.take();
 }
 
-std::optional<kernel::SnapshotError> Machine::restore(std::span<const uint8_t> blob) {
+std::expected<void, kernel::SnapshotError> Machine::restore(std::span<const uint8_t> blob) {
     auto reader = kernel::SnapshotReader::open(blob, engine_version());
     if (!reader) {
-        return reader.error();
+        return std::unexpected(reader.error());
     }
     if (!ram_.restore(*reader)) {
-        return kernel::SnapshotError::kTruncated;
+        return std::unexpected(kernel::SnapshotError::kTruncated);
     }
     if (!cpu_.restore(*reader)) {
-        return kernel::SnapshotError::kTruncated;
+        return std::unexpected(kernel::SnapshotError::kTruncated);
     }
     const auto events = scheduler_.restore_begin(*reader);
     if (!events.has_value()) {
-        return kernel::SnapshotError::kTruncated;
+        return std::unexpected(kernel::SnapshotError::kTruncated);
     }
     // Each event triple is 24 bytes; a count that cannot fit the unread
     // payload is a corrupt blob, refuse instead of reserve()ing it.
     constexpr uint64_t event_bytes = 24;
     if (*events > reader->remaining() / event_bytes) {
-        return kernel::SnapshotError::kTruncated;
+        return std::unexpected(kernel::SnapshotError::kTruncated);
     }
     std::vector<kernel::Scheduler::EventInfo> table;
     table.reserve(static_cast<size_t>(*events));
     for (uint64_t i = 0; i < *events; ++i) {
         auto info = kernel::Scheduler::restore_read_event(*reader);
         if (!info.has_value()) {
-            return kernel::SnapshotError::kTruncated;
+            return std::unexpected(kernel::SnapshotError::kTruncated);
         }
         table.push_back(*info);
     }
     if (restore_devices) {
         restore_devices(*reader, table);
     }
-    return std::nullopt;
+    return {};
 }
 
 void Machine::on_ahci_complete() {

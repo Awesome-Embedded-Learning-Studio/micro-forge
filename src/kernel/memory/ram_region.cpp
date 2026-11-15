@@ -126,16 +126,15 @@ bool RamRegion::copy_in(uint64_t offset, std::span<const uint8_t> src) {
 }
 
 bool RamRegion::restore(SnapshotReader& reader) {
-    bool ok = true;
-    const uint64_t size = reader.u64(ok);
-    if (!ok || size != size_) {
+    const auto size = reader.u64();
+    if (!size || *size != size_) {
         return false; // mapping layout is config; sizes must agree
     }
-    std::vector<uint8_t> data = reader.bytes(ok);
-    if (!ok || data.size() != size_) {
+    const auto data = reader.bytes();
+    if (!data || data->size() != size_) {
         return false;
     }
-    return copy_in(0, data);
+    return copy_in(0, *data);
 }
 
 } // namespace micro_forge::kernel

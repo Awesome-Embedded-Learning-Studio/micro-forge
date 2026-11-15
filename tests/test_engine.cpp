@@ -41,7 +41,7 @@ TEST(EngineTest, SnapshotRoundTripsThroughFacade) {
     micro_forge::MachineConfig restored_config;
     restored_config.ram_size = 0x1000000;
     Engine restored(restored_config);
-    EXPECT_FALSE(restored.restore(blob).has_value());
+    EXPECT_TRUE(restored.restore(blob).has_value());
     EXPECT_EQ(engine.machine().cpu().icount(), restored.machine().cpu().icount());
 }
 

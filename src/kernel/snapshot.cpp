@@ -64,39 +64,39 @@ SnapshotReader::open(std::span<const std::uint8_t> blob, std::uint32_t expected_
     return SnapshotReader(blob.subspan(SnapshotWriter::header_size()));
 }
 
-std::uint8_t SnapshotReader::u8(bool& ok) {
-    if (!ok || pos_ >= bytes_.size()) {
-        ok = false;
-        return 0;
+std::optional<std::uint8_t> SnapshotReader::u8() {
+    if (failed_ || pos_ >= bytes_.size()) {
+        failed_ = true;
+        return std::nullopt;
     }
     return bytes_[pos_++];
 }
 
-std::uint32_t SnapshotReader::u32(bool& ok) {
-    if (!ok || pos_ + 4 > bytes_.size()) {
-        ok = false;
-        return 0;
+std::optional<std::uint32_t> SnapshotReader::u32() {
+    if (failed_ || pos_ + 4 > bytes_.size()) {
+        failed_ = true;
+        return std::nullopt;
     }
     const std::uint32_t v = kernel::get_le32(bytes_.data() + pos_);
     pos_ += 4;
     return v;
 }
 
-std::uint64_t SnapshotReader::u64(bool& ok) {
-    if (!ok || pos_ + 8 > bytes_.size()) {
-        ok = false;
-        return 0;
+std::optional<std::uint64_t> SnapshotReader::u64() {
+    if (failed_ || pos_ + 8 > bytes_.size()) {
+        failed_ = true;
+        return std::nullopt;
     }
     const std::uint64_t v = kernel::get_le64(bytes_.data() + pos_);
     pos_ += 8;
     return v;
 }
 
-std::vector<std::uint8_t> SnapshotReader::bytes(bool& ok) {
-    const std::uint64_t size = u64(ok);
-    if (!ok || size > bytes_.size() - pos_) {
-        ok = false;
-        return {};
+std::optional<std::vector<std::uint8_t>> SnapshotReader::bytes() {
+    const std::uint64_t size = u64().value_or(0);
+    if (failed_ || size > bytes_.size() - pos_) {
+        failed_ = true;
+        return std::nullopt;
     }
     std::vector<std::uint8_t> out(bytes_.begin() + static_cast<std::ptrdiff_t>(pos_),
                                   bytes_.begin() + static_cast<std::ptrdiff_t>(pos_ + size));

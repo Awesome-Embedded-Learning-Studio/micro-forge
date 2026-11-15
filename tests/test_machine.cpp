@@ -91,7 +91,7 @@ TEST(MachineTest, SnapshotRoundTripThroughMachineApi) {
     const auto blob = first.snapshot();
 
     Machine second(0x1000000);
-    EXPECT_FALSE(second.restore(blob).has_value());
+    EXPECT_TRUE(second.restore(blob).has_value());
     std::vector<uint64_t> second_trace;
     second.cpu().set_trace([&second, &second_trace](uint64_t rip) { second_trace.push_back(rip); });
     const auto second_exit = second.run(1ULL << 20U);
@@ -116,7 +116,7 @@ TEST(MachineTest, WindowModeRestoresFromSnapshot) {
     const auto blob = machine.snapshot();
 
     Machine restored(0x1000000, reinterpret_cast<uintptr_t>(window.data()));
-    EXPECT_FALSE(restored.restore(blob).has_value());
+    EXPECT_TRUE(restored.restore(blob).has_value());
 }
 
 TEST(MachineTest, RestoreRefusesTruncatedSchedulerSection) {
@@ -137,8 +137,8 @@ TEST(MachineTest, RestoreRefusesTruncatedSchedulerSection) {
     }
     Machine other(0x1000000);
     const auto refused = other.restore(blob);
-    ASSERT_TRUE(refused.has_value());
-    EXPECT_EQ(micro_forge::kernel::SnapshotError::kTruncated, *refused);
+    ASSERT_FALSE(refused.has_value());
+    EXPECT_EQ(micro_forge::kernel::SnapshotError::kTruncated, refused.error());
 }
 
 TEST(MachineTest, RestoreRefusesForeignEngineVersion) {
@@ -154,8 +154,8 @@ TEST(MachineTest, RestoreRefusesForeignEngineVersion) {
     }
     Machine other(0x1000000);
     const auto refused = other.restore(forged);
-    ASSERT_TRUE(refused.has_value());
-    EXPECT_EQ(micro_forge::kernel::SnapshotError::kEngineMismatch, *refused);
+    ASSERT_FALSE(refused.has_value());
+    EXPECT_EQ(micro_forge::kernel::SnapshotError::kEngineMismatch, refused.error());
 }
 
 TEST(MachineTest, ConfigMovesSerialAndDisablesDevices) {

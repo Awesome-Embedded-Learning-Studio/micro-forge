@@ -12,6 +12,7 @@
 #pragma once
 
 #include <cstdint>
+#include <expected>
 #include <optional>
 #include <span>
 #include <vector>
@@ -71,9 +72,10 @@ public:
      * @brief Restores from a snapshot blob.
      *
      * @param[in] blob Bytes produced by snapshot().
-     * @return Empty on success, the refusal reason otherwise.
+     * @return Success, or the refusal reason.
      */
-    [[nodiscard]] std::optional<kernel::SnapshotError> restore(std::span<const uint8_t> blob);
+    [[nodiscard]] std::expected<void, kernel::SnapshotError> restore(
+        std::span<const uint8_t> blob);
 
     /// @brief The underlying machine (advanced use: devices, CPU, bus).
     [[nodiscard]] Machine& machine() { return machine_; }

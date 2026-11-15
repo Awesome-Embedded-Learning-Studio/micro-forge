@@ -152,25 +152,26 @@ void Scheduler::save(SnapshotWriter& writer) const {
 }
 
 std::optional<std::uint64_t> Scheduler::restore_begin(SnapshotReader& reader) {
-    bool ok = true;
-    const std::uint64_t saved_next_seq = reader.u64(ok);
-    const std::uint64_t count = reader.u64(ok);
-    if (!ok) {
+    const auto saved_next_seq = reader.u64();
+    const auto count = reader.u64();
+    if (!saved_next_seq || !count) {
         return std::nullopt; // short read: refuse, never "zero events"
     }
-    next_seq_ = saved_next_seq; // restored events keep their identity below
+    next_seq_ = *saved_next_seq; // restored events keep their identity below
     return count;
 }
 
 std::optional<Scheduler::EventInfo> Scheduler::restore_read_event(SnapshotReader& reader) {
-    bool ok = true;
     EventInfo info;
-    info.at = reader.u64(ok);
-    info.seq = reader.u64(ok);
-    info.period = reader.u64(ok);
-    if (!ok) {
+    const auto at = reader.u64();
+    const auto seq = reader.u64();
+    const auto period = reader.u64();
+    if (!at || !seq || !period) {
         return std::nullopt;
     }
+    info.at = *at;
+    info.seq = *seq;
+    info.period = *period;
     return info;
 }
 

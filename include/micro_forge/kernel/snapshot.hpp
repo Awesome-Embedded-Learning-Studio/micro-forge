@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -105,37 +106,32 @@ public:
     open(std::span<const std::uint8_t> blob, std::uint32_t expected_engine_version);
 
     /// @brief Reads one byte.
-    ///
-    /// @param[in,out] ok Set false when the payload is exhausted; sticky.
-    /// @return The byte, or 0 after a failed read.
-    std::uint8_t u8(bool& ok);
+    /// @return The byte; empty once the payload is exhausted. The failure
+    ///         is sticky: every later read stays empty.
+    std::optional<std::uint8_t> u8();
 
     /// @brief Reads a little-endian 32-bit value.
-    ///
-    /// @param[in,out] ok Sticky failure flag, see u8().
-    /// @return The value, or 0 after a failed read.
-    std::uint32_t u32(bool& ok);
+    /// @return The value; empty per the sticky failure contract of u8().
+    std::optional<std::uint32_t> u32();
 
     /// @brief Reads a little-endian 64-bit value.
-    ///
-    /// @param[in,out] ok Sticky failure flag, see u8().
-    /// @return The value, or 0 after a failed read.
-    std::uint64_t u64(bool& ok);
+    /// @return The value; empty per the sticky failure contract of u8().
+    std::optional<std::uint64_t> u64();
 
     /// @brief Unread payload bytes left (for bounding loop counts).
     [[nodiscard]] std::size_t remaining() const { return bytes_.size() - pos_; }
 
     /// @brief Reads a length-prefixed byte string.
-    ///
-    /// @param[in,out] ok Sticky failure flag, see u8().
-    /// @return The bytes, or empty after a failed read.
-    std::vector<std::uint8_t> bytes(bool& ok);
+    /// @return The bytes; empty per the sticky failure contract of u8().
+    std::optional<std::vector<std::uint8_t>> bytes();
 
 private:
     explicit SnapshotReader(std::span<const std::uint8_t> payload) : bytes_(payload) {}
 
     std::span<const std::uint8_t> bytes_;
     std::size_t pos_ = 0;
+    /// Sticky failure: set on the first short read, never cleared.
+    bool failed_ = false;
 };
 
 } // namespace micro_forge::kernel

@@ -16,7 +16,7 @@ arch::x86_64::ExitStatus Engine::run(uint64_t max_instructions) {
     return machine_.run(max_instructions);
 }
 
-std::optional<kernel::SnapshotError> Engine::restore(std::span<const uint8_t> blob) {
+std::expected<void, kernel::SnapshotError> Engine::restore(std::span<const uint8_t> blob) {
     return machine_.restore(blob);
 }
 

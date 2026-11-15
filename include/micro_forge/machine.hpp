@@ -14,6 +14,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <expected>
 #include <optional>
 #include <span>
 #include <utility>
@@ -153,9 +154,10 @@ public:
      * @brief Replaces this machine's contents from @p blob.
      *
      * @param[in] blob A snapshot from an identically-laid-out machine.
-     * @return Nothing on success, else the envelope refusal reason.
+     * @return Success, else the envelope refusal reason.
      */
-    [[nodiscard]] std::optional<kernel::SnapshotError> restore(std::span<const uint8_t> blob);
+    [[nodiscard]] std::expected<void, kernel::SnapshotError> restore(
+        std::span<const uint8_t> blob);
 
     /// Section order in the blob: RAM, CPU, scheduler, then devices.
     /// The snapshot hook appends device sections; the restore hook

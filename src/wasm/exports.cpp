@@ -550,6 +550,6 @@ uint32_t mf_restore(uint32_t src, uint32_t len) {
         return static_cast<uint32_t>(micro_forge::kernel::SnapshotError::kTruncated) + 1U;
     }
     const auto refused = current().restore(blob);
-    return refused.has_value() ? static_cast<uint32_t>(*refused) + 1U : 0U;
+    return !refused.has_value() ? static_cast<uint32_t>(refused.error()) + 1U : 0U;
 }
 }
