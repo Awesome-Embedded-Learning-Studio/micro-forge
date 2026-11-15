@@ -11,7 +11,7 @@
 #include "micro_forge/arch/x86_64/decoder.hpp"
 #include "micro_forge/kernel/bit.hpp"
 #include "micro_forge/kernel/bus/bus.hpp"
-#include "micro_forge/kernel/bus/port_space.hpp"
+#include "micro_forge/arch/x86_64/port_space.hpp"
 #include "micro_forge/kernel/scheduler.hpp"
 #include "micro_forge/kernel/snapshot.hpp"
 
@@ -27,7 +27,7 @@
 
 namespace micro_forge::arch::x86_64 {
 
-Cpu::Cpu(kernel::Bus& bus, kernel::Scheduler& scheduler, kernel::PortSpace* ports)
+Cpu::Cpu(kernel::Bus& bus, kernel::Scheduler& scheduler, arch::x86_64::PortSpace* ports)
     : bus_(bus), scheduler_(scheduler), ports_(ports) {}
 
 void Cpu::set_trace(std::function<void(uint64_t rip)> trace) {

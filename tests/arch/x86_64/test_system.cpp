@@ -8,13 +8,13 @@
 #include <cstring>
 
 #include <gtest/gtest.h>
-#include <micro_forge/kernel/device/acpi_tables.hpp>
-#include <micro_forge/kernel/device/io_apic.hpp>
-#include <micro_forge/kernel/device/lapic.hpp>
-#include <micro_forge/kernel/device/pic_8259.hpp>
-#include <micro_forge/kernel/device/pit_8254.hpp>
-#include <micro_forge/kernel/device/rtc.hpp>
-#include <micro_forge/kernel/device/serial_16550.hpp>
+#include <micro_forge/device/pc/acpi_tables.hpp>
+#include <micro_forge/device/pc/io_apic.hpp>
+#include <micro_forge/device/pc/lapic.hpp>
+#include <micro_forge/device/pc/pic_8259.hpp>
+#include <micro_forge/device/pc/pit_8254.hpp>
+#include <micro_forge/device/pc/rtc.hpp>
+#include <micro_forge/device/pc/serial_16550.hpp>
 #include <vector>
 
 namespace {
@@ -259,7 +259,7 @@ protected:
         cpu_.reset(kCodeBase, kStackTop);
     }
 
-    micro_forge::kernel::Serial16550 serial_{g_console_sink};
+    micro_forge::device::pc::Serial16550 serial_{g_console_sink};
     static inline std::vector<char> g_console_sink;
 };
 
@@ -335,11 +335,11 @@ protected:
         cpu_.reset(kCodeBase, kStackTop);
     }
 
-    micro_forge::kernel::Pit8254 pit_;
-    micro_forge::kernel::BoardControl board_;
-    micro_forge::kernel::Rtc rtc_;
-    micro_forge::kernel::Pic8259 pic_master_;
-    micro_forge::kernel::Pic8259 pic_slave_;
+    micro_forge::device::pc::Pit8254 pit_;
+    micro_forge::device::pc::BoardControl board_;
+    micro_forge::device::pc::Rtc rtc_;
+    micro_forge::device::pc::Pic8259 pic_master_;
+    micro_forge::device::pc::Pic8259 pic_slave_;
 };
 
 TEST_F(DeviceTest, PitChannelZeroSquareWaveProgram) {
@@ -422,8 +422,8 @@ protected:
         cpu_.reset(kCodeBase, kStackTop);
     }
 
-    micro_forge::kernel::Lapic lapic_;
-    micro_forge::kernel::IoApic io_apic_;
+    micro_forge::device::pc::Lapic lapic_;
+    micro_forge::device::pc::IoApic io_apic_;
 };
 
 TEST_F(ApicTest, LapicIdAndEoi) {
@@ -468,8 +468,8 @@ TEST_F(ApicTest, IoApicSelectionReadsRedirection) {
 
 /// ACPI tables: checksums and the boot walker's field expectations.
 TEST_F(DeviceTest, AcpiTablesParseLikeCinuxDoes) {
-    const micro_forge::kernel::AcpiLayout layout;
-    ASSERT_TRUE(micro_forge::kernel::build_acpi_tables(ram_, layout));
+    const micro_forge::device::pc::AcpiLayout layout;
+    ASSERT_TRUE(micro_forge::device::pc::build_acpi_tables(ram_, layout));
 
     // RSDP at the low search window: signature and checksum.
     const auto rsdp = ram_.view(layout.rsdp, 40);

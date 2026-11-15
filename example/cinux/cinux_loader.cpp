@@ -19,7 +19,7 @@
 
 #include "micro_forge/arch/x86_64/cpu.hpp"
 #include "micro_forge/arch/x86_64/decoded.hpp"
-#include "micro_forge/kernel/device/acpi_tables.hpp"
+#include "micro_forge/device/pc/acpi_tables.hpp"
 #include "micro_forge/kernel/le_access.hpp"
 #include "micro_forge/kernel/memory/ram_region.hpp"
 
@@ -188,7 +188,7 @@ std::expected<void, BootError> boot_cinux(micro_forge::kernel::RamRegion& ram,
     put_u64(ram, framebuffer_at + kFramebufferBytes + 24, header.entry);
 
     // ---- ACPI: the kernel's finder scans the low window (0xE0000). ----
-    if (!micro_forge::kernel::build_acpi_tables(ram, micro_forge::kernel::AcpiLayout{})) {
+    if (!micro_forge::device::pc::build_acpi_tables(ram, micro_forge::device::pc::AcpiLayout{})) {
         return std::unexpected(BootError::kAcpiOutOfRam);
     }
 

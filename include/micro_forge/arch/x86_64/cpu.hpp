@@ -25,7 +25,7 @@
 #include "micro_forge/jit/jit.hpp"
 #include "micro_forge/kernel/bus/bus.hpp"
 #include "micro_forge/kernel/bus/irq_line.hpp"
-#include "micro_forge/kernel/bus/port_space.hpp"
+#include "micro_forge/arch/x86_64/port_space.hpp"
 #include "micro_forge/kernel/scheduler.hpp"
 #include "micro_forge/kernel/snapshot.hpp"
 
@@ -97,7 +97,7 @@ public:
     [[nodiscard]] uint64_t code_epoch() const noexcept { return code_epoch_; }
     [[nodiscard]] std::uint32_t tlb_epoch() const noexcept { return tlb_epoch_; }
     /// @brief Binds the CPU to its guest bus and icount queue.
-    Cpu(kernel::Bus& bus, kernel::Scheduler& scheduler, kernel::PortSpace* ports = nullptr);
+    Cpu(kernel::Bus& bus, kernel::Scheduler& scheduler, arch::x86_64::PortSpace* ports = nullptr);
     /**
      * @brief Resets architectural state and loads an entry point.
      *
@@ -490,7 +490,7 @@ private:
 
     kernel::Bus& bus_;
     kernel::Scheduler& scheduler_;
-    kernel::PortSpace* ports_;
+    arch::x86_64::PortSpace* ports_;
 
     std::array<uint64_t, 16> regs_{};
     uint64_t rip_ = 0;

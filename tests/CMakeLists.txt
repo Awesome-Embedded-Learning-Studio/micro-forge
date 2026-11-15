@@ -117,6 +117,12 @@ add_executable(test_engine test_engine.cpp)
 target_link_libraries(test_engine PRIVATE micro_forge GTest::gtest_main)
 gtest_discover_tests(test_engine)
 
+# Machine facade requirements: no x86 headers or PC device assumptions.
+add_executable(test_machine_model test_machine_model.cpp)
+target_include_directories(test_machine_model PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(test_machine_model PRIVATE GTest::gtest_main)
+gtest_discover_tests(test_machine_model)
+
 add_executable(test_wasm_block wasm/test_wasm_block.cpp)
 target_link_libraries(test_wasm_block PRIVATE micro_forge GTest::gtest_main)
 gtest_discover_tests(test_wasm_block)
@@ -166,6 +172,44 @@ target_compile_definitions(test_snapshot PRIVATE
 )
 add_dependencies(test_snapshot bare_client_bin)
 gtest_discover_tests(test_snapshot)
+
+# Cortex-M/STM32 tests link only the MCU machine and shared kernel, never x86.
+add_executable(test_cortex_m3
+    arch/arm/cortex_m3/test_cortex_m3_lifecycle.cpp
+    arch/arm/cortex_m3/test_cortex_m3_basic.cpp
+    arch/arm/cortex_m3/test_cortex_m3_faults.cpp
+    arch/arm/cortex_m3/test_cortex_m3_advanced.cpp
+    arch/arm/cortex_m3/test_cortex_m3_regressions.cpp
+    arch/arm/cortex_m3/test_cortex_m3_it.cpp
+    arch/arm/cortex_m3/test_cortex_m3_loadstore.cpp
+)
+target_link_libraries(test_cortex_m3 PRIVATE micro_forge_stm32 GTest::gtest_main)
+gtest_discover_tests(test_cortex_m3)
+
+add_executable(test_device
+    device/arm/test_nvic.cpp
+    device/arm/test_scb.cpp
+    device/arm/test_systick.cpp
+    device/test_stm32f1_periph.cpp
+    device/test_stm32f1_exti_flash_afio.cpp
+    device/test_event_bus.cpp
+    device/test_peripheral_reset.cpp
+)
+target_link_libraries(test_device PRIVATE micro_forge_stm32 GTest::gtest_main)
+gtest_discover_tests(test_device)
+
+add_executable(test_stm32f103
+    machines/test_stm32f103_memory.cpp
+    machines/test_stm32f103_elf.cpp
+    machines/test_stm32f103_execution.cpp
+    machines/test_stm32f103_firmware.cpp
+    machines/test_stm32f103_semihost.cpp
+)
+target_link_libraries(test_stm32f103 PRIVATE micro_forge_stm32 GTest::gtest_main)
+target_compile_definitions(test_stm32f103 PRIVATE
+    STM32_FIRMWARE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/firmware/stm32f103"
+)
+gtest_discover_tests(test_stm32f103)
 
 # Style gate: per-file line limit (default 600, see scripts/style/).
 add_test(NAME style_line_limit
