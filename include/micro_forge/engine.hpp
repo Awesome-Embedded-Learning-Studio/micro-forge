@@ -54,7 +54,7 @@ public:
      * @param[in] max_instructions Budget for this call.
      * @return The latched status (kRunning when the budget ran out).
      */
-    [[nodiscard]] arch::x86_64::ExitStatus run(uint64_t max_instructions) {
+    arch::x86_64::ExitStatus run(uint64_t max_instructions) {
         return machine_.run(max_instructions);
     }
 

@@ -142,7 +142,7 @@ TEST(SchedulerTest, PeriodicEventRearmsUntilCancelled) {
 TEST(SchedulerTest, ZeroPeriodDegradesToOneNotSpin) {
     Scheduler scheduler;
     unsigned fired = 0;
-    (void)scheduler.schedule_periodic(10, 0, [&] { ++fired; });
+    scheduler.schedule_periodic(10, 0, [&] { ++fired; });
     scheduler.dispatch(11); // fires at 10, rearms at 11, both due
     EXPECT_EQ(2U, fired);
     EXPECT_FALSE(scheduler.empty());
@@ -150,8 +150,8 @@ TEST(SchedulerTest, ZeroPeriodDegradesToOneNotSpin) {
 
 TEST(SchedulerTest, RestoreEventKeepsIdentityAndOrder) {
     Scheduler original;
-    (void)original.schedule(30, [] {});
-    (void)original.schedule_periodic(10, 20, [] {});
+    original.schedule(30, [] {});
+    original.schedule_periodic(10, 20, [] {});
     const auto saved = original.live_events();
     const auto saved_next = original.next_seq();
     ASSERT_EQ(2U, saved.size());

@@ -55,7 +55,7 @@ TEST_F(MmuTest, IdentityMapServesDataAndFetch) {
     load({0x8B, 0x04, 0x25, 0x00, 0x20, 0x00, 0x00});
     poke(0x2000, {0x34, 0x12, 0x00, 0x00});
     install_identity();
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(ExitStatus::Kind::kHalt, cpu_.exit_status().kind);
     EXPECT_EQ(0x1234U, static_cast<uint32_t>(cpu_.gpr(Reg::kRax)));
 }
@@ -64,7 +64,7 @@ TEST_F(MmuTest, UnmappedFetchFaultsWithCr2) {
     // Jump outside the mapped window: fetch faults and CR2 names the rip.
     load({0xE9, 0x00, 0x00, 0x00, 0x10}); // jmp +0x10000000
     install_identity();
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(ExitStatus::Kind::kFault, cpu_.exit_status().kind);
     EXPECT_EQ(static_cast<uint64_t>(FaultId::kFetch), cpu_.exit_status().detail);
     EXPECT_EQ(kCodeBase + 5U + 0x10000000ULL, cpu_.page_fault_address());
@@ -81,7 +81,7 @@ TEST_F(MmuTest, WriteToReadOnlyPageFaultsWhenWpSet) {
     write64(kPd, Mmu::kPresent | Mmu::kPageSize | Mmu::kAccessed); // clear RW
     cpu_.flush_tlb();
     cpu_.set_control_register(0, 0x80000001ULL | (1ULL << 16U)); // WP
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(ExitStatus::Kind::kFault, cpu_.exit_status().kind);
     EXPECT_EQ(static_cast<uint64_t>(FaultId::kMemory), cpu_.exit_status().detail);
     EXPECT_TRUE((cpu_.page_fault_error() & Mmu::kErrWrite) != 0);
@@ -94,7 +94,7 @@ TEST_F(MmuTest, SupervisorWriteToReadOnlyPagePassesWithoutWp) {
     write64(kPd, Mmu::kPresent | Mmu::kPageSize | Mmu::kAccessed);
     cpu_.flush_tlb();
     cpu_.set_control_register(0, 0x80000001ULL); // WP clear
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(ExitStatus::Kind::kHalt, cpu_.exit_status().kind);
     EXPECT_EQ(0x77U, ram_.data()[0x2000]);
 }
@@ -109,7 +109,7 @@ TEST_F(MmuTest, NxPageRefusesFetchOnly) {
     cpu_.flush_tlb();
     cpu_.set_control_register(0, 0x80000001ULL);           // no WP
     ASSERT_TRUE(cpu_.write_msr(0xC0000080U, 1ULL << 11U)); // EFER.NXE
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(ExitStatus::Kind::kFault, cpu_.exit_status().kind);
     EXPECT_TRUE((cpu_.page_fault_error() & Mmu::kErrInstruction) != 0);
 }
@@ -118,7 +118,7 @@ TEST_F(MmuTest, InvalidatedEntryWalksAgain) {
     load({0x8B, 0x04, 0x25, 0x00, 0x20, 0x00, 0x00}); // mov eax, [0x2000]
     poke(0x2000, {0xAA, 0x00, 0x00, 0x00});
     install_identity();
-    (void)cpu_.run(10); // warm the TLB
+    cpu_.run(10); // warm the TLB
     EXPECT_EQ(0xAAU, static_cast<uint32_t>(cpu_.gpr(Reg::kRax)));
 
     // Change the mapping under the cached entry, drop it, run again.
@@ -129,7 +129,7 @@ TEST_F(MmuTest, InvalidatedEntryWalksAgain) {
     cpu_.reset(kCodeBase, kStackTop);
     cpu_.set_control_register(2, kPml4);
     cpu_.set_paging(true);
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(0xBBU, static_cast<uint32_t>(cpu_.gpr(Reg::kRax)));
 }
 
@@ -175,7 +175,7 @@ TEST_F(MmuTest, DirectMapLargePageAliasesFourKUserPage) {
     cpu_.set_paging(true);
     cpu_.set_control_register(0, 0x80000001ULL);           // no WP
     ASSERT_TRUE(cpu_.write_msr(0xC0000080U, 1ULL << 11U)); // EFER.NXE
-    (void)cpu_.run(10);
+    cpu_.run(10);
     ASSERT_EQ(ExitStatus::Kind::kHalt, cpu_.exit_status().kind)
         << "alias sequence faulted detail=" << static_cast<unsigned>(cpu_.exit_status().detail)
         << " cr2=" << cpu_.page_fault_address() << " err=" << cpu_.page_fault_error();
@@ -208,7 +208,7 @@ TEST_F(MmuTest, UserFourKPageReadsItsFrame) {
     cpu_.set_control_register(2, kPml4);
     cpu_.flush_tlb();
     cpu_.set_paging(true);
-    (void)cpu_.run(10);
+    cpu_.run(10);
     ASSERT_EQ(ExitStatus::Kind::kHalt, cpu_.exit_status().kind) << "read faulted";
     EXPECT_EQ(0xCAFEBABEULL, cpu_.gpr(Reg::kRdx)) << "user read missed the frame";
 }

@@ -55,7 +55,7 @@ uint32_t instance_use(uint32_t handle) {
     if (index >= g_instances.size() && index != 0) {
         return 0;
     }
-    (void)current(); // ensure the default exists
+    current(); // ensure the default exists
     if (index >= g_instances.size()) {
         return 0;
     }

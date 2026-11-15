@@ -36,7 +36,6 @@ bool Pic8259::write(uint16_t offset, unsigned width, uint64_t value) {
             icw_pos_ = 1;
             mask_ = 0xFF;
             vector_base_ = 0;
-            (void)byte; // edge/level trigger bits do not change state in 6b
             return true;
         }
         // OCW2 (EOI) / OCW3 (read select): accepted, nothing latched.

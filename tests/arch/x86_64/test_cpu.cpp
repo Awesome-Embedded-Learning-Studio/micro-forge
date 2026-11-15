@@ -13,14 +13,14 @@ namespace {
 
 TEST_F(CpuTest, MovImm32ZeroExtendsToRax) {
     load({0xB8, 0x78, 0x56, 0x34, 0x12}); // mov eax, 0x12345678
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(0x12345678U, cpu_.gpr(Reg::kRax));
     EXPECT_EQ(ExitStatus::Kind::kHalt, cpu_.exit_status().kind); // trailing hlt
 }
 
 TEST_F(CpuTest, MovabsCarriesImm64) {
     load({0x48, 0xB8, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11});
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(0x1122334455667788ULL, cpu_.gpr(Reg::kRax));
 }
 
@@ -36,17 +36,17 @@ TEST_F(CpuTest, CachedCodeIsInvalidatedAfterRepeatedGuestStores) {
         0x17, // mov [rdi], dl
     });
     cpu_.set_gpr(Reg::kRdi, kCodeBase + 1);
-    (void)cpu_.step(); // decode and mark the instruction's physical page
+    cpu_.step(); // decode and mark the instruction's physical page
     for (uint64_t value = 2; value <= 3; ++value) {
         const auto hits = cpu_.decode_cache_stats().hits;
         cpu_.set_rip(kCodeBase);
-        (void)cpu_.step(); // cache hit must retain self-modifying-code tracking
+        cpu_.step(); // cache hit must retain self-modifying-code tracking
         EXPECT_EQ(hits + 1, cpu_.decode_cache_stats().hits);
         cpu_.set_gpr(Reg::kRdx, value);
         cpu_.set_rip(kCodeBase + 5);
-        (void)cpu_.step(); // guest rewrites the cached mov's immediate
+        cpu_.step(); // guest rewrites the cached mov's immediate
         cpu_.set_rip(kCodeBase);
-        (void)cpu_.step();
+        cpu_.step();
         EXPECT_EQ(value, cpu_.gpr(Reg::kRax));
         EXPECT_EQ(ExitStatus::Kind::kRunning, cpu_.exit_status().kind);
     }
@@ -54,7 +54,7 @@ TEST_F(CpuTest, CachedCodeIsInvalidatedAfterRepeatedGuestStores) {
 
 TEST_F(CpuTest, AddByteWrapsWithCarry) {
     load({0xB0, 0xFF, 0x04, 0x01}); // mov al, 0xFF; add al, 1
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(0x00U, cpu_.gpr(Reg::kRax) & 0xFFU);
     EXPECT_TRUE(cpu_.cf());
     EXPECT_TRUE(cpu_.zf());
@@ -64,7 +64,7 @@ TEST_F(CpuTest, AddByteWrapsWithCarry) {
 
 TEST_F(CpuTest, SubFromZeroSetsBorrowAndOverflow) {
     load({0x31, 0xC0, 0x2D, 0x00, 0x00, 0x00, 0x80}); // xor eax,eax; sub eax, 0x80000000
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(0x80000000U, static_cast<uint32_t>(cpu_.gpr(Reg::kRax)));
     EXPECT_TRUE(cpu_.cf());
     EXPECT_TRUE(cpu_.sf());
@@ -73,14 +73,14 @@ TEST_F(CpuTest, SubFromZeroSetsBorrowAndOverflow) {
 
 TEST_F(CpuTest, AdcConsumesCarry) {
     load({0xB0, 0xFF, 0x04, 0x01, 0x14, 0x00}); // al=0xFF; add al,1; adc al,0
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(0x01U, cpu_.gpr(Reg::kRax) & 0xFFU);
     EXPECT_FALSE(cpu_.cf());
 }
 
 TEST_F(CpuTest, IncPreservesCarry) {
     load({0xB0, 0xFF, 0x04, 0x01, 0xFE, 0xC0}); // al=0xFF; add al,1; inc al
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(0x01U, cpu_.gpr(Reg::kRax) & 0xFFU); // 0 + 1 after the wrap
     EXPECT_TRUE(cpu_.cf());                        // inc must not touch CF
     EXPECT_FALSE(cpu_.zf());
@@ -88,7 +88,7 @@ TEST_F(CpuTest, IncPreservesCarry) {
 
 TEST_F(CpuTest, NegSetsCarryOnNonzero) {
     load({0xB0, 0x01, 0xF6, 0xD8}); // mov al,1; neg al
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(0xFFU, cpu_.gpr(Reg::kRax) & 0xFFU);
     EXPECT_TRUE(cpu_.cf());
     EXPECT_TRUE(cpu_.sf());
@@ -96,7 +96,7 @@ TEST_F(CpuTest, NegSetsCarryOnNonzero) {
 
 TEST_F(CpuTest, MovsxSignExtendsThroughWidths) {
     load({0xB3, 0x80, 0x48, 0x0F, 0xBE, 0xC3}); // mov bl,0x80; movsx rax, bl
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(0xFFFFFFFFFFFFFF80ULL, cpu_.gpr(Reg::kRax));
 }
 
@@ -105,14 +105,14 @@ TEST_F(CpuTest, MovzxThenShift) {
     poke(0x2000, {0x80});
     cpu_.reset(kCodeBase, kStackTop);
     cpu_.set_gpr(Reg::kRsi, 0x2000);
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(0x200ULL, cpu_.gpr(Reg::kR8));
 }
 
 TEST_F(CpuTest, PushPopRoundTripRestoresStack) {
     load({0x53, 0x5B}); // push rbx; pop rbx
     cpu_.set_gpr(Reg::kRbx, 0xAA55);
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(0xAA55ULL, cpu_.gpr(Reg::kRbx));
     EXPECT_EQ(kStackTop, cpu_.gpr(Reg::kRsp));
 }
@@ -121,7 +121,7 @@ TEST_F(CpuTest, XchgSwapsAccumulator) {
     load({0x91}); // xchg eax, ecx
     cpu_.set_gpr(Reg::kRax, 1);
     cpu_.set_gpr(Reg::kRcx, 2);
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(2U, static_cast<uint32_t>(cpu_.gpr(Reg::kRax)));
     EXPECT_EQ(1U, static_cast<uint32_t>(cpu_.gpr(Reg::kRcx)));
 }
@@ -147,7 +147,7 @@ TEST_F(CpuTest, RepStosbFillsAndAdvances) {
         0xF3,
         0xAA,
     }); // rep stosb
-    (void)cpu_.run(100);
+    cpu_.run(100);
     EXPECT_EQ(0U, cpu_.gpr(Reg::kRcx));
     EXPECT_EQ(0x1005ULL, cpu_.gpr(Reg::kRdi));
     for (uint64_t a = 0x1000; a < 0x1005; ++a) {
@@ -162,7 +162,7 @@ TEST_F(CpuTest, DirectionFlagWalksBackward) {
     poke(0x2000, {0x5A});
     cpu_.set_gpr(Reg::kRsi, 0x2000);
     cpu_.set_gpr(Reg::kRdi, 0x1000);
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(0x5AU, static_cast<unsigned>(ram_.data()[0x1000]));
     EXPECT_EQ(0x1FFFULL, cpu_.gpr(Reg::kRsi));
     EXPECT_EQ(0xFFFULL, cpu_.gpr(Reg::kRdi));
@@ -190,14 +190,14 @@ TEST_F(CpuTest, DebugExitRegionStopsRunWithQemuEncoding) {
         0x00,
         0x00,
     }); // mov dword ptr [rax], 3
-    (void)cpu_.run(100);
+    cpu_.run(100);
     EXPECT_EQ(ExitStatus::Kind::kDebugExit, cpu_.exit_status().kind);
     EXPECT_EQ(7U, cpu_.exit_status().code); // (3 << 1) | 1
 }
 
 TEST_F(CpuTest, CpuidAnswersLeafZero) {
     load({0x0F, 0xA2}); // cpuid
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(ExitStatus::Kind::kHalt, cpu_.exit_status().kind);
     // Leaf 0 names the vendor and the highest standard leaf.
     EXPECT_EQ(0x0000000DU, static_cast<uint32_t>(cpu_.gpr(Reg::kRax)));
@@ -208,7 +208,7 @@ TEST_F(CpuTest, CpuidAnswersLeafZero) {
 
 TEST_F(CpuTest, UnmappedLoadReportsFaultAddress) {
     load({0x48, 0xA1, 0x00, 0x00, 0xAD, 0xDE, 0x00, 0x00, 0x00, 0x00}); // mov rax, [0xDEAD0000]
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(ExitStatus::Kind::kFault, cpu_.exit_status().kind);
     EXPECT_EQ(static_cast<uint64_t>(FaultId::kMemory), cpu_.exit_status().detail);
     EXPECT_EQ(0xDEAD0000ULL, cpu_.exit_status().code);
@@ -228,7 +228,7 @@ TEST_F(CpuTest, SyscallRcxIsStableOnDecodeCacheHits) {
     // load() resets the core, so the user entry state goes in after it.
     ASSERT_TRUE(cpu_.write_msr(0xC0000082U, k_lstar));
     cpu_.set_cpl(3);
-    (void)cpu_.step(); // cold decode: RCX must be syscall + 2
+    cpu_.step(); // cold decode: RCX must be syscall + 2
     EXPECT_EQ(ExitStatus::Kind::kRunning, cpu_.exit_status().kind);
     EXPECT_EQ(kCodeBase + 2U, cpu_.gpr(Reg::kRcx));
     EXPECT_EQ(k_lstar, cpu_.rip());
@@ -236,7 +236,7 @@ TEST_F(CpuTest, SyscallRcxIsStableOnDecodeCacheHits) {
     // it so the cached SYSCALL runs at CPL 3 like the original caller.
     cpu_.set_cpl(3);
     cpu_.set_rip(kCodeBase);
-    (void)cpu_.step(); // cache hit: same RCX contract
+    cpu_.step(); // cache hit: same RCX contract
     EXPECT_EQ(kCodeBase + 2U, cpu_.gpr(Reg::kRcx));
     EXPECT_EQ(k_lstar, cpu_.rip());
     EXPECT_EQ(cpu_.decode_cache_stats().hits, 1U);
@@ -259,7 +259,7 @@ TEST_F(CpuTest, SyscallExitCarriesRdi) {
         0x0F,
         0x05,
     }); // syscall
-    (void)cpu_.run(100);
+    cpu_.run(100);
     EXPECT_EQ(ExitStatus::Kind::kExit, cpu_.exit_status().kind);
     EXPECT_EQ(42U, cpu_.exit_status().code);
 }
@@ -274,7 +274,7 @@ TEST_F(CpuTest, DivideByZeroFaults) {
         0xF7,
         0xF1,
     }); // div ecx
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(ExitStatus::Kind::kFault, cpu_.exit_status().kind);
     EXPECT_EQ(static_cast<uint64_t>(FaultId::kDivide), cpu_.exit_status().detail);
 }
@@ -300,7 +300,7 @@ TEST_F(CpuTest, Div64HandlesTrue128BitDividend) {
         0xF7,
         0xF1,
     }); // div rcx
-    (void)cpu_.run(100);
+    cpu_.run(100);
     EXPECT_EQ(ExitStatus::Kind::kHalt, cpu_.exit_status().kind);
     EXPECT_EQ(0x8000000000000000ULL, cpu_.gpr(Reg::kRax));
     EXPECT_EQ(0U, cpu_.gpr(Reg::kRdx));
@@ -324,7 +324,7 @@ TEST_F(CpuTest, Div64LeavesRemainderInRdx) {
         0xF7,
         0xF1,
     }); // div rcx
-    (void)cpu_.run(100);
+    cpu_.run(100);
     EXPECT_EQ(2U, cpu_.gpr(Reg::kRax));
     EXPECT_EQ(1U, cpu_.gpr(Reg::kRdx));
 }
@@ -348,7 +348,7 @@ TEST_F(CpuTest, Div64QuotientOverflowFaults) {
         0xF7,
         0xF1,
     }); // div rcx
-    (void)cpu_.run(100);
+    cpu_.run(100);
     EXPECT_EQ(ExitStatus::Kind::kFault, cpu_.exit_status().kind);
     EXPECT_EQ(static_cast<uint64_t>(FaultId::kDivide), cpu_.exit_status().detail);
 }
@@ -361,7 +361,7 @@ TEST_F(CpuTest, Idiv64DividesNegative128BitValue) {
         0xB9, 0x02, 0x00, 0x00, 0x00,             // mov ecx, 2
         0x48, 0xF7, 0xF9,
     }); // idiv rcx
-    (void)cpu_.run(100);
+    cpu_.run(100);
     EXPECT_EQ(ExitStatus::Kind::kHalt, cpu_.exit_status().kind);
     EXPECT_EQ(0xFFFFFFFFFFFFFFFEULL, cpu_.gpr(Reg::kRax));
     EXPECT_EQ(0U, cpu_.gpr(Reg::kRdx));
@@ -375,7 +375,7 @@ TEST_F(CpuTest, Idiv64PositiveOverflowFaults) {
         0x48, 0xC7, 0xC1, 0xFF, 0xFF, 0xFF, 0xFF,                   // mov rcx, -1
         0x48, 0xF7, 0xF9,
     }); // idiv rcx
-    (void)cpu_.run(100);
+    cpu_.run(100);
     EXPECT_EQ(ExitStatus::Kind::kFault, cpu_.exit_status().kind);
     EXPECT_EQ(static_cast<uint64_t>(FaultId::kDivide), cpu_.exit_status().detail);
 }
@@ -383,7 +383,7 @@ TEST_F(CpuTest, Idiv64PositiveOverflowFaults) {
 TEST_F(CpuTest, ImulThreeOperandTruncates) {
     load({0x48, 0x6B, 0xC0, 0x07}); // imul rax, rax, 7
     cpu_.set_gpr(Reg::kRax, 5);
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(35U, cpu_.gpr(Reg::kRax));
 }
 
@@ -407,7 +407,7 @@ TEST_F(CpuTest, WriteSyscallAdvancesRip) {
     cpu_.set_gpr(Reg::kRax, 1);
     // run from scratch: reset already set rip; the program sets regs
     // itself, so only the poke mattered.
-    (void)cpu_.run(100);
+    cpu_.run(100);
     EXPECT_EQ(ExitStatus::Kind::kHalt, cpu_.exit_status().kind);
     EXPECT_EQ(0x42U, static_cast<uint32_t>(cpu_.gpr(Reg::kRbx)));
     const std::vector<char> expected{'a', 'b'};
@@ -423,7 +423,7 @@ TEST_F(CpuTest, SyscallWriteCollectsConsole) {
         0x0F, 0x05,
     }); // syscall
     poke(0x2000, {'a', 'b', 'c'});
-    (void)cpu_.run(100);
+    cpu_.run(100);
     const std::vector<char> expected{'a', 'b', 'c'};
     EXPECT_EQ(expected, cpu_.console());
     EXPECT_EQ(3U, cpu_.gpr(Reg::kRax)); // write returns the byte count
@@ -437,7 +437,7 @@ TEST_F(CpuTest, BtImmReadsWithoutWriting) {
     ram_.data()[0x2000] = 0x04; // bit 2 set
     cpu_.reset(kCodeBase, kStackTop);
     cpu_.set_gpr(Reg::kRdi, 0x2000);
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(ExitStatus::Kind::kHalt, cpu_.exit_status().kind);
     EXPECT_TRUE(cpu_.cf());
     EXPECT_EQ(0x04U, static_cast<unsigned>(ram_.data()[0x2000])); // untouched
@@ -448,7 +448,7 @@ TEST_F(CpuTest, BtsImmWritesTheBit) {
     poke(0x2000, {0x00});
     cpu_.reset(kCodeBase, kStackTop);
     cpu_.set_gpr(Reg::kRdi, 0x2000);
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(0x02U, static_cast<unsigned>(ram_.data()[0x2000]));
     EXPECT_FALSE(cpu_.cf()); // CF holds the OLD bit value: it was clear
 }
@@ -461,7 +461,7 @@ TEST_F(CpuTest, BtMemImm8UsesSignedByteOffset) {
     cpu_.reset(kCodeBase, kStackTop);
     cpu_.set_gpr(Reg::kRax, 0x2010);
     ram_.data()[0x2000] = 0x01; // rax-16, bit 0 (0x80 & 7): set
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_TRUE(cpu_.cf());
 }
 
@@ -472,7 +472,7 @@ TEST_F(CpuTest, Shld16BitLargeCountStaysDefined) {
     load({0x66, 0x0F, 0xA4, 0xC0, 0x11});
     cpu_.reset(kCodeBase, kStackTop);
     cpu_.set_gpr(Reg::kRax, 0xBEEF);
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(ExitStatus::Kind::kHalt, cpu_.exit_status().kind);
     // Undefined on hardware; our clamp picks shift-by-15, so with
     // ax=0xBEEF on both sides: (0xBEEF << 15) | (0xBEEF >> 1) in 16 bits
@@ -483,14 +483,14 @@ TEST_F(CpuTest, Shld16BitLargeCountStaysDefined) {
 
 TEST_F(CpuTest, StringOpUnderFsGsIsRefused) {
     load({0x65, 0xF3, 0xA4}); // gs rep movsb
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(ExitStatus::Kind::kUnsupported, cpu_.exit_status().kind);
 }
 
 TEST_F(CpuTest, FetchFromUnmappedRipIsAFault) {
     load({0x90});
     cpu_.reset(0xDEAD0000ULL, kStackTop); // nothing mapped there
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(ExitStatus::Kind::kFault, cpu_.exit_status().kind);
     EXPECT_EQ(static_cast<uint64_t>(FaultId::kFetch), cpu_.exit_status().detail);
     EXPECT_EQ(0U, cpu_.icount()); // the faulting fetch retires nothing
@@ -499,7 +499,7 @@ TEST_F(CpuTest, FetchFromUnmappedRipIsAFault) {
 TEST_F(CpuTest, DecodeRefusalSurfacesAsDecodeError) {
     // 0F FF is an undefined escape the whitelist refuses.
     load({0x0F, 0xFF});
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(ExitStatus::Kind::kDecodeError, cpu_.exit_status().kind);
 }
 

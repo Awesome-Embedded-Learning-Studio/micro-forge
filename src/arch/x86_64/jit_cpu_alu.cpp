@@ -18,11 +18,11 @@ using width_util::merge_width;
 // Share the interpreter's ALU, including its borrow and AF semantics.
 // Both ALUs mask the inputs/result to width, so dword writes clear high bits.
 void Cpu::jit_cmp(uint64_t slot, uint64_t value, unsigned width) {
-    (void)alu_sub(regs_[slot / 8U], value, width, false);
+    alu_sub(regs_[slot / 8U], value, width, false);
 }
 
 void Cpu::jit_test(uint64_t slot, uint64_t value, unsigned width) {
-    (void)alu_logic(regs_[slot / 8U] & value, width);
+    alu_logic(regs_[slot / 8U] & value, width);
 }
 
 void Cpu::jit_sub(uint64_t slot, uint64_t value, unsigned width) {
@@ -39,11 +39,11 @@ void Cpu::jit_push_val(uint64_t value) {
     // A false return is a latched stack fault; the block runner stops at
     // the next block boundary. The template protocol cannot see a bool,
     // so the latch is the only propagation channel.
-    (void)push_value(value, 8);
+    push_value(value, 8);
 }
 
 void Cpu::jit_push_imm(uint64_t value) {
-    (void)push_value(value, 8); // see jit_push_val
+    push_value(value, 8); // see jit_push_val
 }
 
 void Cpu::jit_load_xmm(uint64_t vaddr, uint64_t slot) {

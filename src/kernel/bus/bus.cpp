@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <expected>
 #include <functional>
 #include <iterator>
@@ -155,8 +156,7 @@ std::expected<void, BusError> Bus::write_u16(uint64_t address, uint16_t value) {
     return done;
 }
 
-std::expected<void, BusError> Bus::write_u32(uint64_t address, uint32_t value) {
-    const auto r = resolve(address);
+std::expected<void, BusError> Bus::write_u32(uint64_t address, uint32_t value) {    const auto r = resolve(address);
     if (!r) {
         return std::unexpected(
             BusError{.kind = BusError::Kind::kUnmappedWrite, .address = address});

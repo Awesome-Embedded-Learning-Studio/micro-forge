@@ -106,8 +106,7 @@ bool Cpu::write_msr(uint32_t index, uint64_t value) {
     return true;
 }
 
-Cpu::CpuidAnswer Cpu::cpuid(uint32_t leaf, uint32_t subleaf) {
-    (void)subleaf; // no strided leaves in the v0 self-description
+Cpu::CpuidAnswer Cpu::cpuid(uint32_t leaf, uint32_t /*subleaf*/) {
     CpuidAnswer answer;
     switch (leaf) {
     case 0U:

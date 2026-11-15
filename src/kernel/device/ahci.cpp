@@ -160,9 +160,10 @@ bool Ahci::decode(Command& out) const {
 void Ahci::run(const Command& command) {
     const auto notify = [&] {
         // The HBA reports the first PRDT entry's length in the command
-        // header's PRDTL field on completion (AHCI 1.3 4.2.1).
-        const auto written = bus_.write_u32(command.header_physical + 4U, command.data_bytes);
-        (void)written;
+        // header's PRDTL field on completion (AHCI 1.3 4.2.1). Best
+        // effort: the completion interrupt must fire even if the guest
+        // unmapped its header and the update is lost.
+        std::ignore = bus_.write_u32(command.header_physical + 4U, command.data_bytes);
         port_interrupt_ |= kPortInterruptDi;
         put_le32(window() + static_cast<uint64_t>(kPortBase) + kPortInterruptStatus,
                  port_interrupt_);
@@ -206,8 +207,9 @@ void Ahci::run(const Command& command) {
                 word |= static_cast<uint32_t>(identify[i + j]) << (8U * j);
             }
             const auto written = bus_.write_u32(command.data_physical + i, word);
-            ;
-            (void)written;
+            if (!written.has_value()) {
+                break; // the rest of the transfer fails the same way
+            }
         }
         break;
     }
@@ -226,8 +228,10 @@ void Ahci::run(const Command& command) {
                                       (static_cast<uint32_t>(disk_[offset + i + 2]) << 16U) |
                                       (static_cast<uint32_t>(disk_[offset + i + 3]) << 24U);
                 const auto written = bus_.write_u32(command.data_physical + i, word);
-                ;
-                (void)written;
+                if (!written.has_value()) {
+                    ++refused_;
+                    break; // the rest of the transfer fails the same way
+                }
             } else {
                 const auto word = bus_.read_u32(command.data_physical + i);
                 const uint32_t value = word.has_value() ? *word : 0;

@@ -58,7 +58,7 @@ struct Machine {
 
     /// Wires the periodic tick device (one chain, every 7 icounts).
     void wire_periodic_device() {
-        (void)scheduler.schedule_periodic(5, 7, [this] { device_ticks.push_back(cpu.icount()); });
+        scheduler.schedule_periodic(5, 7, [this] { device_ticks.push_back(cpu.icount()); });
     }
 
     /// Seals the full machine state: RAM, then CPU, then scheduler.
@@ -136,7 +136,7 @@ TEST(SnapshotTest, RoundTripContinuesBitIdentically) {
     // Interrupted: run 30 instructions, snapshot, continue elsewhere.
     Machine first(image);
     first.wire_periodic_device();
-    (void)first.cpu.run(30);
+    first.cpu.run(30);
     const auto blob = first.snapshot();
 
     Machine second(image); // fresh objects; no device wired yet
@@ -176,7 +176,7 @@ TEST(SnapshotTest, EngineVersionMismatchIsRefused) {
     const auto image = load_client();
     Machine machine(image);
     machine.wire_periodic_device();
-    (void)machine.cpu.run(5);
+    machine.cpu.run(5);
     const auto blob = machine.snapshot();
 
     const uint32_t other = micro_forge::kernel::pack_engine_version(9, 9, 9);

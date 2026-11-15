@@ -426,8 +426,7 @@ public:
     unsigned reads = 0;
 
 protected:
-    void on_read(uint64_t offset, unsigned width) override {
-        (void)offset;
+    void on_read(uint64_t /*offset*/, unsigned width) override {
         EXPECT_EQ(8U, width);
         ++reads;
         cpu_.set_gpr(Reg::kRax, 99);
@@ -447,7 +446,7 @@ TEST_F(CpuTest, CachedAluKeepsOperandReadOrderForMmioCallbacks) {
     for (unsigned pass = 0; pass < 2; ++pass) {
         cpu_.set_gpr(Reg::kRax, 5);
         cpu_.set_rip(kCodeBase);
-        (void)cpu_.step();
+        cpu_.step();
         EXPECT_EQ(7U, cpu_.gpr(Reg::kRax)); // lhs was captured before the MMIO read
         EXPECT_EQ(pass + 1, mmio.reads);
     }
@@ -458,7 +457,7 @@ TEST_F(CpuTest, CachedLoadPreservesFaultRipAndDoesNotRetire) {
     cpu_.configure_caches(ram_.size());
     load({0x48, 0x8B, 0x07}); // mov rax, [rdi]
     cpu_.set_gpr(Reg::kRdi, 0x2000);
-    (void)cpu_.step();
+    cpu_.step();
     cpu_.set_gpr(Reg::kRdi, 0xDEAD0000);
     cpu_.set_rip(kCodeBase);
     const auto before = cpu_.icount();

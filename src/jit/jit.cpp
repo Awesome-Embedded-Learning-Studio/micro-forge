@@ -41,7 +41,7 @@ JitPage::JitPage() = default;
 
 JitPage::~JitPage() {
     if (data_ != nullptr) {
-        (void)munmap(data_, kSize);
+        munmap(data_, kSize);
     }
 }
 
@@ -55,7 +55,7 @@ JitPage::JitPage(JitPage&& other) noexcept
 JitPage& JitPage::operator=(JitPage&& other) noexcept {
     if (this != &other) {
         if (data_ != nullptr) {
-            (void)munmap(data_, kSize);
+            munmap(data_, kSize);
         }
         data_ = other.data_;
         used_ = other.used_;

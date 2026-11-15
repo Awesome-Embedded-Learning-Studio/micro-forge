@@ -25,8 +25,8 @@ namespace {
 constexpr uint64_t kHeaderBytes = 36;
 constexpr uint64_t kRsdpBytes = 40;
 
-void put_bytes(RamRegion& ram, uint64_t address, const void* data, std::size_t size) {
-    (void)ram.copy_in(address, {static_cast<const uint8_t*>(data), size});
+bool put_bytes(RamRegion& ram, uint64_t address, const void* data, std::size_t size) {
+    return ram.copy_in(address, {static_cast<const uint8_t*>(data), size});
 }
 
 /// Folds every byte to zero modulo 256 (ACPI checksum rule).
@@ -62,6 +62,7 @@ void put_header(uint8_t* table, const char (&signature)[5], uint32_t length) {
 } // namespace
 
 bool build_acpi_tables(RamRegion& ram, const AcpiLayout& layout) {
+    bool placed = true;
     // ---- MADT: header + LAPIC/flags + processor + IO-APIC + override.
     {
         constexpr auto madt_bytes = static_cast<uint32_t>(kHeaderBytes + 8 + 8 + 12 + 10);
@@ -93,7 +94,7 @@ bool build_acpi_tables(RamRegion& ram, const AcpiLayout& layout) {
         put_le32(entry + 4, 2);
         put_le16(entry + 8, 0);
         stamp_checksum(table.data(), madt_bytes);
-        put_bytes(ram, layout.madt, table.data(), madt_bytes);
+        placed = put_bytes(ram, layout.madt, table.data(), madt_bytes) && placed;
     }
 
     // ---- RSDT: one 32-bit pointer to the MADT.
@@ -103,7 +104,7 @@ bool build_acpi_tables(RamRegion& ram, const AcpiLayout& layout) {
         put_header(table.data(), "RSDT", rsdt_bytes);
         put_le32(table.data() + kHeaderBytes, static_cast<uint32_t>(layout.madt));
         stamp_checksum(table.data(), rsdt_bytes);
-        put_bytes(ram, layout.rsdt, table.data(), rsdt_bytes);
+        placed = put_bytes(ram, layout.rsdt, table.data(), rsdt_bytes) && placed;
     }
 
     // ---- RSDP: ACPI 1.0 shape (revision 0, 32-bit RSDT address).
@@ -121,9 +122,9 @@ bool build_acpi_tables(RamRegion& ram, const AcpiLayout& layout) {
             sum = static_cast<uint8_t>(sum + table[i]);
         }
         table[8] = static_cast<uint8_t>(0U - sum);
-        put_bytes(ram, layout.rsdp, table.data(), kRsdpBytes);
+        placed = put_bytes(ram, layout.rsdp, table.data(), kRsdpBytes) && placed;
     }
-    return true;
+    return placed;
 }
 
 } // namespace micro_forge::kernel

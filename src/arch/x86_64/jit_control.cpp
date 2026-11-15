@@ -84,7 +84,7 @@ void Cpu::jit_jcc(uint64_t taken, uint64_t fall, Cc cc) {
 void Cpu::jit_leave() {
     regs_[index_of(Reg::kRsp)] = regs_[index_of(Reg::kRbp)];
     uint64_t value = 0;
-    (void)pop_value(8, value);
+    pop_value(8, value);
     write_gpr(Reg::kRbp, 8, true, value);
 }
 

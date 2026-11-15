@@ -17,6 +17,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <optional>
+#include <tuple>
 #include <print>
 
 #include "micro_forge/arch/x86_64/cpu.hpp"
@@ -211,7 +212,7 @@ void Cpu::try_link(JitBlock& blk) {
         return;
     }
     const bool ok = blk.page->patch(rel_at, 4, rel32);
-    (void)blk.page->seal(); // back to RX either way; failure keeps the ret
+    std::ignore = blk.page->seal(); // back to RX either way; failure keeps the ret
     blk.linked = ok;
     if (ok &&
         std::getenv("MICRO_FORGE_JIT_LINKSTATS") != nullptr) { // NOLINT(concurrency-mt-unsafe)

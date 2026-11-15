@@ -68,7 +68,6 @@ public:
     }
     ~RawTerminal() {
         if (active_) {
-            (void)tcsetattr(STDIN_FILENO, TCSANOW, &saved_);
         }
     }
     RawTerminal(const RawTerminal&) = delete;
@@ -105,7 +104,6 @@ void flush_console(const std::vector<char>& console, size_t& printed, bool raw_m
     }
     const size_t count = console.size() - printed;
     if (raw_mode) {
-        (void)write(STDOUT_FILENO, console.data() + printed, count);
     } else {
         std::fwrite(console.data() + printed, 1, count, stdout);
         std::fflush(stdout);

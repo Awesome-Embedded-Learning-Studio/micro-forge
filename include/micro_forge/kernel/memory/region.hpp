@@ -44,9 +44,7 @@ public:
     /// @param[in] offset Byte offset relative to the mapping base.
     /// @param[in] len Number of bytes wanted.
     /// @return The view, or an empty span when unavailable.
-    [[nodiscard]] virtual std::span<const uint8_t> peek(uint64_t offset, std::size_t len) const {
-        (void)offset;
-        (void)len;
+    [[nodiscard]] virtual std::span<const uint8_t> peek(uint64_t /*offset*/, std::size_t /*len*/) const {
         return {};
     }
 

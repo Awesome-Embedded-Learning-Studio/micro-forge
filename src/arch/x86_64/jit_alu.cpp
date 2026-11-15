@@ -178,7 +178,7 @@ void Cpu::jit_grp3_mem(uint64_t vaddr, unsigned width, unsigned mn) {
     arch::x86_64::DecodedInsn shape{};
     shape.mnemonic = static_cast<Mnemonic>(mn);
     shape.opsize = static_cast<std::uint8_t>(width);
-    (void)execute_grp3(shape, divisor);
+    execute_grp3(shape, divisor);
 }
 
 void Cpu::jit_sys_mem(uint64_t vaddr, unsigned width, unsigned mn) {
@@ -191,7 +191,7 @@ void Cpu::jit_sys_mem(uint64_t vaddr, unsigned width, unsigned mn) {
     shape.ops[0] = {.kind = Operand::Kind::kMem, .size = static_cast<std::uint8_t>(width)};
     shape.ops[0].rip_relative = true;
     shape.ops[0].disp = static_cast<std::int64_t>(vaddr);
-    (void)execute_system(shape, 0);
+    execute_system(shape, 0);
 }
 
 void Cpu::jit_alu_mem_idx(uint64_t vaddr, uint64_t src, unsigned mn, unsigned width) {
@@ -204,9 +204,9 @@ void Cpu::jit_alu_mem_idx(uint64_t vaddr, uint64_t src, unsigned mn, unsigned wi
     const uint64_t other =
         kind == Mnemonic::kTest ? read_gpr(static_cast<Reg>(src / 8U), width, true) : src;
     if (kind == Mnemonic::kTest) {
-        (void)alu_logic(mem & other, width);
+        alu_logic(mem & other, width);
     } else {
-        (void)alu_sub(mem, other, width, false);
+        alu_sub(mem, other, width, false);
     }
 }
 
@@ -232,7 +232,7 @@ void Cpu::jit_ports(unsigned mn, unsigned width) {
     case Mnemonic::kRdrand:
     case Mnemonic::kPushfq:
     case Mnemonic::kPopfq:
-        (void)execute_system(shape, 0); // iret/lgdt need control flow or memory
+        execute_system(shape, 0); // iret/lgdt need control flow or memory
         // STI shadow and queued interrupts must hit the retire() path on
         // the very next instruction boundary; force the chain to surface
         // at this block's exit so delivery timing stays exact.
@@ -253,7 +253,7 @@ void Cpu::jit_ports(unsigned mn, unsigned width) {
         shape.ops[0] = dx;
         shape.ops[1] = acc;
     }
-    (void)execute_ports(shape, 0);
+    execute_ports(shape, 0);
     // A device may have raised an IRQ line behind this port access; the
     // acknowledgement and delivery live in retire(), so surface now.
     if (irq_line_ != nullptr && irq_line_->pending()) {
@@ -277,7 +277,7 @@ void Cpu::jit_imul_mem(uint64_t vaddr, unsigned dst, unsigned width) {
     shape.ops[0] = {.kind = Operand::Kind::kReg, .size = w8, .reg = reg};
     shape.ops[1] = {.kind = Operand::Kind::kReg, .size = w8, .reg = reg};
     shape.ops[2] = {.kind = Operand::Kind::kImm, .size = w8, .disp = mval};
-    (void)execute_imul23(shape, 0);
+    execute_imul23(shape, 0);
 }
 
 void Cpu::jit_alu_mem_imm(uint64_t vaddr, uint64_t imm, unsigned mn, unsigned width) {
@@ -309,7 +309,7 @@ void Cpu::jit_alu_mem_imm(uint64_t vaddr, uint64_t imm, unsigned mn, unsigned wi
         break;
     }
     if (writes) {
-        (void)store(vaddr, width, result);
+        store(vaddr, width, result);
     }
 }
 
@@ -341,7 +341,7 @@ void Cpu::jit_imul23(unsigned dst, unsigned src, uint64_t imm, unsigned width) {
     shape.ops[0] = {.kind = Operand::Kind::kReg, .size = w8, .reg = dreg};
     shape.ops[1] = {.kind = Operand::Kind::kReg, .size = w8, .reg = sreg};
     shape.ops[2] = {.kind = Operand::Kind::kImm, .size = w8, .disp = sdisp};
-    (void)execute_imul23(shape, 0);
+    execute_imul23(shape, 0);
 }
 
 void Cpu::jit_grp3(uint64_t divisor, unsigned width, unsigned mn) {
@@ -350,7 +350,7 @@ void Cpu::jit_grp3(uint64_t divisor, unsigned width, unsigned mn) {
     arch::x86_64::DecodedInsn shape{};
     shape.mnemonic = static_cast<Mnemonic>(mn);
     shape.opsize = static_cast<std::uint8_t>(width);
-    (void)execute_grp3(shape, divisor);
+    execute_grp3(shape, divisor);
 }
 
 void Cpu::jit_alu_mem(unsigned slot, uint64_t vaddr, unsigned mn, unsigned width) {
@@ -443,7 +443,7 @@ void Cpu::jit_shift(unsigned slot, uint64_t count, unsigned mn, unsigned width) 
     }
     // alu_shift's bool rejects unsupported mnemonics; the decoder only
     // hands supported shifts to the JIT, so it cannot fire here.
-    (void)alu_shift(static_cast<Mnemonic>(mn), value, width, count);
+    alu_shift(static_cast<Mnemonic>(mn), value, width, count);
 }
 
 } // namespace micro_forge::arch::x86_64

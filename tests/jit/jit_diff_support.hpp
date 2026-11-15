@@ -47,9 +47,9 @@ public:
     }
     ~ScopedEnv() {
         if (old_) {
-            (void)setenv(name_, old_->c_str(), 1);
+            setenv(name_, old_->c_str(), 1);
         } else {
-            (void)unsetenv(name_);
+            unsetenv(name_);
         }
     }
 
@@ -157,13 +157,13 @@ inline void run_child(const DiffCase& test, bool jit, State& out) {
     ASSERT_EQ(0, pipe(pipefd));
     const pid_t pid = fork();
     if (pid == -1) {
-        (void)close(pipefd[0]);
-        (void)close(pipefd[1]);
+        close(pipefd[0]);
+        close(pipefd[1]);
         FAIL() << "fork failed: " << errno;
     }
     if (pid == 0) {
-        (void)close(pipefd[0]);
-        (void)alarm(10); // a corrupt template must not hang the test suite
+        close(pipefd[0]);
+        alarm(10); // a corrupt template must not hang the test suite
         State state{};
         execute_case(test, state);
         if (::testing::Test::HasFailure()) {
@@ -172,7 +172,7 @@ inline void run_child(const DiffCase& test, bool jit, State& out) {
         const auto written = write(pipefd[1], &state, sizeof(state));
         _exit(written == static_cast<ssize_t>(sizeof(state)) ? 0 : 2);
     }
-    (void)close(pipefd[1]);
+    close(pipefd[1]);
     int status = 0;
     pid_t waited;
     do {
@@ -182,7 +182,7 @@ inline void run_child(const DiffCase& test, bool jit, State& out) {
     do {
         received = read(pipefd[0], &out, sizeof(out));
     } while (received == -1 && errno == EINTR);
-    (void)close(pipefd[0]);
+    close(pipefd[0]);
     ASSERT_EQ(pid, waited);
     ASSERT_TRUE(WIFEXITED(status)) << "child status=" << status << " jit=" << jit;
     ASSERT_EQ(0, WEXITSTATUS(status)) << "jit=" << jit;

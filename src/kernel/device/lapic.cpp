@@ -19,8 +19,7 @@ Lapic::Lapic() : RegisterRegionBase(window_.data(), window_.size()) {
     put_le32(window_.data() + kSpurious, 0x1FFU); // spurious vector, software-off
 }
 
-void Lapic::on_read(uint64_t offset, unsigned width) {
-    (void)width;
+void Lapic::on_read(uint64_t offset, unsigned /*width*/) {
     if (offset == kTimerCurrent) {
         // The timer counts down on the virtual clock: one count per
         // retired instruction (a 1:1 mapping until the tick pipeline

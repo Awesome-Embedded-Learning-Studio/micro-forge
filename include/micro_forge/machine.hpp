@@ -131,7 +131,7 @@ public:
      * @param[in] max_instructions Instruction budget.
      * @return The terminal exit status (see Cpu::run).
      */
-    [[nodiscard]] arch::x86_64::ExitStatus run(uint64_t max_instructions) {
+    arch::x86_64::ExitStatus run(uint64_t max_instructions) {
         return cpu_.run(max_instructions);
     }
 

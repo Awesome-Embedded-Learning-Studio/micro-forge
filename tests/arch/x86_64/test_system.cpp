@@ -24,7 +24,7 @@ TEST_F(CpuTest, CliStiToggleInterruptFlag) {
         0xFB,
         0xFA,
     }); // sti; cli
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_FALSE(cpu_.interrupts_enabled());
 }
 
@@ -36,7 +36,7 @@ TEST_F(CpuTest, PushfqPopfqRestoreInterruptState) {
         0xFA,
         0x9D,
     });
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_TRUE(cpu_.interrupts_enabled());
 }
 
@@ -49,7 +49,7 @@ TEST_F(CpuTest, MsrWhitelistRoundTrips) {
         0x0F, 0x30,                   // wrmsr
         0x0F, 0x32,
     }); // rdmsr
-    (void)cpu_.run(50);
+    cpu_.run(50);
     EXPECT_EQ(0x500U, static_cast<uint32_t>(cpu_.gpr(Reg::kRax)));
     EXPECT_EQ(0U, static_cast<uint32_t>(cpu_.gpr(Reg::kRdx)));
 }
@@ -64,7 +64,7 @@ TEST_F(CpuTest, MsrOutsideWhitelistFaults) {
         0x0F,
         0x30,
     }); // wrmsr
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(ExitStatus::Kind::kFault, cpu_.exit_status().kind);
     EXPECT_EQ(static_cast<uint64_t>(FaultId::kMsr), cpu_.exit_status().detail);
     EXPECT_EQ(0xDEADU, cpu_.exit_status().code); // the index names the site
@@ -80,7 +80,7 @@ TEST_F(CpuTest, CpuidLeafOneReportsSse2Only) {
         0x0F,
         0xA2,
     }); // cpuid
-    (void)cpu_.run(10);
+    cpu_.run(10);
     const uint64_t edx = cpu_.gpr(Reg::kRdx);
     const uint64_t ecx = cpu_.gpr(Reg::kRcx);
     EXPECT_TRUE((edx & (1ULL << 26U)) != 0); // SSE2 claimed
@@ -96,7 +96,7 @@ TEST_F(CpuTest, RdtscDerivesFromIcount) {
         0x0F,
         0x31,
     }); // nop;nop;nop;rdtsc
-    (void)cpu_.run(10);
+    cpu_.run(10);
     const uint64_t stamp = (cpu_.gpr(Reg::kRdx) << 32U) | cpu_.gpr(Reg::kRax);
     EXPECT_EQ(3U, stamp); // three retires before the read
 }
@@ -115,7 +115,7 @@ TEST_F(CpuTest, LgdtLidtRoundTripThroughMemory) {
     cpu_.reset(kCodeBase, kStackTop);
     cpu_.set_gpr(Reg::kRax, 0x2000);
     cpu_.set_gpr(Reg::kRbx, 0x3000);
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(0x2FU, static_cast<unsigned>(ram_.data()[0x3000]));
     EXPECT_EQ(0x34U, static_cast<unsigned>(ram_.data()[0x3002]));
     EXPECT_EQ(0x12U, static_cast<unsigned>(ram_.data()[0x3003]));
@@ -131,7 +131,7 @@ TEST_F(CpuTest, MovToFromCr4StoresValue) {
         0xE0,
     }); // mov rax, cr4
     cpu_.set_gpr(Reg::kRax, 0x6F0);
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(0x6F0U, cpu_.control_register(3)); // CR4 by enumeration offset
     EXPECT_EQ(0x6F0U, cpu_.gpr(Reg::kRax));
 }
@@ -152,7 +152,7 @@ TEST_F(CpuTest, MovapsCopiesSixteenBytes) {
     cpu_.reset(kCodeBase, kStackTop);
     cpu_.set_gpr(Reg::kRax, 0x2000);
     cpu_.set_gpr(Reg::kRbx, 0x3000);
-    (void)cpu_.run(10);
+    cpu_.run(10);
     for (unsigned i = 0; i < 16; ++i) {
         EXPECT_EQ(static_cast<uint8_t>(i * 3), ram_.data()[0x3000 + i]) << "byte " << i;
     }
@@ -184,7 +184,7 @@ TEST_F(CpuTest, MovdqaAndXmmArithmetic) {
     cpu_.reset(kCodeBase, kStackTop);
     cpu_.set_gpr(Reg::kRax, 0x2000);
     cpu_.set_gpr(Reg::kRbx, 0x3000);
-    (void)cpu_.run(10);
+    cpu_.run(10);
     // padding dwords of 0x11111111 x4; paddd with zero = unchanged.
     for (unsigned i = 0; i < 16; ++i) {
         EXPECT_EQ(0x11U, static_cast<unsigned>(ram_.data()[0x3000 + i]));
@@ -205,7 +205,7 @@ TEST_F(CpuTest, PshufdReordersDwords) {
     });
     cpu_.reset(kCodeBase, kStackTop);
     cpu_.set_xmm(Reg::kXmm0, {0x4444444433333333ULL, 0x2222222211111111ULL});
-    (void)cpu_.run(10);
+    cpu_.run(10);
     const auto x2 = cpu_.xmm(Reg::kXmm2);
     EXPECT_EQ(0x1111111122222222ULL, x2[0]); // dwords 3,2
     EXPECT_EQ(0x3333333344444444ULL, x2[1]); // dwords 1,0
@@ -222,7 +222,7 @@ TEST_F(CpuTest, MovqTransfersLaneAndClearsHigh) {
     });
     cpu_.reset(kCodeBase, kStackTop);
     cpu_.set_gpr(Reg::kRbx, 0xDEADBEEFCAFEBABEULL);
-    (void)cpu_.run(10);
+    cpu_.run(10);
     const auto x0 = cpu_.xmm(Reg::kXmm0);
     EXPECT_EQ(0xDEADBEEFCAFEBABEULL, x0[0]);
     EXPECT_EQ(0U, x0[1]);
@@ -255,7 +255,7 @@ TEST_F(PortTest, OutByteToSerialLandsInSink) {
         0xE6,
         0x0A,
     }); // out 0xA, al (unmapped port)
-    (void)cpu_.run(10);
+    cpu_.run(10);
     ASSERT_FALSE(g_console_sink.empty());
     EXPECT_EQ(0x48, static_cast<unsigned>(static_cast<uint8_t>(g_console_sink.back())));
     EXPECT_EQ(ExitStatus::Kind::kFault, cpu_.exit_status().kind);
@@ -272,7 +272,7 @@ TEST_F(PortTest, LsrReportsTransmitterAlwaysReady) {
         0x03, // mov dx, 0x3FD
         0xEC,
     }); // in al, dx
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(0x60U, static_cast<unsigned>(static_cast<uint8_t>(cpu_.gpr(Reg::kRax))));
 }
 
@@ -295,7 +295,7 @@ TEST_F(PortTest, SerialInitSequenceKeepsDlabSemantics) {
         0x41, // mov al, 'A'
         0xEE,
     }); // out dx, al (divisor low, not THR)
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_TRUE(serial_.divider_latched());
     EXPECT_EQ(0x80U, static_cast<unsigned>(serial_.line_control()));
 }
@@ -337,7 +337,7 @@ TEST_F(DeviceTest, PitChannelZeroSquareWaveProgram) {
         0xE6,
         0x40,
     }); // mov al,0x2E; out 0x40,al (divisor hi)
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(11931U, static_cast<unsigned>(pit_.divisor(0)));
     EXPECT_EQ(0x36U, static_cast<unsigned>(pit_.control_word()));
 }
@@ -345,7 +345,7 @@ TEST_F(DeviceTest, PitChannelZeroSquareWaveProgram) {
 TEST_F(DeviceTest, BoardPortReportsTimerOutputDone) {
     // in al, 0x61 -> bit 5 set (delay loop terminates).
     load({0xE4, 0x61}); // in al, 0x61
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(0x20U, static_cast<unsigned>(static_cast<uint8_t>(cpu_.gpr(Reg::kRax))));
 }
 
@@ -359,7 +359,7 @@ TEST_F(DeviceTest, RtcReadsBcdStatusAfterSelect) {
         0xE4,
         0x71,
     }); // in al, 0x71
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(0x02U, static_cast<unsigned>(static_cast<uint8_t>(cpu_.gpr(Reg::kRax))));
 }
 
@@ -371,7 +371,7 @@ TEST_F(DeviceTest, PicRemapSequenceLandsVectorBase) {
         0xE6, 0x21, 0xB0, 0xFF, 0xE6, 0x21, 0xB0, 0x11, 0xE6, 0xA0, 0xB0, 0x28, 0xE6, 0xA1,
         0xB0, 0x02, 0xE6, 0xA1, 0xB0, 0x01, 0xE6, 0xA1, 0xB0, 0xFF, 0xE6, 0xA1,
     });
-    (void)cpu_.run(40);
+    cpu_.run(40);
     EXPECT_TRUE(pic_master_.initialized());
     EXPECT_EQ(0x20U, static_cast<unsigned>(pic_master_.vector_base()));
     EXPECT_EQ(0xFFU, static_cast<unsigned>(pic_master_.mask()));
@@ -386,7 +386,7 @@ TEST_F(DeviceTest, PicUnmaskReadsAndRewritesMask) {
         0x24, 0xFE,                                                 // and al, 0xFE
         0xE6, 0x21,
     }); // out 0x21, al
-    (void)cpu_.run(30);
+    cpu_.run(30);
     EXPECT_EQ(0xFEU, static_cast<unsigned>(pic_master_.mask()));
 }
 
@@ -425,7 +425,7 @@ TEST_F(ApicTest, LapicIdAndEoi) {
         0x00,
         0x00,
     }); // EOI
-    (void)cpu_.run(10);
+    cpu_.run(10);
     EXPECT_EQ(0U, static_cast<uint32_t>(cpu_.gpr(Reg::kRax))); // APIC ID 0
     EXPECT_TRUE(lapic_.eoi_pending());
 }
@@ -439,7 +439,7 @@ TEST_F(ApicTest, IoApicSelectionReadsRedirection) {
         0xC7, 0x02, 0x10, 0x00, 0x00, 0x00,       // select again
         0x8B, 0x42, 0x10,
     }); // mov eax, [rdx+0x10]
-    (void)cpu_.run(20);
+    cpu_.run(20);
     EXPECT_EQ(0x12345678U, static_cast<uint32_t>(cpu_.gpr(Reg::kRax)));
     EXPECT_EQ(0x12345678U, io_apic_.redirection(0)[0]);
 }

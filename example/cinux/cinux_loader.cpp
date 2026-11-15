@@ -197,7 +197,7 @@ std::expected<void, BootError> boot_cinux(micro_forge::kernel::RamRegion& ram,
     cpu.set_paging(true);
     cpu.set_control_register(0, 0x80000001ULL); // CR0.PG | PE
     cpu.set_control_register(3, 0x20ULL);       // CR4.PAE
-    (void)cpu.write_msr(0xC0000080U, 0x500ULL); // EFER.LME | LMA
+    cpu.write_msr(0xC0000080U, 0x500ULL); // EFER.LME | LMA
     cpu.set_gdtr(0x8000, 0x17);                 // nominal 64-bit GDT
     // JIT may only compile the file-backed extent: everything past
     // load_paddr + file_size is data/bss, where a misparsed block would

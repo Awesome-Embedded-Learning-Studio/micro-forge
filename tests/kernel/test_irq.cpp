@@ -103,7 +103,7 @@ TEST(IrqLineTest, UnacknowledgedLineFiresEveryFollowingInstruction) {
     std::vector<Tick> observed;
     cpu.attach_irq(line, [&] { observed.push_back(cpu.icount()); }); // no ack
     scheduler.schedule(3, [&line] { line.raise(); });
-    (void)cpu.run(1000);
+    cpu.run(1000);
     // Level semantics: from the raise on, every retire observes the line.
     // The program retires 22 instructions total (setup 1 + loop 20 + hlt),
     // so icount 3..22 is 20 observations, ending at the halt itself.

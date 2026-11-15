@@ -69,8 +69,7 @@ bool Pit8254::write(uint16_t offset, unsigned width, uint64_t value) {
     return true;
 }
 
-bool BoardControl::read(uint16_t offset, unsigned width, uint64_t& out) {
-    (void)offset;
+bool BoardControl::read(uint16_t /*offset*/, unsigned width, uint64_t& out) {
     if (width != 1) {
         return false;
     }
@@ -80,8 +79,7 @@ bool BoardControl::read(uint16_t offset, unsigned width, uint64_t& out) {
     return true;
 }
 
-bool BoardControl::write(uint16_t offset, unsigned width, uint64_t value) {
-    (void)offset;
+bool BoardControl::write(uint16_t /*offset*/, unsigned width, uint64_t value) {
     if (width != 1) {
         return false;
     }

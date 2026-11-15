@@ -36,7 +36,7 @@ TEST(EngineTest, SnapshotRoundTripsThroughFacade) {
     const std::vector<uint8_t> code = {0xF4}; // hlt
     ASSERT_TRUE(engine.load_image(0x100000, code));
     engine.machine().boot(0x100000, 0x90000);
-    (void)engine.run(10);
+    engine.run(10);
     const auto blob = engine.snapshot();
     micro_forge::MachineConfig restored_config;
     restored_config.ram_size = 0x1000000;

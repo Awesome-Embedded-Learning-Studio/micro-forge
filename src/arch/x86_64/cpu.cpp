@@ -363,7 +363,7 @@ ExitStatus Cpu::run(uint64_t max_instructions) {
     const kernel::Tick start = icount_;
     jit_run_end_ = start + max_instructions; // block-chain budget guard
     while (exit_.kind == ExitStatus::Kind::kRunning && icount_ - start < max_instructions) {
-        (void)step();
+        step();
     }
     return exit_;
 }

@@ -409,7 +409,7 @@ public:
      * @return The latched status: kRunning when the budget continues,
      *         otherwise the terminal reason.
      */
-    [[nodiscard]] ExitStatus step();
+    ExitStatus step();
 
     /**
      * @brief Runs up to @p max_instructions retired instructions.
@@ -421,7 +421,7 @@ public:
      * @param[in] max_instructions Instruction budget for this call.
      * @return The latched status, same contract as step().
      */
-    [[nodiscard]] ExitStatus run(uint64_t max_instructions);
+    ExitStatus run(uint64_t max_instructions);
 
 private:
     /// Applies the FS/GS segment base for a memory operand's EA.

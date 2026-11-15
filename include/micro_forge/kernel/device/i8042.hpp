@@ -50,9 +50,8 @@ public:
      * @param[out] out Status byte or the next output byte.
      * @return False for unsupported widths.
      */
-    bool read(uint16_t offset, unsigned width, uint64_t& out) override {
-        (void)offset;
-        if (width != 1) {
+    bool read(uint16_t /*offset*/, unsigned width, uint64_t& out) override {
+                if (width != 1) {
             return false;
         }
         if (port_ == kStatus) {
@@ -76,9 +75,8 @@ public:
      * @param[in] value The byte written.
      * @return False for unsupported widths.
      */
-    bool write(uint16_t offset, unsigned width, uint64_t value) override {
-        (void)offset;
-        if (width != 1) {
+    bool write(uint16_t /*offset*/, unsigned width, uint64_t value) override {
+                if (width != 1) {
             return false;
         }
         const auto byte = static_cast<uint8_t>(value);

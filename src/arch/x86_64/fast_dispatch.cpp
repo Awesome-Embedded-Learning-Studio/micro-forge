@@ -191,10 +191,10 @@ ExitStatus Cpu::execute_cached(const CachedInsn& cached, uint64_t rip_after) {
             regs_[dst] = alu_sub(lhs, value, 8, false);
             break;
         case Mnemonic::kCmp:
-            (void)alu_sub(lhs, value, 8, false);
+            alu_sub(lhs, value, 8, false);
             break;
         case Mnemonic::kTest:
-            (void)alu_logic(lhs & value, 8);
+            alu_logic(lhs & value, 8);
             break;
         case Mnemonic::kAnd:
             regs_[dst] = alu_logic(lhs & value, 8);

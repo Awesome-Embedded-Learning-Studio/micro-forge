@@ -36,9 +36,11 @@ bool Mmu::read_pte(uint64_t paddr, uint64_t& value) {
     return true;
 }
 
-void Mmu::write_pte(uint64_t paddr, uint64_t value) {
-    const auto written = bus_.write_u64(paddr, value);
-    (void)written; // page-table writes cannot fail on a RAM-backed bus
+bool Mmu::write_pte(uint64_t paddr, uint64_t value) {
+    // A PTE lives in RAM the walk just read from, so a refusal is only
+    // possible if that mapping vanished mid-walk: the caller turns it
+    // into a walk failure like any other.
+    return bus_.write_u64(paddr, value).has_value();
 }
 
 namespace {
@@ -101,8 +103,9 @@ Mmu::Walk Mmu::walk(uint64_t vaddr, bool write, bool instruction, bool user, uin
         if (write) {
             updated |= Mmu::kDirty;
         }
-        if (updated != e1) {
-            write_pte((e0 & kFrameMask) + (level_index(vaddr, kPdptShift) * 8U), updated);
+        if (updated != e1 &&
+            !write_pte((e0 & kFrameMask) + (level_index(vaddr, kPdptShift) * 8U), updated)) {
+            return fail(0);
         }
         w.paddr = (e1 & ~0x3FFFFFFFULL) + (vaddr & 0x3FFFFFFFULL);
         w.flags = e1;
@@ -118,8 +121,9 @@ Mmu::Walk Mmu::walk(uint64_t vaddr, bool write, bool instruction, bool user, uin
             if (write) {
                 updated |= Mmu::kDirty;
             }
-            if (updated != e2) {
-                write_pte((e1 & kFrameMask) + (level_index(vaddr, kPdShift) * 8U), updated);
+            if (updated != e2 &&
+                !write_pte((e1 & kFrameMask) + (level_index(vaddr, kPdShift) * 8U), updated)) {
+                return fail(0);
             }
             w.paddr = (e2 & ~0x1FFFFFULL) + (vaddr & 0x1FFFFFULL);
             w.flags = e2;
@@ -134,8 +138,9 @@ Mmu::Walk Mmu::walk(uint64_t vaddr, bool write, bool instruction, bool user, uin
             if (write) {
                 updated |= Mmu::kDirty;
             }
-            if (updated != e3) {
-                write_pte((e2 & kFrameMask) + (level_index(vaddr, kPageShift) * 8U), updated);
+            if (updated != e3 &&
+                !write_pte((e2 & kFrameMask) + (level_index(vaddr, kPageShift) * 8U), updated)) {
+                return fail(0);
             }
             w.paddr = (e3 & kFrameMask) + (vaddr & 0xFFFULL);
             w.flags = e3;

@@ -87,7 +87,7 @@ TEST(MachineTest, SnapshotRoundTripThroughMachineApi) {
     first.boot(kCodeBase, kStackTop);
     std::vector<uint64_t> first_trace;
     first.cpu().set_trace([&first, &first_trace](uint64_t rip) { first_trace.push_back(rip); });
-    (void)first.run(30);
+    first.run(30);
     const auto blob = first.snapshot();
 
     Machine second(0x1000000);
@@ -112,7 +112,7 @@ TEST(MachineTest, WindowModeRestoresFromSnapshot) {
     Machine machine(0x1000000, reinterpret_cast<uintptr_t>(window.data()));
     ASSERT_TRUE(machine.load_image(kCodeBase, image));
     machine.boot(kCodeBase, kStackTop);
-    (void)machine.run(30);
+    machine.run(30);
     const auto blob = machine.snapshot();
 
     Machine restored(0x1000000, reinterpret_cast<uintptr_t>(window.data()));
@@ -189,7 +189,7 @@ TEST(MachineTest, ConfigWithoutPitLeavesPortUnmapped) {
     const uint8_t in_40[] = {0xE4, 0x40, 0xF4}; // in al,0x40; hlt
     ASSERT_TRUE(machine.load_image(kCodeBase, in_40));
     machine.boot(kCodeBase, kStackTop);
-    (void)machine.run(100);
+    machine.run(100);
     EXPECT_EQ(micro_forge::arch::x86_64::ExitStatus::Kind::kFault,
               machine.cpu().exit_status().kind);
 }
@@ -205,7 +205,7 @@ TEST(MachineTest, ConflictingPortWindowsRefuseConstruction) {
     };
     EXPECT_DEATH(([&] {
                      Machine machine(config);
-                     (void)machine;
+                     Machine{config};
                  }()),
                  "");
 }
@@ -225,7 +225,7 @@ TEST(MachineTest, ConfigSwitchCompilesBlocksWithoutEnv) {
     // First pass compiles the block, the loop re-enters and runs it.
     for (int i = 0; i < 4; ++i) {
         machine.boot(kCodeBase, kStackTop);
-        (void)machine.run(8);
+        machine.run(8);
     }
     EXPECT_GT(machine.cpu().jit_block_count(), 0U);
     EXPECT_GT(machine.cpu().jit_insn_count(), 0U);

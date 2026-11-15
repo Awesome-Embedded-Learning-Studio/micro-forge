@@ -125,7 +125,7 @@ struct NewKernelHarness {
         cpu.reset(kCodeBase, kStackTop);
     }
     /// One step, discarding the (asserted-on-separately) status.
-    void step() { (void)cpu.step(); }
+    void step() { cpu.step(); }
 };
 
 TEST(NewKernelInsnTest, BswapSwapsBytesAtEveryWidth) {

@@ -155,7 +155,7 @@ private:
     /// Reads one 8-byte page-table entry at a physical address.
     bool read_pte(uint64_t paddr, uint64_t& value);
     /// Writes one 8-byte page-table entry at a physical address.
-    void write_pte(uint64_t paddr, uint64_t value);
+    bool write_pte(uint64_t paddr, uint64_t value);
 
     kernel::Bus& bus_;
     bool paging_ = false;

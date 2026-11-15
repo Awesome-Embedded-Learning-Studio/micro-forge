@@ -13,6 +13,7 @@
 #include <bit>
 #include <cstdint>
 #include <cstdlib>
+#include <tuple>
 #include <cstring>
 #include <memory>
 #include <optional>
@@ -54,7 +55,7 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
         exception_injected_ = saved_exception;
         // A half-emitted page must go back to read-execute: live blocks.
         if (jit_page_) {
-            (void)jit_page_->seal(); // idempotent: false when already sealed
+            std::ignore = jit_page_->seal(); // idempotent: false when already sealed
         }
         jit_failed_.insert(rip);
         return std::nullopt;

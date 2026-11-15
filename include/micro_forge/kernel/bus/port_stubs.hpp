@@ -29,9 +29,8 @@ public:
      * @param[out] out The last byte written.
      * @return False for unsupported widths.
      */
-    bool read(uint16_t offset, unsigned width, uint64_t& out) override {
-        (void)offset;
-        if (width != 1) {
+    bool read(uint16_t /*offset*/, unsigned width, uint64_t& out) override {
+                if (width != 1) {
             return false;
         }
         out = last_;
@@ -45,9 +44,8 @@ public:
      * @param[in] value The progress byte.
      * @return False for unsupported widths.
      */
-    bool write(uint16_t offset, unsigned width, uint64_t value) override {
-        (void)offset;
-        if (width != 1) {
+    bool write(uint16_t /*offset*/, unsigned width, uint64_t value) override {
+                if (width != 1) {
             return false;
         }
         last_ = static_cast<uint8_t>(value);

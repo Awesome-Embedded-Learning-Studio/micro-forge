@@ -99,10 +99,10 @@ TEST_F(InterruptTest, VectorDeliveryRunsHandlerAndIretqReturns) {
 
     cpu_.reset(kCodeBase, kStackTop);
     cpu_.set_gpr(Reg::kRax, descriptor);
-    (void)cpu_.run(3); // lidt, sti, nop; queue fires after the next retire
+    cpu_.run(3); // lidt, sti, nop; queue fires after the next retire
 
     cpu_.request_interrupt(0x20);
-    (void)cpu_.run(20);
+    cpu_.run(20);
 
     EXPECT_EQ(1U, counter());                                    // handler ran once
     EXPECT_EQ(ExitStatus::Kind::kHalt, cpu_.exit_status().kind); // control came back
@@ -133,9 +133,9 @@ TEST_F(InterruptTest, TrapGateKeepsInterruptsEnabled) {
 
     cpu_.reset(kCodeBase, kStackTop);
     cpu_.set_gpr(Reg::kRax, descriptor);
-    (void)cpu_.run(5);
+    cpu_.run(5);
     cpu_.request_interrupt(0x21);
-    (void)cpu_.run(20);
+    cpu_.run(20);
 
     EXPECT_EQ(ExitStatus::Kind::kHalt, cpu_.exit_status().kind);
     EXPECT_TRUE(cpu_.interrupts_enabled()); // trap gate never cleared IF
@@ -181,9 +181,9 @@ TEST_F(InterruptTest, StiShadowDelaysDeliveryPastTheNextInstruction) {
 
     cpu_.reset(kCodeBase, kStackTop);
     cpu_.set_gpr(Reg::kRax, descriptor);
-    (void)cpu_.run(2); // lidt, cli: the queue cannot drain with IF off
+    cpu_.run(2); // lidt, cli: the queue cannot drain with IF off
     cpu_.request_interrupt(0x20);
-    (void)cpu_.run(20); // sti, mov, hlt — delivery must not cut between STI and mov
+    cpu_.run(20); // sti, mov, hlt — delivery must not cut between STI and mov
 
     EXPECT_EQ(9U, counter()); // handler stamped last, past the shadowed mov
     EXPECT_EQ(ExitStatus::Kind::kHalt, cpu_.exit_status().kind);
