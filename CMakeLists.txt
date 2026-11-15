@@ -38,6 +38,33 @@ option(MICRO_FORGE_EMBEDDED "Freestanding-ish build: no exceptions, no RTTI" OFF
 # second per build.
 # ---------------------------------------------------------------------------
 find_program(MICRO_FORGE_PYTHON3 python3 REQUIRED)
+
+# Machine description: MICRO_FORGE_MACHINE selects machines/<name>.toml.
+# Generated once at configure (so install(DIRECTORY) sees the file) and
+# again at build time (so editing the TOML refreshes it without a
+# reconfigure).
+set(MICRO_FORGE_MACHINE "cinux" CACHE STRING "Machine description in machines/")
+set(MACHINE_CONFIG_OUT "${CMAKE_CURRENT_SOURCE_DIR}/include/micro_forge/generated/machine_config_generated.hpp")
+execute_process(
+    COMMAND "${CMAKE_COMMAND}" -E env
+        "MICRO_FORGE_MACHINE=${MICRO_FORGE_MACHINE}"
+        "MACHINE_CONFIG_OUT=${MACHINE_CONFIG_OUT}"
+        "${MICRO_FORGE_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen/gen_machine_config.py"
+    RESULT_VARIABLE machine_gen_result
+)
+if(NOT machine_gen_result EQUAL 0)
+    message(FATAL_ERROR "machine config generation failed for '${MICRO_FORGE_MACHINE}'")
+endif()
+add_custom_target(
+    machine_config_gen ALL
+    COMMAND
+        "${CMAKE_COMMAND}" -E env
+        "MICRO_FORGE_MACHINE=${MICRO_FORGE_MACHINE}"
+        "MACHINE_CONFIG_OUT=${MACHINE_CONFIG_OUT}"
+        "${MICRO_FORGE_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen/gen_machine_config.py"
+    COMMENT "Regenerating machine config from machines/${MICRO_FORGE_MACHINE}.toml"
+    VERBATIM
+)
 add_custom_target(
     jit_templates_gen ALL
     COMMAND
@@ -50,6 +77,7 @@ add_custom_target(
 
 add_library(micro_forge
     src/machine.cpp
+    src/base/active_machine.cpp
     src/engine.cpp
     src/jit/jit.cpp
     src/jit/jit_translate.cpp
@@ -108,7 +136,7 @@ add_library(micro_forge
 )
 
 # The generated header must exist before the library compiles.
-add_dependencies(micro_forge jit_templates_gen)
+add_dependencies(micro_forge jit_templates_gen machine_config_gen)
 target_include_directories(micro_forge PUBLIC
     "$<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/generated>"
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

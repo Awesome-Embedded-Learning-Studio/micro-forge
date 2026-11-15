@@ -22,6 +22,7 @@
 
 #include "micro_forge/arch/x86_64/cpu.hpp"
 #include "micro_forge/base/machine_config.hpp"
+#include "micro_forge/generated/machine_config_generated.hpp"
 #include "micro_forge/kernel/bus/bus.hpp"
 #include "micro_forge/kernel/bus/port_space.hpp"
 #include "micro_forge/kernel/bus/port_stubs.hpp"
@@ -59,9 +60,10 @@ namespace micro_forge {
 class Machine {
 public:
     /// LFB reservation: 4 MiB, enough for 1024x768x32 plus slack.
-    static constexpr uint64_t kLfbSize = 0x400000;
+    // Both from machines/*.toml via the generated description.
+    static constexpr uint64_t kLfbSize = generated::kLfbSize;
     /// Where the MMIO debug-exit register answers.
-    static constexpr uint64_t kDebugExitBase = 0xFEED0000;
+    static constexpr uint64_t kDebugExitBase = generated::kDebugExitBase;
 
     /**
      * @brief Assembles a bare machine: guest RAM plus the debug-exit

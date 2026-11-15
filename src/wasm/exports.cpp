@@ -70,7 +70,7 @@ static_assert(static_cast<int>(micro_forge::arch::x86_64::ExitStatus::Kind::kFau
 // must stay one number (batch-5 review F3).
 static_assert(micro_forge::Machine::kLfbSize == 0x400000);
 
-// The wasm recipe always defines GUEST_RAM_MB explicitly; the fallback
+// The wasm guest RAM size comes from the machine description; the
 // and the constant live in guest_ram.hpp so instance_table.cpp sees the
 // same number. The recipe's 0x400000 LFB constant and this artifact's
 // layout must stay one number (batch-5 review F3).

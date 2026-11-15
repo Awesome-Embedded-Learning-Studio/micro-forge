@@ -15,10 +15,16 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 # shellcheck disable=SC1091
 source tools/use-emsdk.sh >/dev/null
 
-# Guest RAM: keep 256 MiB. The kernel zeroes physical memory during
-# boot; 256 MiB costs about 2e8 instructions, while 512 MiB doubles the
-# boot budget and pushes the shell prompt past 4e8 (the demo budget).
-GUEST_RAM_MB="${GUEST_RAM_MB:-256}"
+# Guest RAM comes from the machine description's [wasm] section, so the
+# shell recipe and the C++ side cannot disagree. Boot-cost history: the
+# kernel zeroes physical memory, and every doubling roughly doubles the
+# boot budget before the shell prompt appears.
+MACHINE_NAME="${MICRO_FORGE_MACHINE:-cinux}"
+GUEST_RAM_MB="$(python3 -c "
+import pathlib, tomllib
+raw = tomllib.loads(pathlib.Path('machines/${MACHINE_NAME}.toml').read_text())
+print(raw['wasm']['guest_ram_mb'])
+")"
 GUEST_END=$(( GUEST_RAM_MB * 1024 * 1024 + 0x400000 )) # + LFB window
 GLOBAL_BASE=$(( GUEST_END + 0x1000000 ))               # + 16 MiB margin
 INITIAL_MEMORY=$(( GLOBAL_BASE + 0x1000000 ))          # + heap headroom
@@ -54,10 +60,9 @@ EXPORTS="${EXPORTS},_mf_runner_retired,_mf_runner_exit,_mf_runner_miss_lo,_mf_ru
 mkdir -p "$(dirname "${OUT}")"
 # shellcheck disable=SC2086
 em++ -std=c++23 -O3 "${OPT_FLAGS[@]}" -fno-exceptions -fno-rtti \
-    -DGUEST_RAM_MB=${GUEST_RAM_MB} \
     -Iinclude -Iexample -Ibuild/generated -Isrc \
-    src/machine.cpp src/jit/jit.cpp src/jit/jit_translate*.cpp src/wasm/wasm_emit.cpp src/wasm/wasm_block.cpp src/wasm/wasm_block_mem.cpp src/wasm/wasm_block_walk.cpp src/wasm/wasm_block_stack.cpp \
-    example/cinux/cinux_loader.cpp example/cinux/cinux_machine.cpp \
+    src/machine.cpp src/base/active_machine.cpp src/jit/jit.cpp src/jit/jit_translate*.cpp src/wasm/wasm_emit.cpp src/wasm/wasm_block.cpp src/wasm/wasm_block_mem.cpp src/wasm/wasm_block_walk.cpp src/wasm/wasm_block_stack.cpp \
+    example/cinux/cinux_loader.cpp \
     src/kernel/*.cpp src/kernel/*/*.cpp src/arch/x86_64/*.cpp \
     src/wasm/exports.cpp \
     src/wasm/instance_table.cpp \

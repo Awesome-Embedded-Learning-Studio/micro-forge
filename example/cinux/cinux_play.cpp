@@ -27,13 +27,14 @@
 // NOLINTBEGIN
 
 #include "cinux/cinux_loader.hpp"
-#include "cinux/cinux_machine.hpp"
+#include "micro_forge/base/active_machine.hpp"
+#include "micro_forge/generated/machine_config_generated.hpp"
 #include "micro_forge/machine.hpp"
 
 namespace {
 
-constexpr const char* kDefaultKernel = "/home/charliechen/Cinux/build/kernel/kernel.bin";
-constexpr const char* kDefaultDisk = "/home/charliechen/Cinux/build/boot/ext2.img";
+constexpr const char* kDefaultKernel = micro_forge::generated::kLoaderKernelPath;
+constexpr const char* kDefaultDisk = micro_forge::generated::kLoaderDiskPath;
 /// Instruction budget for the boot phase (the shell prompt arrives around
 /// 3.9e8 retired instructions in the release build).
 constexpr unsigned long long kBootBudget = 400000000ULL;
@@ -128,7 +129,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    micro_forge::Machine machine(micro_forge::cinux_machine_config(0x10000000));
+    micro_forge::Machine machine(micro_forge::active_machine_config());
     machine.attach_disk(disk);
     if (!micro_forge::loader::boot_cinux(machine.ram(), machine.cpu(), image).has_value()) {
         std::println(stderr, "boot_cinux refused the image");

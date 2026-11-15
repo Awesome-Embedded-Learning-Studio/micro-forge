@@ -76,3 +76,4 @@ reference/
 # version lives in tools/use-emsdk.sh)
 tools/emsdk/
 scripts/dec/__pycache__/
+include/micro_forge/generated/

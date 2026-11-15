@@ -12,7 +12,7 @@
 #include <vector>
 
 #include "guest_ram.hpp"
-#include "cinux/cinux_machine.hpp"
+#include "micro_forge/base/active_machine.hpp"
 
 // Instance table: one Machine per handle, current() is the one the legacy
 // exports act on. Instance 0 stays the lazily created default so the older
@@ -30,7 +30,7 @@ namespace micro_forge::wasm {
 
 Machine& current() {
     if (g_instances.empty()) {
-        g_instances.push_back(std::make_unique<Machine>(cinux_machine_config(kGuestRam, uintptr_t{0})));
+        g_instances.push_back(std::make_unique<Machine>(active_machine_config(kGuestRam, uintptr_t{0})));
     }
     return *g_instances[g_current];
 }
@@ -38,7 +38,7 @@ Machine& current() {
 uint32_t instance_create(uint32_t ram_size, uint32_t window) {
     const uint64_t ram = ram_size == 0 ? kGuestRam : ram_size;
     auto instance =
-        std::make_unique<Machine>(cinux_machine_config(ram, static_cast<uintptr_t>(window)));
+        std::make_unique<Machine>(active_machine_config(ram, static_cast<uintptr_t>(window)));
     g_instances.push_back(std::move(instance));
     return static_cast<uint32_t>(g_instances.size()); // handle = index + 1
 }
