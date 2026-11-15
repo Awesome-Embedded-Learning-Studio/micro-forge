@@ -14,7 +14,11 @@ import {
   type EngineExports,
 } from './engine';
 
-const BOOT_BUDGET = 400_000_000;
+// Prompt timeline, measured on the cinux machine description (512 MiB
+// wasm instance): boot text ~1.1e8, shell banner ~3.3e8, the "/ #"
+// prompt ~4.5e8 — clearing 512 MiB costs double the native 256 MiB
+// budget, so the native-tuned 4e8 deadline was a false "known issue".
+const BOOT_BUDGET = 800_000_000;
 // Full-speed frame: the O3 wasm engine retires ~30 Mips, and one frame runs
 // 500K instructions (~16 ms) — enough to saturate 60 Hz without starving
 // the UI thread for longer than a frame.
@@ -125,9 +129,10 @@ const pump = (): void => {
     } else {
       stallTurns = 0;
     }
-    if (icount(active) > BOOT_BUDGET && printed === 0 && stallTurns > STALL_TURNS) {
+    if (icount(active) > BOOT_BUDGET && stallTurns > STALL_TURNS) {
       running.value = false;
-      status.value = '内核没有产生串口输出（wasm 下已知问题，见 README）';
+      status.value = `引导超出预算（${(BOOT_BUDGET / 1e6).toFixed(0)}M 条）且串口无新输出：` +
+        '镜像对不上这台机器的预期，或内核卡死了';
       return;
     }
     status.value = `运行中 · ${(icount(active) / 1e6).toFixed(1)}M 条指令`;
@@ -177,7 +182,9 @@ const boot = async (): Promise<void> => {
     await yieldToPaint();
     bootWithPointers(engine.value, kernelPtr, kernel.length, diskPtr, disk.length);
     running.value = true;
-    status.value = `引导中 · ${(icount(engine.value) / 1e6).toFixed(1)}M 条指令`;
+    // The measured prompt arrives around 4.5e8 on the wasm instance; put
+    // the number where the waiting person can see it.
+    status.value = `引导中（提示符约 450M 条后出现）· 0M 条指令`;
     term.value?.focus(); // terminal takes keystrokes from here on
     pump();
   } catch (error) {
