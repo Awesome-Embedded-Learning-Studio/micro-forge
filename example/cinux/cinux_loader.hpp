@@ -60,6 +60,7 @@ enum class BootError : uint8_t {
     kBadHeaderSize,    ///< Header size smaller than the struct.
     kImageOutOfRam,    ///< The image would not fit guest RAM.
     kBootInfoOutOfRam, ///< The BootInfo placement would not fit.
+    kAcpiOutOfRam,     ///< The ACPI table placement would not fit.
 };
 
 /**

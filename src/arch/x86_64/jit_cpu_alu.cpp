@@ -36,11 +36,14 @@ void Cpu::jit_and(uint64_t slot, uint64_t value, unsigned width) {
 }
 
 void Cpu::jit_push_val(uint64_t value) {
+    // A false return is a latched stack fault; the block runner stops at
+    // the next block boundary. The template protocol cannot see a bool,
+    // so the latch is the only propagation channel.
     (void)push_value(value, 8);
 }
 
 void Cpu::jit_push_imm(uint64_t value) {
-    (void)push_value(value, 8);
+    (void)push_value(value, 8); // see jit_push_val
 }
 
 void Cpu::jit_load_xmm(uint64_t vaddr, uint64_t slot) {

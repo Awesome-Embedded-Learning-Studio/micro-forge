@@ -13,6 +13,7 @@
 
 #include <array>
 #include <cstdint>
+#include <cstdlib>
 #include <expected>
 #include <span>
 
@@ -37,12 +38,18 @@ constexpr uint64_t kBootInfoBytes = 4 + 4 + 4 + 4 + (128 * 20) + kFramebufferByt
 
 // Writes go through view(): window mode (the wasm artifact) has no owning
 // storage, and data() there is a null pointer whose stores -O2 may delete.
+// Every target these helpers touch is validated up front in boot_cinux
+// (image extent, boot-info block, fixed low page-table pages), so a
+// copy_in refusal means the layout math above is wrong: abort loudly
+// instead of writing a half-built boot state.
 void put_u32(micro_forge::kernel::RamRegion& ram, uint64_t at, uint32_t value) {
     std::array<uint8_t, 4> bytes{};
     for (unsigned i = 0; i < 4; ++i) {
         bytes[i] = static_cast<uint8_t>(value >> (8U * i));
     }
-    (void)ram.copy_in(at, bytes);
+    if (!ram.copy_in(at, bytes)) {
+        std::abort();
+    }
 }
 
 void put_u64(micro_forge::kernel::RamRegion& ram, uint64_t at, uint64_t value) {
@@ -50,7 +57,9 @@ void put_u64(micro_forge::kernel::RamRegion& ram, uint64_t at, uint64_t value) {
     for (unsigned i = 0; i < 8; ++i) {
         bytes[i] = static_cast<uint8_t>(value >> (8U * i));
     }
-    (void)ram.copy_in(at, bytes);
+    if (!ram.copy_in(at, bytes)) {
+        std::abort();
+    }
 }
 
 void put_page(micro_forge::kernel::RamRegion& ram, uint64_t at, uint64_t value) {
@@ -116,7 +125,9 @@ std::expected<void, BootError> boot_cinux(micro_forge::kernel::RamRegion& ram,
 
     // Place the image at its load address (the file bytes only; the
     // mem_size tail stays zeroed as BSS).
-    (void)ram.copy_in(header.load_paddr, image.subspan(0, header.file_size));
+    if (!ram.copy_in(header.load_paddr, image.subspan(0, header.file_size))) {
+        return std::unexpected(BootError::kImageOutOfRam);
+    }
 
     // ---- Page tables: identity [0, 1 GiB) + high half [0, 1 GiB). ----
     // PML4[0] -> low PDPT -> low PD (2 MiB pages).
@@ -167,7 +178,9 @@ std::expected<void, BootError> boot_cinux(micro_forge::kernel::RamRegion& ram,
     put_field(36, 8);  // green shift
     put_field(40, 8);  // blue size
     put_field(44, 0);  // blue shift
-    (void)ram.copy_in(framebuffer_at, framebuffer);
+    if (!ram.copy_in(framebuffer_at, framebuffer)) {
+        return std::unexpected(BootError::kBootInfoOutOfRam);
+    }
     // Kernel facts.
     put_u64(ram, framebuffer_at + kFramebufferBytes, header.load_paddr);
     put_u64(ram, framebuffer_at + kFramebufferBytes + 8, header.file_size);
@@ -175,7 +188,9 @@ std::expected<void, BootError> boot_cinux(micro_forge::kernel::RamRegion& ram,
     put_u64(ram, framebuffer_at + kFramebufferBytes + 24, header.entry);
 
     // ---- ACPI: the kernel's finder scans the low window (0xE0000). ----
-    (void)micro_forge::kernel::build_acpi_tables(ram, micro_forge::kernel::AcpiLayout{});
+    if (!micro_forge::kernel::build_acpi_tables(ram, micro_forge::kernel::AcpiLayout{})) {
+        return std::unexpected(BootError::kAcpiOutOfRam);
+    }
 
     // ---- CPU handoff state (what LmEntry leaves behind). ----
     cpu.set_control_register(2, kPml4Physical); // CR3

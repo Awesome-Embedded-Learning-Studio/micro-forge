@@ -441,6 +441,8 @@ void Cpu::jit_shift(unsigned slot, uint64_t count, unsigned mn, unsigned width) 
     if ((count & width_util::shift_count_mask(width)) == 0U) {
         return;
     }
+    // alu_shift's bool rejects unsupported mnemonics; the decoder only
+    // hands supported shifts to the JIT, so it cannot fire here.
     (void)alu_shift(static_cast<Mnemonic>(mn), value, width, count);
 }
 
