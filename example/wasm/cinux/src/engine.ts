@@ -12,6 +12,7 @@ export interface EngineExports {
   mf_inject_serial: (byte: number) => void;
   mf_instance_create: (ramSize: number, window: number) => number;
   mf_write_guest: (paddr: number, src: number, len: number) => number;
+  mf_read_guest: (paddr: number, dst: number, len: number) => number;
   mf_wasm_block: (
     ripLo: number,
     ripHi: number,

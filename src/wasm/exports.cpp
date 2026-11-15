@@ -246,6 +246,22 @@ uint32_t mf_write_guest(uint32_t paddr, uint32_t src, uint32_t len) {
     return current().ram().copy_in(paddr, std::span<const std::uint8_t>(bytes, len)) ? 1 : 0;
 }
 
+/// @brief Copies bytes out of guest physical RAM (the mirror of
+///        mf_write_guest; the debugger harness reads state back this way).
+/// @param[in] paddr Source guest-physical address.
+/// @param[out] dst Destination pointer (wasm linear memory).
+/// @param[in] len Byte count.
+/// @return 1 on success, 0 when the range does not fit.
+uint32_t mf_read_guest(uint32_t paddr, uint32_t dst, uint32_t len) {
+    const std::span<const uint8_t> bytes = current().ram().view(paddr, len);
+    if (bytes.size() != len) {
+        return 0;
+    }
+    // NOLINTNEXTLINE(performance-no-int-to-ptr) -- wasm32 offsets are pointers
+    std::memcpy(reinterpret_cast<void*>(static_cast<std::uintptr_t>(dst)), bytes.data(), len);
+    return 1;
+}
+
 /// @brief Compiles the guest block at @p rip into a wasm module.
 ///
 /// Returns a malloc'd module (the caller frees it) and writes its length
