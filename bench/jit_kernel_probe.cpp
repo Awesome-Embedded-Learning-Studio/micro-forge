@@ -13,7 +13,8 @@
 extern "C" void mf_jit_dump_fail_hits();
 extern "C" void mf_jit_dump_template_hits();
 #include <micro_forge/jit/jit_translate.hpp>
-#include <micro_forge/loader/cinux_loader.hpp>
+#include <cinux/cinux_loader.hpp>
+#include <cinux/cinux_machine.hpp>
 #include <micro_forge/machine.hpp>
 
 #include <algorithm>
@@ -94,7 +95,7 @@ int main(int argc, const char* const* argv) {
         profile(image);
         return 0;
     }
-    micro_forge::Machine machine(0x10000000);
+    micro_forge::Machine machine(micro_forge::cinux_machine_config(0x10000000));
     if (argc == 4) {
         auto disk = read_file(argv[3]);
         if (disk.empty()) {

@@ -36,7 +36,7 @@
 #include "micro_forge/wasm/wasm_block_detail.hpp"
 #include "micro_forge/wasm/wasm_emit.hpp"
 #include "micro_forge/kernel/snapshot.hpp"
-#include "micro_forge/loader/cinux_loader.hpp"
+#include "cinux/cinux_loader.hpp"
 #include "micro_forge/machine.hpp"
 #include "micro_forge/version.hpp"
 

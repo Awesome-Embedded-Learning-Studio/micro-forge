@@ -26,7 +26,8 @@
 // POSIX/termios surface rather than the library's tidy profile.
 // NOLINTBEGIN
 
-#include "micro_forge/loader/cinux_loader.hpp"
+#include "cinux/cinux_loader.hpp"
+#include "cinux/cinux_machine.hpp"
 #include "micro_forge/machine.hpp"
 
 namespace {
@@ -129,7 +130,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    micro_forge::Machine machine(0x10000000);
+    micro_forge::Machine machine(micro_forge::cinux_machine_config(0x10000000));
     machine.attach_disk(disk);
     if (!micro_forge::loader::boot_cinux(machine.ram(), machine.cpu(), image).has_value()) {
         std::println(stderr, "boot_cinux refused the image");

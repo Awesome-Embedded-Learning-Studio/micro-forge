@@ -9,7 +9,7 @@
  * stays reserved: IVT/EBDA/BootInfo/stack all live there).
  */
 
-#include "micro_forge/loader/cinux_loader.hpp"
+#include "cinux/cinux_loader.hpp"
 
 #include <array>
 #include <cstdint>

@@ -55,9 +55,10 @@ mkdir -p "$(dirname "${OUT}")"
 # shellcheck disable=SC2086
 em++ -std=c++23 -O3 "${OPT_FLAGS[@]}" -fno-exceptions -fno-rtti \
     -DGUEST_RAM_MB=${GUEST_RAM_MB} \
-    -Iinclude -Ibuild/generated -Isrc \
-    src/machine.cpp src/engine.cpp src/jit/jit.cpp src/jit/jit_translate*.cpp src/wasm/wasm_emit.cpp src/wasm/wasm_block.cpp src/wasm/wasm_block_mem.cpp src/wasm/wasm_block_walk.cpp src/wasm/wasm_block_stack.cpp src/presets/cinux/cinux_machine.cpp src/kernel/*.cpp src/kernel/*/*.cpp src/arch/x86_64/*.cpp \
-    src/loader/*.cpp \
+    -Iinclude -Iexample -Ibuild/generated -Isrc \
+    src/machine.cpp src/jit/jit.cpp src/jit/jit_translate*.cpp src/wasm/wasm_emit.cpp src/wasm/wasm_block.cpp src/wasm/wasm_block_mem.cpp src/wasm/wasm_block_walk.cpp src/wasm/wasm_block_stack.cpp \
+    example/cinux/cinux_loader.cpp example/cinux/cinux_machine.cpp \
+    src/kernel/*.cpp src/kernel/*/*.cpp src/arch/x86_64/*.cpp \
     src/wasm/exports.cpp \
     src/wasm/instance_table.cpp \
     src/wasm/bridge.cpp \

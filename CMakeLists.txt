@@ -49,9 +49,7 @@ add_custom_target(
 )
 
 add_library(micro_forge
-    src/loader/cinux_loader.cpp
     src/machine.cpp
-    src/engine.cpp
     src/jit/jit.cpp
     src/jit/jit_translate.cpp
     src/jit/jit_translate_alu.cpp
@@ -62,7 +60,6 @@ add_library(micro_forge
     src/wasm/wasm_block_mem.cpp
     src/wasm/wasm_block_walk.cpp
     src/wasm/wasm_block_stack.cpp
-    src/presets/cinux/cinux_machine.cpp
     src/kernel/bus/bus.cpp
     src/kernel/device/acpi_tables.cpp
     src/kernel/device/ahci.cpp
@@ -134,9 +131,9 @@ add_subdirectory(bench)
 add_executable(mf-decode-dump tools/dec_dump.cpp)
 target_link_libraries(mf-decode-dump PRIVATE micro_forge)
 
-# Interactive Cinux shell: COM1 wired to the terminal.
-add_executable(mf-cinux-play tools/cinux_play.cpp)
-target_link_libraries(mf-cinux-play PRIVATE micro_forge)
+# Interactive Cinux shell: COM1 wired to the terminal. Lives in
+# example/cinux: the guest-specific glue is example code now.
+add_subdirectory(example)
 
 # --- Install / export: micro_forge as an embeddable library -------------
 # Consumers get the public headers, the static library, and a package

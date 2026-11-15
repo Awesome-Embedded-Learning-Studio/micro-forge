@@ -10,8 +10,6 @@
 #include "micro_forge/kernel/bus/port_space.hpp"
 #include "micro_forge/kernel/memory/region.hpp"
 #include "micro_forge/kernel/snapshot.hpp"
-#include "micro_forge/presets/cinux_machine.hpp"
-
 #include "micro_forge/version.hpp"
 
 #include <cstdint>
@@ -23,7 +21,12 @@
 namespace micro_forge {
 
 Machine::Machine(uint64_t ram_size, std::optional<uintptr_t> window)
-    : Machine(cinux_machine_config(ram_size, window)) {}
+    : Machine([ram_size, window] {
+          MachineConfig config;
+          config.ram_size = ram_size;
+          config.window = window;
+          return config;
+      }()) {}
 
 Machine::Machine(const MachineConfig& config)
     : ram_(config.window.has_value()

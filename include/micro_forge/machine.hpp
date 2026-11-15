@@ -63,8 +63,8 @@ public:
     static constexpr uint64_t kDebugExitBase = 0xFEED0000;
 
     /**
-     * @brief Assembles the machine with @p ram_size bytes of guest RAM
-     *        (the LFB reservation is appended past it).
+     * @brief Assembles a bare machine: guest RAM plus the debug-exit
+     *        register, no devices wired.
      *
      * @param[in] ram_size Guest RAM in bytes (below the LFB window).
      * @param[in] window   Integer base of a non-owning backing of

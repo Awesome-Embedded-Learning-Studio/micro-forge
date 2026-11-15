@@ -12,7 +12,7 @@
 #include <vector>
 
 #include "guest_ram.hpp"
-#include "micro_forge/presets/cinux_machine.hpp"
+#include "cinux/cinux_machine.hpp"
 
 // Instance table: one Machine per handle, current() is the one the legacy
 // exports act on. Instance 0 stays the lazily created default so the older

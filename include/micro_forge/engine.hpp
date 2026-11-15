@@ -38,15 +38,6 @@ public:
     explicit Engine(const MachineConfig& config) : machine_(config) {}
 
     /**
-     * @brief Builds an engine with the Cinux preset layout.
-     *
-     * @param[in] ram_size Usable guest RAM in bytes.
-     * @param[in] window Host window base (wasm); null for owning mode.
-     */
-    explicit Engine(uint64_t ram_size, std::optional<uintptr_t> window = std::nullopt)
-        : machine_(ram_size, window) {}
-
-    /**
      * @brief Copies an image into guest RAM.
      *
      * @param[in] guest_addr Destination guest-physical address.
@@ -56,17 +47,6 @@ public:
     [[nodiscard]] bool load_image(uint64_t guest_addr, std::span<const uint8_t> image) {
         return machine_.load_image(guest_addr, image);
     }
-
-    /**
-     * @brief Boots a Cinux kernel image (boot shim) and attaches no disk.
-     *
-     * For a disk, attach it through `machine()` before calling boot, or
-     * use the wasm ABI's boot entry which takes both blobs.
-     *
-     * @param[in] kernel kernel.bin bytes.
-     * @return True when the shim accepted the image.
-     */
-    [[nodiscard]] bool boot_cinux(std::span<const uint8_t> kernel);
 
     /**
      * @brief Runs up to @p max_instructions instructions.

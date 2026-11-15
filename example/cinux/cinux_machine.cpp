@@ -4,7 +4,7 @@
  * @version 0.1.0
  */
 
-#include "micro_forge/presets/cinux_machine.hpp"
+#include "cinux/cinux_machine.hpp"
 #include "micro_forge/base/machine_config.hpp"
 #include <cstdint>
 #include <optional>

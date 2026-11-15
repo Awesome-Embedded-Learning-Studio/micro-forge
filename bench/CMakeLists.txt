@@ -25,7 +25,7 @@ add_dependencies(mf-bench guest-int-alu_bin guest-mem-mix_bin)
 
 # Keep a non-PIE baseline for comparison with a separately linked PIE probe.
 add_executable(mf-jit-kernel-probe jit_kernel_probe.cpp)
-target_link_libraries(mf-jit-kernel-probe PRIVATE micro_forge)
+target_link_libraries(mf-jit-kernel-probe PRIVATE micro_forge_cinux)
 target_link_options(mf-jit-kernel-probe PRIVATE -no-pie)
 
 add_executable(mf-tpl-coverage tpl_coverage.cpp
