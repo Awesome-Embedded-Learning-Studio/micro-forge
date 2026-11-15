@@ -15,7 +15,7 @@
 #include <vector>
 
 #include "micro_forge/arch/x86_64/decoded.hpp"
-#include "micro_forge/base/wasm_emit.hpp"
+#include "micro_forge/wasm/wasm_emit.hpp"
 
 namespace micro_forge::base::detail {
 

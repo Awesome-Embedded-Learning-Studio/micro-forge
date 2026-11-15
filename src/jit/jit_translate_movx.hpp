@@ -6,7 +6,7 @@
 #define MICRO_FORGE_BASE_JIT_TRANSLATE_MOVX_HPP
 
 #include "micro_forge/arch/x86_64/decoded.hpp"
-#include <micro_forge/base/jit_translate.hpp>
+#include <micro_forge/jit/jit_translate.hpp>
 
 #include <optional>
 

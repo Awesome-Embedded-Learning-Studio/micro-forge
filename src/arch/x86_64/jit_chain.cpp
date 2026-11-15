@@ -20,7 +20,7 @@
 #include <print>
 
 #include "micro_forge/arch/x86_64/cpu.hpp"
-#include "micro_forge/base/jit.hpp"
+#include "micro_forge/jit/jit.hpp"
 
 namespace micro_forge::arch::x86_64 {
 

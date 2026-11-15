@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <gtest/gtest.h>
 
-#include <micro_forge/base/wasm_emit.hpp>
+#include <micro_forge/wasm/wasm_emit.hpp>
 
 #include <array>
 #include <vector>

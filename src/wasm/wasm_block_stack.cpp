@@ -6,9 +6,9 @@
 //! the stack exactly as the interpreter expects to find it.
 
 #include "micro_forge/arch/x86_64/decoded.hpp"
-#include "micro_forge/base/wasm_block.hpp"
-#include "micro_forge/base/wasm_block_detail.hpp"
-#include "micro_forge/base/wasm_block_internal.hpp"
+#include "micro_forge/wasm/wasm_block.hpp"
+#include "micro_forge/wasm/wasm_block_detail.hpp"
+#include "micro_forge/wasm/wasm_block_internal.hpp"
 
 #include <cstdint>
 #include <optional>

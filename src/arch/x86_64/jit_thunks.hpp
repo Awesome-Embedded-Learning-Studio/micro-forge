@@ -12,7 +12,7 @@
 
 #include <cstdint>
 
-#include <micro_forge/base/jit_translate.hpp>
+#include <micro_forge/jit/jit_translate.hpp>
 
 extern "C" std::uint64_t mf_jit_load(void* cpu, std::uint64_t vaddr, unsigned width);
 extern "C" void mf_jit_store(void* cpu, std::uint64_t vaddr, unsigned width, std::uint64_t value);

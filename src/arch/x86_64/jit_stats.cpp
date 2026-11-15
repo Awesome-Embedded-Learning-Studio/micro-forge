@@ -13,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-#include <micro_forge/base/jit_templates_generated.hpp>
+#include <micro_forge/jit/jit_templates_generated.hpp>
 
 namespace {
 

@@ -8,7 +8,7 @@
 
 #include <micro_forge/arch/x86_64/cpu.hpp>
 #include <micro_forge/arch/x86_64/decoder.hpp>
-#include <micro_forge/base/jit_translate.hpp>
+#include <micro_forge/jit/jit_translate.hpp>
 #include <micro_forge/kernel/memory/ram_region.hpp>
 
 #include <algorithm>

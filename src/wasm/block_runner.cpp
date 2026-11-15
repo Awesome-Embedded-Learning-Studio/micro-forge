@@ -15,7 +15,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "micro_forge/base/wasm_block_detail.hpp"
+#include "micro_forge/wasm/wasm_block_detail.hpp"
 
 // Engine C ABI used directly (same module: plain calls, no crossings).
 extern "C" {

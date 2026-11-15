@@ -4,7 +4,7 @@
 
 #include "jit_diff_cases.hpp"
 #include "jit_diff_support.hpp"
-#include <micro_forge/base/jit_templates_generated.hpp>
+#include <micro_forge/jit/jit_templates_generated.hpp>
 
 namespace {
 

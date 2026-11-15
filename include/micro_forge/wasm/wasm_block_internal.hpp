@@ -13,7 +13,7 @@
 #include <vector>
 
 #include "micro_forge/arch/x86_64/decoded.hpp"
-#include "micro_forge/base/wasm_block.hpp"
+#include "micro_forge/wasm/wasm_block.hpp"
 
 namespace micro_forge::base::detail {
 

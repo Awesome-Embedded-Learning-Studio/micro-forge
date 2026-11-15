@@ -6,7 +6,7 @@
 #include <cstring>
 
 // Mirror-cell layout shared with exports.cpp (wasm_block_detail mirror).
-#include "micro_forge/base/wasm_block_detail.hpp"
+#include "micro_forge/wasm/wasm_block_detail.hpp"
 
 extern "C" {
 uint32_t mf_gpr_bridge_base(void);

@@ -12,7 +12,7 @@
 /// @brief Coverage diagnostics exported from the core (env gated).
 extern "C" void mf_jit_dump_fail_hits();
 extern "C" void mf_jit_dump_template_hits();
-#include <micro_forge/base/jit_translate.hpp>
+#include <micro_forge/jit/jit_translate.hpp>
 #include <micro_forge/loader/cinux_loader.hpp>
 #include <micro_forge/machine.hpp>
 

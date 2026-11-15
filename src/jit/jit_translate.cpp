@@ -4,7 +4,7 @@
  * @version 0.1.0
  */
 
-#include "micro_forge/base/jit_translate.hpp"
+#include "micro_forge/jit/jit_translate.hpp"
 
 #include "jit_translate_alu.hpp"
 
@@ -12,8 +12,8 @@
 #include "jit_translate_movx.hpp"
 
 #include "micro_forge/arch/x86_64/decoded.hpp"
-#include "micro_forge/base/jit.hpp"
-#include "micro_forge/base/jit_templates_generated.hpp"
+#include "micro_forge/jit/jit.hpp"
+#include "micro_forge/jit/jit_templates_generated.hpp"
 
 #include <algorithm>
 #include <bit>

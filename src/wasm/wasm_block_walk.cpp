@@ -9,9 +9,9 @@
  * takes one interpreter step through the one true implementation.
  */
 
-#include "micro_forge/base/wasm_block_detail.hpp"
-#include "micro_forge/base/wasm_block_internal.hpp"
-#include "micro_forge/base/wasm_emit.hpp"
+#include "micro_forge/wasm/wasm_block_detail.hpp"
+#include "micro_forge/wasm/wasm_block_internal.hpp"
+#include "micro_forge/wasm/wasm_emit.hpp"
 
 #include <cstdint>
 #include <vector>

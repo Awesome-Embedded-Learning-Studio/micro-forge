@@ -22,7 +22,7 @@
 #include "micro_forge/arch/x86_64/decoded.hpp"
 #include "micro_forge/arch/x86_64/mmu.hpp"
 #include "micro_forge/base/cache.hpp"
-#include "micro_forge/base/jit.hpp"
+#include "micro_forge/jit/jit.hpp"
 #include "micro_forge/kernel/bus/bus.hpp"
 #include "micro_forge/kernel/bus/irq_line.hpp"
 #include "micro_forge/kernel/bus/port_space.hpp"

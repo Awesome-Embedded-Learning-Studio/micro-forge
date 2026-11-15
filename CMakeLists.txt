@@ -42,7 +42,7 @@ add_custom_target(
     jit_templates_gen ALL
     COMMAND
         "${CMAKE_COMMAND}" -E env
-        "JIT_TEMPLATES_OUT=${CMAKE_BINARY_DIR}/generated/micro_forge/base/jit_templates_generated.hpp"
+        "JIT_TEMPLATES_OUT=${CMAKE_BINARY_DIR}/generated/micro_forge/jit/jit_templates_generated.hpp"
         "${MICRO_FORGE_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen/gen_jit_templates.py"
     COMMENT "Regenerating JIT templates from assembly"
     VERBATIM
@@ -52,16 +52,16 @@ add_library(micro_forge
     src/loader/cinux_loader.cpp
     src/machine.cpp
     src/engine.cpp
-    src/base/jit.cpp
-    src/base/jit_translate.cpp
-    src/base/jit_translate_alu.cpp
-    src/base/jit_translate_mov.cpp
-    src/base/jit_translate_movx.cpp
-    src/base/wasm_emit.cpp
-    src/base/wasm_block.cpp
-    src/base/wasm_block_mem.cpp
-    src/base/wasm_block_walk.cpp
-    src/base/wasm_block_stack.cpp
+    src/jit/jit.cpp
+    src/jit/jit_translate.cpp
+    src/jit/jit_translate_alu.cpp
+    src/jit/jit_translate_mov.cpp
+    src/jit/jit_translate_movx.cpp
+    src/wasm/wasm_emit.cpp
+    src/wasm/wasm_block.cpp
+    src/wasm/wasm_block_mem.cpp
+    src/wasm/wasm_block_walk.cpp
+    src/wasm/wasm_block_stack.cpp
     src/presets/cinux/cinux_machine.cpp
     src/kernel/bus/bus.cpp
     src/kernel/device/acpi_tables.cpp

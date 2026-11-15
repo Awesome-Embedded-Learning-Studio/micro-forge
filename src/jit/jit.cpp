@@ -4,7 +4,7 @@
  * @version 0.1.0
  */
 
-#include "micro_forge/base/jit.hpp"
+#include "micro_forge/jit/jit.hpp"
 
 #include <array>
 #include <cstdint>
@@ -70,8 +70,14 @@ JitPage& JitPage::operator=(JitPage&& other) noexcept {
 std::optional<JitPage> JitPage::create() {
     // Keep the existing low-address page allocation policy. Helper calls
     // carry full 64-bit addresses and do not depend on this placement.
-    void* page = mmap(nullptr, kSize, PROT_READ | PROT_WRITE,
-                      MAP_PRIVATE | MAP_ANONYMOUS | MAP_32BIT, -1, 0);
+    // MAP_32BIT only exists on x86_64 Linux; elsewhere the flag is dropped,
+    // which is safe because nothing depends on the placement.
+#ifdef MAP_32BIT
+    constexpr int kMapFlags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_32BIT;
+#else
+    constexpr int kMapFlags = MAP_PRIVATE | MAP_ANONYMOUS;
+#endif
+    void* page = mmap(nullptr, kSize, PROT_READ | PROT_WRITE, kMapFlags, -1, 0);
     if (page == MAP_FAILED) {
         return std::nullopt;
     }

@@ -117,11 +117,11 @@ add_executable(test_engine test_engine.cpp)
 target_link_libraries(test_engine PRIVATE micro_forge GTest::gtest_main)
 gtest_discover_tests(test_engine)
 
-add_executable(test_wasm_block base/test_wasm_block.cpp)
+add_executable(test_wasm_block wasm/test_wasm_block.cpp)
 target_link_libraries(test_wasm_block PRIVATE micro_forge GTest::gtest_main)
 gtest_discover_tests(test_wasm_block)
 
-add_executable(test_wasm_emit base/test_wasm_emit.cpp)
+add_executable(test_wasm_emit wasm/test_wasm_emit.cpp)
 target_link_libraries(test_wasm_emit PRIVATE micro_forge GTest::gtest_main)
 gtest_discover_tests(test_wasm_emit)
 

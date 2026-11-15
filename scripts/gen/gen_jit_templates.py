@@ -27,7 +27,7 @@ SOURCE = ROOT / "src/arch/x86_64/jit_templates.S"
 # Generated artefacts live in the build tree: they are a function of the
 # assembler input, so checking them in would just create a stale copy.
 DEFAULT_OUT = (pathlib.Path(__file__).resolve().parents[2] /
-               "build/generated/micro_forge/base/jit_templates_generated.hpp")
+               "build/generated/micro_forge/jit/jit_templates_generated.hpp")
 # The build system passes its own binary dir, so a second configuration tree
 # (the sanitizer build) writes to its own generated/ and does not collide.
 OUTPUT = pathlib.Path(os.environ.get("JIT_TEMPLATES_OUT", DEFAULT_OUT))
@@ -178,7 +178,7 @@ def render(templates: list[dict]) -> str:
         "#define MICRO_FORGE_BASE_JIT_TEMPLATES_GENERATED_HPP",
         "",
         "#include <array>",
-        "#include <micro_forge/base/jit.hpp>",
+        "#include <micro_forge/jit/jit.hpp>",
         "#include <span>",
         "#include <cstddef>",
         "#include <cstdint>"

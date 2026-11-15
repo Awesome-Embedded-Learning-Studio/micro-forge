@@ -4,7 +4,7 @@
 /// Kept out of jit_cpu.cpp because the one-case-per-helper switch is long
 /// and the compile loop has a file-line budget to respect.
 #include "jit_thunks.hpp"
-#include "micro_forge/base/jit_translate.hpp"
+#include "micro_forge/jit/jit_translate.hpp"
 #include <cstdint>
 
 namespace micro_forge::arch::x86_64 {

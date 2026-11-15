@@ -27,8 +27,8 @@
 #include "jit_thunks.hpp"
 #include "micro_forge/arch/x86_64/decoded.hpp"
 #include "micro_forge/arch/x86_64/decoder.hpp"
-#include "micro_forge/base/jit.hpp"
-#include "micro_forge/base/jit_translate.hpp"
+#include "micro_forge/jit/jit.hpp"
+#include "micro_forge/jit/jit_translate.hpp"
 
 namespace micro_forge::arch::x86_64 {
 

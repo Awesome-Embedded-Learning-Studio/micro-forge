@@ -4,7 +4,7 @@
  * @version 0.1.0
  */
 
-#include "micro_forge/base/wasm_emit.hpp"
+#include "micro_forge/wasm/wasm_emit.hpp"
 
 #include <cstddef>
 #include <cstdint>

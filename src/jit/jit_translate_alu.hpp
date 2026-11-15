@@ -8,7 +8,7 @@
 
 #include "micro_forge/arch/x86_64/decoded.hpp"
 #include <cstddef>
-#include <micro_forge/base/jit_translate.hpp>
+#include <micro_forge/jit/jit_translate.hpp>
 
 #include <cstdint>
 #include <optional>
