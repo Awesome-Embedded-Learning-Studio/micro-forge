@@ -233,22 +233,8 @@ ExitStatus Cpu::execute_sse(const DecodedInsn& insn, uint64_t rip_after) {
             count = 16U;
         }
         const bool left = insn.mnemonic == Mnemonic::kPslldq;
-        const auto shift_bytes = [&](unsigned byte) -> uint8_t {
-            if (left) {
-                const unsigned from = byte + static_cast<unsigned>(count);
-                return from < 16U ? sse_ops::byte_at(dst, from) : 0;
-            }
-            const unsigned from = (byte >= count) ? static_cast<unsigned>(byte - count) : 0U;
-            return byte >= count ? sse_ops::byte_at(dst, from) : 0;
-        };
-        Vec128 out{};
-        for (unsigned byte = 0; byte < 16U; ++byte) {
-            sse_ops::put_byte(out, byte,
-                              left ? sse_ops::byte_at(dst, byte >= count ? 0U : byte) : 0);
-        }
-        (void)shift_bytes;
         // Recompute cleanly: dst shifted, zero fill.
-        out = Vec128{};
+        Vec128 out{};
         for (unsigned byte = 0; byte < 16U; ++byte) {
             if (left) {
                 const unsigned src = (byte >= count) ? static_cast<unsigned>(byte - count) : 16U;
@@ -297,22 +283,8 @@ ExitStatus Cpu::execute_sse(const DecodedInsn& insn, uint64_t rip_after) {
                 count = 16U;
             }
             const bool left = insn.mnemonic == Mnemonic::kPslldq;
-            const auto shift_bytes = [&](unsigned byte) -> uint8_t {
-                if (left) {
-                    const unsigned from = byte + static_cast<unsigned>(count);
-                    return from < 16U ? sse_ops::byte_at(dst, from) : 0;
-                }
-                const unsigned from = (byte >= count) ? static_cast<unsigned>(byte - count) : 0U;
-                return byte >= count ? sse_ops::byte_at(dst, from) : 0;
-            };
-            Vec128 out{};
-            for (unsigned byte = 0; byte < 16U; ++byte) {
-                sse_ops::put_byte(out, byte,
-                                  left ? sse_ops::byte_at(dst, byte >= count ? 0U : byte) : 0);
-            }
-            (void)shift_bytes;
             // Recompute cleanly: dst shifted, zero fill.
-            out = Vec128{};
+            Vec128 out{};
             for (unsigned byte = 0; byte < 16U; ++byte) {
                 if (left) {
                     const unsigned src =
