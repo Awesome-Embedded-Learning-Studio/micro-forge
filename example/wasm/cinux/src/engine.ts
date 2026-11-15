@@ -44,11 +44,31 @@ const REACTOR_IMPORTS: WebAssembly.Imports = {
       },
 };
 
+/**
+ * Normalizes wasm i32 results to unsigned: pointers past the 2 GiB mark
+ * (heap growth under a large disk upload) arrive sign-extended and would
+ * otherwise surface as negative offsets in TypedArray constructors.
+ */
+function normalizeExports(raw: Record<string, unknown>): EngineExports {
+  const e: Record<string, unknown> = { memory: raw.memory };
+  for (const [name, value] of Object.entries(raw)) {
+    if (typeof value !== 'function') {
+      continue;
+    }
+    const fn = value as (...args: unknown[]) => unknown;
+    e[name] = (...args: unknown[]) => {
+      const r = fn(...args);
+      return typeof r === 'number' && r < 0 ? r >>> 0 : r;
+    };
+  }
+  return e as unknown as EngineExports;
+}
+
 /** Loads the standalone engine and runs the reactor constructors. */
 export async function loadEngine(options: EngineLoadOptions = {}): Promise<EngineExports> {
   if (options.bytes) {
     const { instance } = await WebAssembly.instantiate(options.bytes, REACTOR_IMPORTS);
-    const exports = instance.exports as unknown as EngineExports;
+    const exports = normalizeExports(instance.exports as unknown as Record<string, unknown>);
     exports._initialize();
     return exports;
   }
@@ -82,8 +102,8 @@ export async function loadEngine(options: EngineLoadOptions = {}): Promise<Engin
     bytes = await response.arrayBuffer();
   }
   const { instance } = await WebAssembly.instantiate(bytes, REACTOR_IMPORTS);
-  const exports = instance.exports as unknown as EngineExports;
   // Reactor contract: static constructors (the Machine singleton) run here.
+  const exports = normalizeExports(instance.exports as unknown as Record<string, unknown>);
   exports._initialize();
   return exports;
 }

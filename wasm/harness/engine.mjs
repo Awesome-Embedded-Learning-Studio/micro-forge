@@ -25,13 +25,6 @@ export async function loadEngine(path) {
   const wasm = readFileSync(path);
   const { instance } = await WebAssembly.instantiate(wasm, {
     env: { emscripten_notify_memory_growth: () => {} },
-    wasi_snapshot_preview1: {
-      fd_close: () => 0,
-      fd_write: () => 0,
-      fd_seek: () => 0,
-      environ_sizes_get: () => 0,
-      environ_get: () => 0,
-    },
     // Minimal WASI stubs: the reactor runtime declares them; the engine
     // never performs console IO through them ("success", no side effects).
     wasi_snapshot_preview1: {
@@ -42,7 +35,21 @@ export async function loadEngine(path) {
       environ_get: () => 0,
     },
   });
-  const e = instance.exports;
+  // wasm i32 results arrive sign-extended, but every value this ABI
+  // returns is semantically unsigned (pointers past the 2 GiB mark when
+  // the heap grows, counters, bitfields). Normalize at the boundary so
+  // callers never see a negative pointer.
+  const raw = instance.exports;
+  const e = { memory: raw.memory };
+  for (const [name, value] of Object.entries(raw)) {
+    if (typeof value !== "function") {
+      continue;
+    }
+    e[name] = (...args) => {
+      const r = value(...args);
+      return typeof r === "number" && r < 0 ? r >>> 0 : r;
+    };
+  }
   // Reactor contract: global constructors run on _initialize, which the
   // embedder invokes once after instantiation (before any export call).
   if (typeof e._initialize === "function") e._initialize();

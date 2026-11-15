@@ -44,7 +44,19 @@
     fd_close: () => 0, fd_seek: () => 0, fd_write: () => 0,
   },
 });
-      const e = instance.exports;
+      // wasm i32 results arrive sign-extended; this ABI is unsigned
+      // throughout (sync with wasm/harness/engine.mjs normalizeExports).
+      const rawExports = instance.exports;
+      const e = { memory: rawExports.memory };
+      for (const [name, value] of Object.entries(rawExports)) {
+        if (typeof value !== "function") {
+          continue;
+        }
+        e[name] = (...args) => {
+          const r = value(...args);
+          return typeof r === "number" && r < 0 ? r >>> 0 : r;
+        };
+      }
 // Reactor contract: global constructors run on _initialize, which the
 // embedder invokes once after instantiation (before any export call).
 if (typeof e._initialize === "function") e._initialize();
