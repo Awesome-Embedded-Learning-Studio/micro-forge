@@ -335,7 +335,6 @@ std::string to_text(const DecodedInsn& insn, uint64_t rip) {
     }
 
     std::string_view const base = mnemonic_name(insn.mnemonic);
-    char buf[12];
     if (insn.mnemonic == Mnemonic::kIretq) {
         s += insn.rex_present ? "iretq" : "iret";
         return s;
@@ -386,7 +385,6 @@ std::string to_text(const DecodedInsn& insn, uint64_t rip) {
         s += base;
         break;
     }
-    (void)buf;
 
     // Branch-with-immediate prints the absolute target.
     const bool branch = (insn.mnemonic == Mnemonic::kJmp || insn.mnemonic == Mnemonic::kJcc ||

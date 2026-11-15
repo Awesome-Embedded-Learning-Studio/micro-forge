@@ -506,7 +506,6 @@ extern const std::array<Ent, 256> kEsc38;
 /// CET group (F3 0F 1E): FA/FB endbr, mod=3 /1 rdsspq, else unsupported.
 [[nodiscard]] inline bool remap_cet(uint8_t modrm_byte, uint8_t reg_field, bool mod_reg,
                                     Mnemonic& mnemonic, Slot& slot_a) {
-    (void)modrm_byte;
     if (mod_reg && reg_field == 1) {
         mnemonic = Mnemonic::kRdsspq;
         slot_a = Slot::kRm;

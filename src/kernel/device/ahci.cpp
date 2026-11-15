@@ -162,7 +162,6 @@ void Ahci::run(const Command& command) {
         // The HBA reports the first PRDT entry's length in the command
         // header's PRDTL field on completion (AHCI 1.3 4.2.1).
         const auto written = bus_.write_u32(command.header_physical + 4U, command.data_bytes);
-        ;
         (void)written;
         port_interrupt_ |= kPortInterruptDi;
         put_le32(window() + static_cast<uint64_t>(kPortBase) + kPortInterruptStatus,
