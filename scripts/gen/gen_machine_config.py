@@ -61,7 +61,7 @@ def emit(dev: dict) -> str:
         "#include <cstddef>",
         "#include <cstdint>",
         "",
-        '#include "micro_forge/base/machine_config.hpp"',
+        '#include "micro_forge/machines/x86_pc_config.hpp"',
         "",
         "namespace micro_forge::generated {",
         "",
@@ -73,19 +73,21 @@ def emit(dev: dict) -> str:
         f"inline constexpr std::uint64_t kDebugExitBase = {dev['debug_exit_base']}ULL;",  # already hex
         "",
         "/// Port-space windows, verbatim from the description.",
-        f"inline constexpr std::array<PortWindow, {len(dev['ports'])}> kPortWindows{{{{",
+        f"inline constexpr std::array<machines::X86PcPortWindow, {len(dev['ports'])}> kPortWindows = {{",
     ]
     for p in dev["ports"]:
-        out.append(f"    {{{hex(p['base'])}ULL, {p['size']}, "
-                   f"MachineDevice::{DEVICES[p['device']]}}},")
-    out.append("}};")
+        out.append(f"    machines::X86PcPortWindow{{.base = {hex(p['base'])}ULL, "
+                   f".size = {p['size']}, "
+                   f".device = machines::X86PcDevice::{DEVICES[p['device']]}}},")
+    out.append("};")
     out.append("")
     out.append("/// Memory-mapped windows, verbatim from the description.")
-    out.append(f"inline constexpr std::array<MemoryWindow, {len(dev['windows'])}> kMemoryWindows{{{{")
+    out.append(f"inline constexpr std::array<machines::X86PcMemoryWindow, {len(dev['windows'])}> kMemoryWindows = {{")
     for w in dev["windows"]:
         d = DEVICES[w["device"]]
-        out.append(f"    {{{hex(w['base'])}ULL, {w['size']}, MachineDevice::{d}}},")
-    out.append("}};")
+        out.append(f"    machines::X86PcMemoryWindow{{.base = {hex(w['base'])}ULL, "
+                   f".size = {w['size']}, .device = machines::X86PcDevice::{d}}},")
+    out.append("};")
     out.append("")
     a = dev["ahci"]
     out += [

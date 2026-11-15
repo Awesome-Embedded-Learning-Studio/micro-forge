@@ -8,8 +8,8 @@
 #include <micro_forge/arch/x86_64/cpu.hpp>
 #include <micro_forge/arch/x86_64/decoded.hpp>
 #include <micro_forge/kernel/bus/bus.hpp>
-#include <micro_forge/kernel/bus/port_space.hpp>
-#include <micro_forge/kernel/debug_exit.hpp>
+#include <micro_forge/arch/x86_64/port_space.hpp>
+#include <micro_forge/device/pc/debug_exit.hpp>
 #include <micro_forge/kernel/memory/ram_region.hpp>
 #include <micro_forge/kernel/scheduler.hpp>
 
@@ -23,7 +23,7 @@ using micro_forge::arch::x86_64::FaultId;
 using micro_forge::arch::x86_64::Mnemonic;
 using micro_forge::arch::x86_64::Reg;
 using micro_forge::kernel::Bus;
-using micro_forge::kernel::DebugExitRegion;
+using micro_forge::device::pc::DebugExitRegion;
 using micro_forge::kernel::RamRegion;
 using micro_forge::kernel::Scheduler;
 
@@ -57,6 +57,6 @@ protected:
     Bus bus_;
     RamRegion ram_{0x1000000};
     Scheduler scheduler_;
-    micro_forge::kernel::PortSpace ports_;
+    micro_forge::arch::x86_64::PortSpace ports_;
     Cpu cpu_{bus_, scheduler_, &ports_};
 };

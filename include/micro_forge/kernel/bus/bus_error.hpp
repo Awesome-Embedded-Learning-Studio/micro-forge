@@ -25,6 +25,9 @@ struct BusError {
         kOutOfBounds,    ///< Access crosses the owning region's boundary.
         kOverlap,        ///< map(): range overlaps an existing mapping.
         kInvalidMapping, ///< map(): zero size or address wrap-around.
+        kReadOnly,       ///< Guest write to read-only storage or register.
+        kUnaligned,      ///< Device rejects the access alignment or width.
+        kDeviceFault,    ///< Mapped device rejects a register or operation.
     };
     Kind kind;
     /// Faulting guest address; for map() errors, the offending mapping base.

@@ -1,89 +1,40 @@
 /**
  * @file engine.hpp
- * @brief The embedding facade: one machine, load, run, observe, snapshot.
+ * @brief Compatibility facade for callers using the original x86 Engine API.
  * @version 0.1.0
  *
- * Machine is the assembly and the low-level surface; Engine is the
- * stable entry point an embedder programs against. It owns one machine,
- * forwards the common operations, and keeps the raw Machine reachable
- * (machine()) for advanced use. Nothing here changes engine behavior.
+ * BasicEngine owns the common implementation. This facade keeps the original
+ * config constructor and native x86 run result for existing source callers.
+ * New code can use BasicEngine<machines::X86PcMachine> for portable stop reasons.
  */
 
 #pragma once
 
 #include <cstdint>
-#include <expected>
-#include <optional>
-#include <span>
-#include <vector>
+#include <utility>
 
-#include "micro_forge/arch/x86_64/cpu.hpp"
 #include "micro_forge/base/machine_config.hpp"
-#include "micro_forge/kernel/snapshot.hpp"
+#include "micro_forge/basic_engine.hpp"
 #include "micro_forge/machine.hpp"
 
 namespace micro_forge {
 
-/**
- * @brief One engine instance: a configured machine plus the usual verbs.
- *
- * Thread-safety: an Engine is single-threaded, like the machine inside.
- */
-class Engine {
+/** @brief Historical x86 facade with source-compatible construction and run. */
+class Engine : public BasicEngine<machines::X86PcMachine> {
 public:
     /**
-     * @brief Builds an engine from a layout description.
-     *
-     * @param[in] config The machine layout (RAM, windows, devices).
+     * @brief Constructs a PC using the original configuration entry point.
+     * @param[in] config The PC memory and device layout.
      */
-    explicit Engine(const MachineConfig& config) : machine_(config) {}
+    explicit Engine(const MachineConfig& config) : BasicEngine(std::in_place, config) {}
 
     /**
-     * @brief Copies an image into guest RAM.
-     *
-     * @param[in] guest_addr Destination guest-physical address.
-     * @param[in] image The bytes to place.
-     * @return False when the image does not fit.
+     * @brief Runs the PC and preserves the original x86 result type.
+     * @param[in] max_instructions Instruction budget for this call.
+     * @return Native x86 stop information, unchanged from the old Engine API.
      */
-    [[nodiscard]] bool load_image(uint64_t guest_addr, std::span<const uint8_t> image);
-
-    /**
-     * @brief Runs up to @p max_instructions instructions.
-     *
-     * @param[in] max_instructions Budget for this call.
-     * @return The latched status (kRunning when the budget ran out).
-     */
+    // NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method) -- legacy result type.
     arch::x86_64::ExitStatus run(uint64_t max_instructions);
-
-    /// @brief Serial console bytes (device sink).
-    [[nodiscard]] std::span<const char> console() const { return machine_.console(); }
-
-    /**
-     * @brief Queues one byte on the COM1 receiver.
-     *
-     * @param[in] byte The byte as typed.
-     */
-    void inject_serial(uint8_t byte) { machine_.inject_serial(byte); }
-
-    /// @brief Full machine snapshot blob.
-    [[nodiscard]] std::vector<uint8_t> snapshot() const { return machine_.snapshot(); }
-
-    /**
-     * @brief Restores from a snapshot blob.
-     *
-     * @param[in] blob Bytes produced by snapshot().
-     * @return Success, or the refusal reason.
-     */
-    [[nodiscard]] std::expected<void, kernel::SnapshotError> restore(
-        std::span<const uint8_t> blob);
-
-    /// @brief The underlying machine (advanced use: devices, CPU, bus).
-    [[nodiscard]] Machine& machine() { return machine_; }
-    /// @brief The underlying machine, const overload.
-    [[nodiscard]] const Machine& machine() const { return machine_; }
-
-private:
-    Machine machine_;
 };
 
 } // namespace micro_forge

@@ -57,6 +57,7 @@ if(EMSCRIPTEN)
     # suite do not cross-compile meaningfully; native configure builds them.
     add_subdirectory(wasm)
 else()
+    enable_testing()
     add_subdirectory(tests)
     add_subdirectory(tools)
 
@@ -71,7 +72,7 @@ endif()
 # target_link_libraries(<app> PRIVATE micro_forge::micro_forge).
 if(NOT EMSCRIPTEN)
 include(GNUInstallDirs)
-install(TARGETS micro_forge
+install(TARGETS micro_forge micro_forge_kernel micro_forge_device_base micro_forge_stm32
     EXPORT micro_forgeTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}

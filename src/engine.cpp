@@ -6,18 +6,14 @@
 
 #include "micro_forge/engine.hpp"
 
+#include <cstdint>
+
+#include "micro_forge/arch/x86_64/cpu.hpp"
+
 namespace micro_forge {
 
-bool Engine::load_image(uint64_t guest_addr, std::span<const uint8_t> image) {
-    return machine_.load_image(guest_addr, image);
-}
-
 arch::x86_64::ExitStatus Engine::run(uint64_t max_instructions) {
-    return machine_.run(max_instructions);
-}
-
-std::expected<void, kernel::SnapshotError> Engine::restore(std::span<const uint8_t> blob) {
-    return machine_.restore(blob);
+    return machine().run(max_instructions);
 }
 
 } // namespace micro_forge
