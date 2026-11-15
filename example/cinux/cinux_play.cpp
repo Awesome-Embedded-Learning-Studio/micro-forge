@@ -46,7 +46,21 @@ std::vector<uint8_t> read_file(const char* path) {
     if (!input) {
         return {};
     }
-    return {(std::istreambuf_iterator<char>(input)), {}};
+    // Chunked read: istreambuf_iterator pulls one byte at a time, which
+    // costs minutes on the 192 MiB disk image. A seek-to-end plus one
+    // bulk read is a few hundred milliseconds.
+    input.seekg(0, std::ios::end);
+    const auto end = input.tellg();
+    if (end < 0) {
+        return {};
+    }
+    std::vector<uint8_t> out(static_cast<std::size_t>(end));
+    input.seekg(0, std::ios::beg);
+    input.read(reinterpret_cast<char*>(out.data()), static_cast<std::streamsize>(out.size()));
+    if (input.gcount() != static_cast<std::streamsize>(out.size())) {
+        return {};
+    }
+    return out;
 }
 
 /// SIGINT-free terminal reader: saves and restores termios.
