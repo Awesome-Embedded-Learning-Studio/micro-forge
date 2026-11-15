@@ -7,6 +7,7 @@
 # Build:            cmake --build build-wasm
 #
 # Usage (no wrapper script):
+#   source tools/use-emsdk.sh          # puts emcmake/em++ on PATH
 #   emcmake cmake -S . -B build-wasm
 #   cmake --build build-wasm
 #

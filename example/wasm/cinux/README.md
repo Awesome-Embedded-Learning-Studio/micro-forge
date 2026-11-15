@@ -8,6 +8,7 @@
 
    ```bash
    source tools/use-emsdk.sh
+   source tools/use-emsdk.sh
    emcmake cmake -S . -B build-wasm
    cmake --build build-wasm
    cp build-wasm/engine.wasm example/wasm/cinux/public/engine.wasm
