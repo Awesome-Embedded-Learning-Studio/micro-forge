@@ -560,8 +560,35 @@ ExitStatus Cpu::execute(const DecodedInsn& insn, uint64_t rip_after) {
         df_ = true;
         break;
     case Mnemonic::kHlt:
-        latch(ExitStatus{.kind = ExitStatus::Kind::kHalt, .code = 0, .rip = insn_rip_});
         retire(1);
+        if (!if_) {
+            // Interrupts masked: nothing modeled can wake the core, so
+            // the legacy terminal halt is exact.
+            latch(ExitStatus{.kind = ExitStatus::Kind::kHalt, .code = 0, .rip = insn_rip_});
+            return exit_;
+        }
+        // IF=1 (SDM HLT): park until the next unmasked interrupt. Step
+        // virtual time deadline by deadline so device events (the PIT
+        // tick) can raise the wake, and resume when one surfaces.
+        // Cinux's newer kernels idle exactly this way (the boot task
+        // parks and the scheduler drives init through timer ticks), and
+        // treating the park as terminal cut their boot short.
+        for (unsigned wakes = 0; wakes < 10000U; ++wakes) {
+            if (interrupt_pending_ || (irq_line_ != nullptr && irq_line_->pending())) {
+                return exit_; // wake is on the wire; execution resumes after the hlt
+            }
+            const auto next = scheduler_.next_deadline();
+            if (!next.has_value() || *next <= icount_) {
+                // Nothing will ever surface: a true idle stop.
+                latch(ExitStatus{.kind = ExitStatus::Kind::kHalt, .code = 0, .rip = insn_rip_});
+                return exit_;
+            }
+            icount_ = *next;
+            retire_poll();
+        }
+        // A masked-but-periodic wake source could live-lock this loop;
+        // fall back to the terminal halt instead of spinning forever.
+        latch(ExitStatus{.kind = ExitStatus::Kind::kHalt, .code = 0, .rip = insn_rip_});
         return exit_;
     default:
         return unsupported(insn);

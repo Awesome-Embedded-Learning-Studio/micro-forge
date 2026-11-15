@@ -104,8 +104,13 @@ device = "io_apic"
 
 # Guest images the example tools boot by default (paths are host-side
 # tooling, not part of the emulated layout).
+# Verified pair (headless run, prompt at ~4.7e8 instructions): the
+# CinuxOS kernel (Nov 11, mounts this ext2 in 4.7e7 — ten times faster
+# than the older kernel) over the 192 MiB ext2 volume. The CinuxOS
+# build's own boot/cinux.img is NOT ext2 at LBA 0 — its kernel refuses
+# to mount it and parks.
 [loader]
-kernel = "/home/charliechen/Cinux/build/kernel/kernel.bin"
+kernel = "/home/charliechen/CinuxOS/build/kernel/kernel.bin"
 disk = "/home/charliechen/Cinux/build/boot/ext2.img"
 
 # The wasm artifact sizes its linear memory differently from the native

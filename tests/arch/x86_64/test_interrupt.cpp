@@ -189,4 +189,27 @@ TEST_F(InterruptTest, StiShadowDelaysDeliveryPastTheNextInstruction) {
     EXPECT_EQ(ExitStatus::Kind::kHalt, cpu_.exit_status().kind);
 }
 
+TEST_F(InterruptTest, HltWithInterruptsEnabledParksUntilWake) {
+    // Main: sti; hlt; inc dword [0x4000] (load() appends the trailing hlt).
+    // A scheduler event raises vector 0x20 mid-park: the parked hlt must
+    // wake and resume at the instruction after it instead of latching a
+    // terminal halt (the newer Cinux kernels idle this way by design).
+    load({
+        0xFB,                                     // sti
+        0xF4,                                     // hlt -- parks, IF=1
+        0xFF, 0x04, 0x25, 0x00, 0x40, 0x00, 0x00, // inc dword [0x4000]
+    });
+    write_counter(0);
+    scheduler_.schedule(5, [this] { cpu_.request_interrupt(0x20); });
+
+    cpu_.run(100);
+
+    EXPECT_EQ(2U, counter()); // the handler's inc plus the post-hlt inc
+    EXPECT_TRUE(cpu_.interrupts_enabled());
+    // The wake ran out of wake sources: the program's trailing hlt parks
+    // with nothing left scheduled, ending in the idle halt.
+    EXPECT_EQ(ExitStatus::Kind::kHalt, cpu_.exit_status().kind);
+    EXPECT_GT(cpu_.icount(), 5U); // virtual time actually advanced past the park
+}
+
 } // namespace
