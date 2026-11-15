@@ -9,6 +9,15 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Default to Release (-O3): an emulator is pure compute, an unoptimized
+# build is ~an order of magnitude slower and only worth building on
+# purpose for source-level debugging. Pass
+# -DCMAKE_BUILD_TYPE=RelWithDebInfo (-O2 -g) for profiling, matching the
+# bench/baseline.txt methodology; pass Debug explicitly when debugging.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
 add_compile_options(-Wall -Wextra -Werror)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
