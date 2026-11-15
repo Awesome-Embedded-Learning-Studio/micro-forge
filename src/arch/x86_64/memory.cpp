@@ -5,7 +5,10 @@
  */
 
 #include "micro_forge/arch/x86_64/cpu.hpp"
+#include "micro_forge/kernel/bus/bus_error.hpp"
 #include "micro_forge/kernel/le_access.hpp"
+#include <cstdint>
+#include <expected>
 
 namespace micro_forge::arch::x86_64 {
 

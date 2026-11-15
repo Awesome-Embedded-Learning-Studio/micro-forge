@@ -3,6 +3,7 @@ build*/
 out/
 
 CLAUDE.md
+HANDOFF.md
 # .claude/agents/ is published (auditor prompts carry no machine-local
 # data); the rest of .claude/ stays out.
 .claude/*
@@ -74,3 +75,6 @@ reference/
 # Emscripten toolchain clone (browsable, never committed; the pinned
 # version lives in tools/use-emsdk.sh)
 tools/emsdk/
+scripts/dec/__pycache__/
+include/micro_forge/generated/
+build-wasm/

@@ -7,23 +7,25 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "micro_forge/arch/x86_64/cached_insn.hpp"
+#include "micro_forge/arch/x86_64/decoded.hpp"
 #include "micro_forge/arch/x86_64/mmu.hpp"
 #include "micro_forge/base/cache.hpp"
-#include "micro_forge/base/jit.hpp"
-#include "micro_forge/base/jit_translate.hpp"
-#include "micro_forge/kernel/bit.hpp"
-#include "micro_forge/kernel/bus.hpp"
-#include "micro_forge/kernel/irq_line.hpp"
-#include "micro_forge/kernel/port_space.hpp"
+#include "micro_forge/jit/jit.hpp"
+#include "micro_forge/kernel/bus/bus.hpp"
+#include "micro_forge/kernel/bus/irq_line.hpp"
+#include "micro_forge/kernel/bus/port_space.hpp"
 #include "micro_forge/kernel/scheduler.hpp"
 #include "micro_forge/kernel/snapshot.hpp"
 
@@ -53,8 +55,7 @@ struct ExitStatus {
     uint64_t code = 0;
     /// RIP of the instruction that stopped the run.
     uint64_t rip = 0;
-    /// Mnemonic ordinal or syscall number (kUnsupported), decode kind
-    /// (kDecodeError), or FaultId.
+    /// Mnemonic ordinal, syscall number, decode kind, or FaultId.
     uint64_t detail = 0;
 };
 
@@ -64,6 +65,7 @@ enum class FaultId : uint8_t {
     kMemory = 2, ///< Memory access failed on the bus; code = address.
     kFetch = 3,  ///< Instruction fetch failed; code = address.
     kMsr = 4,    ///< MSR outside the whitelist (#GP); code = the index.
+    kUd = 5,     ///< Undefined instruction (#UD, ud2); code = rip.
 };
 
 /**
@@ -87,21 +89,15 @@ enum class FaultId : uint8_t {
  *   write on RAM equals its unlocked form. Locked MMIO semantics arrive
  *   with the device batches.
  */
-// The state object is large by design (snapshots, boot handoff); a few
-// padding bytes between subsystems are irrelevant next to the caches it
-// already misses on. Suppress the opt-in padding analyzer.
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 class Cpu {
 public:
-    /**
-     * @brief Binds the CPU to its bus and scheduler.
-     *
-     * @param[in] bus Guest memory bus (fetch and data both).
-     * @param[in] scheduler icount event queue dispatched on retire.
-     */
-    Cpu(kernel::Bus& bus, kernel::Scheduler& scheduler, kernel::PortSpace* ports = nullptr)
-        : bus_(bus), scheduler_(scheduler), ports_(ports) {}
-
+    void note_store(uint64_t paddr); ///< Guest store -> decode-cache invalidator.
+    void switch_address_space();     ///< CR3 write/remap: drops cached decodes.
+    [[nodiscard]] uint64_t code_epoch() const noexcept { return code_epoch_; }
+    [[nodiscard]] std::uint32_t tlb_epoch() const noexcept { return tlb_epoch_; }
+    /// @brief Binds the CPU to its guest bus and icount queue.
+    Cpu(kernel::Bus& bus, kernel::Scheduler& scheduler, kernel::PortSpace* ports = nullptr);
     /**
      * @brief Resets architectural state and loads an entry point.
      *
@@ -127,10 +123,6 @@ public:
      * @param[in] decode_capacity Decode-cache entries (0 = disabled).
      */
     void configure_caches(uint64_t ram_size, std::size_t decode_capacity = 512);
-
-    /// @brief Decode-cache capacity configured for this CPU.
-    [[nodiscard]] std::size_t decode_cache_capacity() const { return decode_cache_.capacity(); }
-    /// @brief Decode-cache hit/miss counters.
     [[nodiscard]] auto decode_cache_stats() const { return decode_cache_.stats(); }
 
     /**
@@ -148,7 +140,7 @@ public:
      *
      * @param[in] trace Called once per retired instruction with its RIP.
      */
-    void set_trace(std::function<void(uint64_t rip)> trace) { trace_ = std::move(trace); }
+    void set_trace(std::function<void(uint64_t rip)> trace);
 
     /**
      * @brief Attaches an interrupt line with its receiving hook.
@@ -164,77 +156,132 @@ public:
      * @param[in] on_pending Called once per observation while the line
      *            is high; may be null (observe via irq_pending() only).
      */
-    void attach_irq(kernel::IrqLine& line, std::function<void()> on_pending = nullptr) {
-        irq_line_ = &line;
-        irq_hook_ = std::move(on_pending);
-    }
-
-    /// @brief Whether the attached line (if any) is high.
+    void attach_irq(kernel::IrqLine& line, std::function<void()> on_pending = nullptr);
+    /// @brief Whether the attached IRQ line is high.
     [[nodiscard]] bool irq_pending() const { return irq_line_ != nullptr && irq_line_->pending(); }
-
-    /// @brief Queues one interrupt vector for delivery (batch 6c).
-    ///
-    /// The vector is delivered at the next retire boundary when IF is
-    /// set and the machine is running: the IDT gate is looked up, the
-    /// five-qword interrupt frame is pushed (SS, RSP, RFLAGS, CS, RIP
-    /// in 64-bit mode), IF is cleared for interrupt gates, and RIP jumps
-    /// to the handler. A missing IDT (base 0) drops the request.
-    ///
-    /// @param[in] vector IDT vector to deliver (0..255).
-    void request_interrupt(uint8_t vector) {
-        pending_vector_ = vector;
-        interrupt_pending_ = true;
-    }
+    /// @brief Queue one interrupt vector for the next retire boundary.
+    void request_interrupt(uint8_t vector);
     /// @brief Whether an interrupt request is queued.
     [[nodiscard]] bool interrupt_queued() const { return interrupt_pending_; }
 
-    // --- state access (tests, and snapshots from batch 4) ---
-
-    /// @brief Reads one GPR (full 64 bits).
-    [[nodiscard]] uint64_t gpr(Reg reg) const { return regs_[index_of(reg)]; }
+    [[nodiscard]] uint64_t gpr(Reg reg) const { return regs_[index_of(reg)]; } ///< one GPR
+    [[nodiscard]] uint32_t flags_code() const; ///< six flags, packed
+    /// @brief Restores six flags from the flags_code() layout.
+    void set_flags_code(uint32_t code);
+    [[nodiscard]] uint64_t event_budget() const; ///< instructions to next event
+    /// @brief Accounts n instructions and polls events.
+    void retire(unsigned n);
+    /// @brief Accounts n instructions only; retire_poll runs the events.
+    void retire_deferred(unsigned n);
+    /// @brief Scheduler dispatch and interrupt delivery after a deferred run.
+    void retire_poll();
     /// Probe-only: byte image of the faulting instruction and its length.
-    [[nodiscard]] std::span<const uint8_t> last_fault_bytes() const {
-        return {last_fault_bytes_.data(), last_fault_bytes_.size()};
-    }
+    [[nodiscard]] std::span<const uint8_t> last_fault_bytes() const;
     /// Probe-only: execution length of the faulting instruction.
     [[nodiscard]] unsigned last_fault_length() const { return last_fault_length_; }
     /// @brief Writes one full GPR.
     void set_gpr(Reg reg, uint64_t value) { regs_[index_of(reg)] = value; }
-    /// @brief Current rip.
-    [[nodiscard]] uint64_t rip() const { return rip_; }
+    [[nodiscard]] uint64_t rip() const { return rip_; } ///< current rip
     /// @brief Sets rip (jump before run).
     void set_rip(uint64_t value) { rip_ = value; }
     /// @brief Translates an instruction fetch.
-    /// @param[in] vaddr Guest virtual address.
-    /// @return The physical address (0 when it faults).
+    /// @return Physical address, or 0 on failure.
     uint64_t fetch_paddr(uint64_t vaddr);
 
     /// @brief JIT load helper.
-    /// @param[in] vaddr Guest virtual address.
-    /// @param[in] width Access width in bytes.
-    /// @return Loaded value, or 0 when translation fails.
+    /// @return Width bytes at vaddr, or 0 on failure.
     uint64_t jit_load(uint64_t vaddr, unsigned width);
-    /// @brief JIT helper: GPR[slot] += imm, sum with ADD flags.
-    /// @param[in] slot Register slot offset (reg * 8).
-    /// @param[in] imm Immediate value.
+    /// @brief JIT ADD: slot is reg*8; imm32 sign-extended; width 4 or 8.
     /// @return Updated register value.
-    uint64_t jit_add(uint64_t slot, uint64_t imm);
-    /// @brief JIT helper: store @p width bytes at @p vaddr.
+    uint64_t jit_add(uint64_t slot, uint64_t imm, unsigned width);
+    /// @brief JIT CMP: compare GPR[slot/8] with value using width 4 or 8.
+    void jit_cmp(uint64_t slot, uint64_t value, unsigned width);
+    /// @brief JIT TEST: update flags from GPR[slot/8] & value.
+    void jit_test(uint64_t slot, uint64_t value, unsigned width);
+    /// @brief JIT SUB: subtract value from GPR[slot/8], updating flags.
+    void jit_sub(uint64_t slot, uint64_t value, unsigned width);
+    /// @brief JIT AND: mask GPR[slot/8] with value, updating flags.
+    void jit_and(uint64_t slot, uint64_t value, unsigned width);
+    /// @brief CMOV: merge src_val into the slot when cc holds (highs kept).
+    void jit_cmov(uint64_t slot, uint64_t src_val, unsigned cc, unsigned width);
+
+    /// @brief SETCC: write 1/0 into the slot's low byte (cc 0-15).
+    void jit_setcc(uint64_t slot, unsigned cc);
+
+    /// @brief PUSH: store @p value (reg or imm, 64-bit) at rsp-8.
+    void jit_push_val(uint64_t value);
+    /// @brief PUSH imm: template entry for the immediate form.
+    void jit_push_imm(uint64_t value);
+    /// @brief POP reg64: load [rsp] into the slot, then raise rsp.
+    void jit_pop_reg(uint64_t slot);
+    /// @brief movups-family: memory <-> xmm_[slot/16], 16 bytes.
+    void jit_load_xmm(uint64_t vaddr, uint64_t slot);
+    /// @brief movups-family: xmm_[slot/16] -> memory, 16 bytes.
+    void jit_store_xmm(uint64_t vaddr, uint64_t slot);
+    /// @brief ret helper: pop the target; sp pre-pop, my_rip for retry.
+    void jit_ret(uint64_t sp, uint64_t my_rip);
+    /// @brief leave helper: rsp=rbp, then pop rbp (faults latch).
+    void jit_leave();
+    /// @brief call helper: push ret addr, jump; my_rip for fault retry.
+    void jit_call(uint64_t target, uint64_t my_rip, uint64_t ret_addr);
+    /// @brief jmp helper: records @p target as the block exit.
+    void jit_jmp(uint64_t target);
+    /// @brief jcc helper: picks @p taken or @p fall by condition(@p cc).
+    void jit_jcc(uint64_t taken, uint64_t fall, Cc cc);
+    /// @brief movzx/narrow mov into a slot; zx=1 zero-extends, else keeps highs.
+    void jit_mov_slot_w(uint64_t value, unsigned width, unsigned dst, unsigned zx);
+    /// @brief shift: alu_shift on the slot; count 0 keeps flags.
+    void jit_shift(unsigned slot, uint64_t count, unsigned mn, unsigned width);
+    /// @brief one-operand grp3 via execute_grp3 (rebuilt shape).
+    void jit_grp3(uint64_t divisor, unsigned width, unsigned mn);
+    /// @brief three-operand imul via execute_imul23 (rebuilt shape).
+    void jit_imul23(unsigned dst, unsigned src, uint64_t imm, unsigned width);
+    /// @brief cmov reg,[mem]: read always, write only when cc holds.
+    void jit_cmov_mem(uint64_t vaddr, unsigned cc, unsigned slot, unsigned width);
+    /// @brief ALU [mem],imm: load, combine, store (faulted load stops).
+    void jit_alu_mem_imm(uint64_t vaddr, uint64_t imm, unsigned mn, unsigned width);
+    /// @brief imul dst,[mem]: load the multiplier, then execute_imul23.
+    void jit_imul_mem(uint64_t vaddr, unsigned dst, unsigned width);
+    /// @brief in/out (port in dx) and cli/sti through the executors.
+    void jit_ports(unsigned mn, unsigned width);
+    /// @brief test/cmp [mem+index],src: flags only.
+    void jit_alu_mem_idx(uint64_t vaddr, uint64_t src, unsigned mn, unsigned width);
+    /// @brief lgdt/lidt/fxsave: rebuild the mem operand from a vaddr.
+    void jit_sys_mem(uint64_t vaddr, unsigned width, unsigned mn);
+    /// @brief one-operand grp3, divisor read from memory.
+    void jit_grp3_mem(uint64_t vaddr, unsigned width, unsigned mn);
+    /// @brief movsx: sign-extend src_width bytes into the dst width.
+    void jit_movsx(uint64_t value, unsigned src_width, unsigned dst, unsigned dst_width);
+    /// @brief neg: complement and add one; flags follow alu_sub(0, value).
+    void jit_neg(unsigned slot, unsigned unused, unsigned width);
+    /// @brief bts/btr/btc: CF = bit, then set/clear/toggle.
+    void jit_bit_op(unsigned slot, unsigned index, unsigned width, unsigned op);
+    /// @brief reg,reg ALU: alu_add/sub/logic with the interpreter's flags.
+    void jit_alu_reg(unsigned slot, unsigned src, unsigned mn, unsigned width);
+    /// @brief ALU reg,[mem]: load, combine, write; a fault skips the write.
+    void jit_alu_mem(unsigned slot, uint64_t vaddr, unsigned mn, unsigned width);
+    /// @brief pxor: xor two 16-byte xmm slots, store the result in the first.
+    void jit_pxor(unsigned dst, unsigned src);
+    /// @brief JIT OR: combine GPR[slot/8] with value, updating flags.
+    void jit_or(uint64_t slot, uint64_t value, unsigned width);
+    /// @brief JIT XOR: xor GPR[slot/8] with value, updating flags.
+    void jit_xor(uint64_t slot, uint64_t value, unsigned width);
+    /// @brief JIT IMUL: GPR[slot/8] = low(product); CF=OF on truncation.
+    void jit_imul(uint64_t slot, uint64_t value, unsigned width);
+    /// @brief JIT CMP memory: compare GPR[slot/8] with width bytes at vaddr.
+    void jit_cmp_mem(uint64_t vaddr, uint64_t slot, unsigned width);
+    /// @brief JIT store: write width bytes at vaddr.
     void jit_store(uint64_t vaddr, unsigned width, uint64_t value);
-    /// @brief JIT helper: qword [vaddr] += value, updating ADD flags.
+    /// @brief JIT memory ADD: qword [vaddr] += value, updating flags.
     void jit_add_mem(uint64_t vaddr, uint64_t value);
     /// @brief Restricts JIT compilation to [lo, hi); zero means no filter.
-    void set_code_range(uint64_t lo, uint64_t hi) {
-        code_lo_ = lo;
-        code_hi_ = hi;
-    }
+    void set_code_range(uint64_t lo, uint64_t hi);
     /// @brief Turns block compilation on without the env variable.
     void set_jit_enabled(bool enabled) { jit_requested_ = enabled; }
     /// @brief JIT counters: coverage meter plus block/failed-rip counts.
     [[nodiscard]] std::uint64_t jit_insn_count() const { return jit_insn_count_; }
     [[nodiscard]] std::size_t jit_block_count() const { return jit_blocks_.size(); }
     [[nodiscard]] std::size_t jit_failed_count() const { return jit_failed_.size(); }
-
     /// @brief Retired-instruction count (virtual time).
     [[nodiscard]] kernel::Tick icount() const { return icount_; }
     /// @brief Bytes collected by the write syscall, in order.
@@ -243,9 +290,7 @@ public:
     [[nodiscard]] std::vector<char>& console_sink() { return console_; }
     /// @brief Latched exit status (kRunning while a run may continue).
     [[nodiscard]] const ExitStatus& exit_status() const { return exit_; }
-
-    /// @brief rflags image composed from the stored flags (reserved bit
-    ///        1 set, IF from the interrupt-enable state).
+    /// @brief rflags image (reserved bit 1 set, IF from if_).
     [[nodiscard]] uint64_t rflags() const;
     /// @brief Decomposes an rflags image into the stored flags.
     void set_rflags(uint64_t value);
@@ -253,29 +298,26 @@ public:
     [[nodiscard]] bool interrupts_enabled() const { return if_; }
     /// @brief Current privilege level (0 = kernel, 3 = user).
     [[nodiscard]] unsigned cpl() const { return cpl_; }
-    /// @brief Reads one control register by enumeration offset
-    ///        (0=CR0, 1=CR2, 2=CR3, 3=CR4).
+    /// @brief Test hook: set CPL directly (SYSCALL/SYSRET tests).
+    void set_cpl(unsigned level) { cpl_ = level & 3U; }
+    /// @brief Reads one control register (0=CR0, 1=CR2, 2=CR3, 3=CR4).
     [[nodiscard]] uint64_t control_register(unsigned index) const { return cr_[index]; }
     /// @brief Writes one control register by enumeration offset.
     void set_control_register(unsigned index, uint64_t value) { cr_[index] = value; }
     /// @brief Enables paging (boot shim) or returns to pass-through.
     void set_paging(bool enabled) { mmu_.set_paging(enabled); }
-    /// @brief Flushes the translation cache (CR3 write).
-    void flush_tlb() { mmu_.flush(); }
-    /// @brief Drops one translation (INVLPG).
-    void invalidate_page(uint64_t vaddr) { mmu_.invalidate(vaddr); }
+    /// @brief CR3 write: drop translations.
+    void flush_tlb();
+    /// @brief Drops one translation (INVLPG); same-page decodes die too.
+    void invalidate_page(uint64_t vaddr);
     /// @brief CR2 of the last page fault.
     [[nodiscard]] uint64_t page_fault_address() const { return cr2_; }
     /// @brief #PF error code of the last page fault.
     [[nodiscard]] uint64_t page_fault_error() const { return pf_error_; }
-    /// @brief Reads one model-specific register from the whitelist.
+    /// @brief Reads one whitelisted MSR.
     [[nodiscard]] std::optional<uint64_t> read_msr(uint32_t index) const;
-    /// @brief Writes one model-specific register.
-    ///
-    /// @param[in] index MSR index; must be whitelisted.
-    /// @param[in] value Full 64-bit value (EDX:EAX packed by the caller).
-    /// @return false when the index is not whitelisted (the executor
-    ///         reports a #GP-style fault).
+    /// @brief Writes one whitelisted MSR.
+    /// @return false when the index is not whitelisted.
     bool write_msr(uint32_t index, uint64_t value);
     /// @brief One CPUID answer.
     struct CpuidAnswer {
@@ -300,10 +342,7 @@ public:
         xmm_[static_cast<unsigned>(reg) - 16U] = value;
     }
     /// @brief Sets the GDTR image (the boot shim installs its own).
-    void set_gdtr(uint64_t base, uint16_t limit) {
-        gdtr_base_ = base;
-        gdtr_limit_ = limit;
-    }
+    void set_gdtr(uint64_t base, uint16_t limit);
     /// @brief GS base (swapgs swaps this with the kernel base).
     [[nodiscard]] uint64_t gs_base() const { return gs_base_; }
     /// @brief GS base setter (MSR 0xC0000101 writes land here).
@@ -345,15 +384,13 @@ public:
     /// @brief Direction flag (clear = string ops walk forward).
     [[nodiscard]] bool df() const { return df_; }
 
-    // --- execution ---
-
     /**
      * @brief Fetches, decodes, and executes the instruction at rip.
      *
      * @return The latched status: kRunning when the budget continues,
      *         otherwise the terminal reason.
      */
-    [[nodiscard]] ExitStatus step();
+    ExitStatus step();
 
     /**
      * @brief Runs up to @p max_instructions retired instructions.
@@ -365,22 +402,17 @@ public:
      * @param[in] max_instructions Instruction budget for this call.
      * @return The latched status, same contract as step().
      */
-    [[nodiscard]] ExitStatus run(uint64_t max_instructions);
+    ExitStatus run(uint64_t max_instructions);
 
 private:
-    // --- helpers, defined across cpu.cpp and execute.cpp ---
-
     /// Applies the FS/GS segment base for a memory operand's EA.
     [[nodiscard]] uint64_t segment_address(const DecodedInsn& insn, uint64_t ea) const;
-    /// Retires @p n icount units: clock advance, scheduler dispatch, irq
-    /// observation, trace.
-    void retire(unsigned n);
+    /// Retires @p n icount units: clock advance, scheduler dispatch, irq observation, trace.
     /// Fills fetch_buf_ from rip_; false on bus failure (kFetch fault).
     bool fetch(unsigned& got);
     /// Latches an unsupported-mnemonic stop for the instruction at rip_.
     ExitStatus unsupported(const DecodedInsn& insn);
-    /// Effective address of a memory operand; @p rip_after resolves
-    /// rip-relative forms.
+    /// Effective address of a memory operand; @p rip_after resolves rip-relative forms.
     [[nodiscard]] uint64_t effective_address(const Operand& op, uint64_t rip_after) const;
     /// Reads an operand at its width; false latches a fault.
     bool read_operand(const DecodedInsn& insn, const Operand& op, uint64_t rip_after,
@@ -396,24 +428,8 @@ private:
     /// GPR write at sub-register width (32-bit writes zero-extend).
     void write_gpr(Reg reg, unsigned width, bool rex, uint64_t value);
     /// Evaluates a condition code against the flags.
-    [[nodiscard]] bool condition(Cc cc) const;
-    /// Sign bit mask helper for @p width bytes.
-    [[nodiscard]] static uint64_t sign_bit(unsigned width) {
-        return kernel::bit::mask_bit((8U * width) - 1U);
-    }
-    /// Full width mask for @p width bytes.
-    [[nodiscard]] static uint64_t width_mask(unsigned width) {
-        return kernel::bit::ones(8U * width);
-    }
-    /// x86 shift-count mask: 6 bits at 64-bit operands, else 5 bits.
-    [[nodiscard]] static uint64_t shift_count_mask(unsigned width) {
-        return width == 8U ? 0x3FULL : 0x1FULL;
-    }
-    /// Sign-extends @p value from @p width bytes to 64 bits.
-    [[nodiscard]] static uint64_t sign_extend(uint64_t value, unsigned width) {
-        return kernel::bit::sign_extend(value, 8U * width);
-    }
-    /// Parity of the low byte (x86 PF: 1 when an even number of set bits).
+    [[nodiscard]] bool
+    condition(Cc cc) const; /// Parity of the low byte (x86 PF: 1 when an even number of set bits).
     [[nodiscard]] static bool parity_of(uint64_t value);
     /// Sets zf/sf/pf from @p result at @p width.
     void set_zsp(uint64_t result, unsigned width);
@@ -461,6 +477,8 @@ private:
     ExitStatus execute_cached(const CachedInsn& cached, uint64_t rip_after);
     /// SSE/SSE2 subset execution (sse.cpp).
     ExitStatus execute_sse(const DecodedInsn& insn, uint64_t rip_after);
+    /// New-kernel SSE face via execute_sse default (sse_ext.cpp).
+    ExitStatus execute_sse_ext(const DecodedInsn& insn, uint64_t rip_after);
     /// Whether the mnemonic belongs to the SSE executor (sse.cpp).
     [[nodiscard]] static bool is_sse_mnemonic(Mnemonic mnemonic);
     /// Pushes @p value at @p width (default 8); false latches a fault.
@@ -470,8 +488,6 @@ private:
     /// Latches @p status if terminal and reports whether to stop.
     bool latch(ExitStatus status);
 
-    // --- state ---
-
     kernel::Bus& bus_;
     kernel::Scheduler& scheduler_;
     kernel::PortSpace* ports_;
@@ -479,122 +495,84 @@ private:
     std::array<uint64_t, 16> regs_{};
     uint64_t rip_ = 0;
     // Scalar flags; composed into rflags when snapshots need it (batch 4).
-    bool cf_ = false;
-    bool pf_ = false;
-    bool af_ = false;
-    bool zf_ = false;
-    bool sf_ = false;
-    bool of_ = false;
-    bool df_ = false;
-    bool if_ = false;
-    /// Control registers by enumeration offset (0=CR0, 1=CR2, 2=CR3,
-    /// 3=CR4); values are stored for batch 6a, paging arrives with the MMU.
+    bool cf_ = false, pf_ = false, af_ = false;
+    bool zf_ = false, sf_ = false, of_ = false, df_ = false, if_ = false, ac_ = false;
+    /// Control registers by offset (0=CR0, 1=CR2, 2=CR3, 3=CR4); batch 6a.
     std::array<uint64_t, 4> cr_{};
     /// Debug registers DR0-3/6/7 (indexed by register number).
     std::array<uint64_t, 8> dr_{};
     /// GDTR/IDTR base and limit (system instructions store them here).
-    uint64_t gdtr_base_ = 0;
-    uint16_t gdtr_limit_ = 0;
-    uint64_t idtr_base_ = 0;
-    uint16_t idtr_limit_ = 0;
+    uint64_t gdtr_base_ = 0, idtr_base_ = 0;
+    uint16_t gdtr_limit_ = 0, idtr_limit_ = 0;
     /// MSR space: only whitelisted indices live here (Cinux boot set).
     std::unordered_map<uint32_t, uint64_t> msr_;
-    /// Current privilege level (0 kernel, 3 user); set by sysretq/iretq
-    /// and syscall (batch 6d).
+    /// Current privilege level (0 kernel, 3 user); set by sysretq/iretq and syscall (batch 6d).
     unsigned cpl_ = 0;
-    /// Set when a #PF was injected instead of latching a fault, so the
-    /// access helpers know not to latch.
-    bool exception_injected_ = false;
-    /// Recursion depth of #PF injection (a fault inside the injection
-    /// frame is not delivered again; it latches as a terminal fault).
-    unsigned exception_depth_ = 0;
-    /// Cached IA32_EFER: the hot translate path reads it per access, and
-    /// an unordered_map lookup there dominated the perf profile.
+    bool exception_injected_ = false; // #PF injected instead of latching
+    unsigned exception_depth_ = 0;    // injection recursion; terminal latch
+    /// Cached IA32_EFER: a map lookup here dominated the profile.
     uint64_t efer_value_ = 0;
     static constexpr std::size_t kDecodeCacheCapacity = 1024; ///< 512 sets of two entries.
     using DecodeCache =
         base::SetAssocCache<uint64_t, CachedInsn, kDecodeCacheCapacity, 2, DecodeHash>;
     /// Decode cache (vaddr -> instruction); rebuilt by configure_caches().
     DecodeCache decode_cache_;
-    /// Bitmap of executed physical pages, sized by configure_caches().
-    /// Stores to marked pages invalidate the decode cache.
+    /// Executed-page bitmap; stores to marked pages invalidate decode.
     std::vector<uint64_t> code_page_bits_;
-    /// Marks @p paddr's page as an executed-from page.
+    uint64_t code_epoch_ = 0;     ///< bumped on decode flush; extern caches sync
+    std::uint32_t tlb_epoch_ = 1; ///< bumped on CR3 writes and INVLPG; block TLB follows
     void mark_code_page(uint64_t paddr);
-
-    /// Compiled block: executable page, entry and guest coverage.
     struct JitBlock {
         /// Blocks share 4 KiB pages (~1.3 KiB each); the shared_ptr keeps
         /// a page alive while any of its blocks lives in the table.
         std::shared_ptr<base::JitPage> page;
-        std::size_t entry = 0;   ///< Block entry offset inside the page.
-        uint64_t length = 0;     ///< Guest bytes covered by the block.
-        unsigned insn_count = 0; ///< Guest instructions covered.
+        std::size_t entry = 0;                    ///< Block entry offset inside the page.
+        uint64_t length = 0;                      ///< Guest bytes covered by the block.
+        unsigned insn_count = 0;                  ///< Guest instructions covered.
+        std::optional<std::size_t> patch_at;      ///< Page offset of the exit stub
+        uint64_t const_target = 0, guard_rip = 0; ///< exit / guard rip (jcc)
+        bool linked = false, self_accounting = false, sets_next = false;
     };
-    /// Compiles the block at @p rip (nullopt when nothing lowered).
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     std::optional<JitBlock> compile_block(uint64_t rip);
-
-    void maybe_compile_block(uint64_t rip); // first-visit compile (env gated)
-    [[nodiscard]] bool run_jit_block();     // true when a block ran
-
+    void maybe_compile_block(uint64_t rip);             // first-visit compile
+    [[nodiscard]] bool run_jit_block();                 // true when a block ran
     std::unordered_map<uint64_t, JitBlock> jit_blocks_; // compiled by rip
     std::shared_ptr<base::JitPage> jit_page_;           // page being filled
     std::unordered_set<uint64_t> jit_failed_;           // rips that do not lower
     std::uint64_t jit_insn_count_ = 0;                  // coverage meter
-    std::uint64_t code_lo_ = 0;                         // JIT range, 0 = no filter
-    std::uint64_t code_hi_ = 0;
-    bool jit_requested_ = false; // config switch (env bypasses)
-    /// Invalidates the decode cache when @p paddr lands on a code page.
-    void note_store(uint64_t paddr);
+    std::uint64_t code_lo_ = 0, code_hi_ = 0;           // JIT range
+    bool jit_requested_ = false;                        // config (env MICRO_FORGE_JIT bypasses)
     std::array<uint8_t, 16> last_fault_bytes_{};
     unsigned last_fault_length_ = 0;
-    /// Reads TSS.RSP0 for the current task: ltr's selector indexes the
-    /// GDT, the descriptor gives the TSS base, offset 4 holds RSP0.
-    [[nodiscard]] uint64_t kernel_stack_top();
-    /// Raises #PF (vector 14) with its error code, or returns false when
-    /// there is no IDT to deliver into (then the caller latches).
-    bool raise_page_fault(uint64_t error);
-    /// Queued interrupt delivery (batch 6c).
-    uint8_t pending_vector_ = 0;
-    bool interrupt_pending_ = false;
-    /// Delivers the queued vector if IF is set and the machine runs.
-    void deliver_interrupt();
-    /// CR2 and the last #PF error code (read by the interrupt path).
-    uint64_t cr2_ = 0;
-    uint64_t pf_error_ = 0;
-    /// Software MMU (pass-through until the boot shim enables paging).
-    Mmu mmu_{bus_};
-    /// SSE2 register file: 16 XMM registers, two 64-bit halves each.
-    std::array<std::array<uint64_t, 2>, 16> xmm_{};
-    /// MXCSR control/status word (FXSAVE carries it across switches).
-    uint32_t mxcsr_ = 0x1F80U;
-    /// Deterministic RNG state (rdrand derives from the seed derivation
-    /// of batch 8; a fixed splitmix64 seed until then).
-    uint64_t rng_state_ = 0x9E3779B97F4A7C15ULL;
-    /// Task/ldt selectors (0F 00 group; no descriptor semantics in v0).
-    uint16_t tss_selector_ = 0;
-    uint16_t ldt_selector_ = 0;
-    /// Segment bases (FS/GS models; addressing arrives with the MMU).
-    uint64_t fs_base_ = 0;
-    uint64_t gs_base_ = 0;
-    uint64_t kernel_gs_base_ = 0;
-    kernel::Tick icount_ = 0;
-    std::vector<char> console_;
-    std::function<void(uint64_t rip)> trace_;
-    /// Attached interrupt line (wiring, not state: snapshots carry the
-    /// line level in the device section, the pointer is re-attached).
-    kernel::IrqLine* irq_line_ = nullptr;
-    /// Receiving hook fired while the line is high (batch-6: injection).
-    std::function<void()> irq_hook_;
-    /// RIP of the instruction being executed (diagnostics and traces).
-    uint64_t insn_rip_ = 0;
-    /// Length in bytes of the instruction being executed.
-    uint8_t cur_length_ = 0;
+    [[nodiscard]] uint64_t kernel_stack_top();            ///< TSS.RSP0 via the GDT (ltr).
+    bool raise_page_fault(uint64_t error);                // #PF vector 14; false if no IDT
+    uint8_t pending_vector_ = 0;                          // queued interrupt delivery (batch 6c)
+    bool interrupt_pending_ = false, sti_shadow_ = false; // STI blocks delivery
+    void deliver_interrupt();                             // queued vector; needs IF && running
+    uint64_t cr2_ = 0, pf_error_ = 0;                     // #PF address + error code
+    Mmu mmu_{bus_};                                       // software MMU; pass-through until paging
+    std::array<std::array<uint64_t, 2>, 16> xmm_{};       // SSE2: 16 XMM regs
+    uint32_t mxcsr_ = 0x1F80U;                            // MXCSR (FXSAVE carries it)
+    uint64_t rng_state_ = 0x9E3779B97F4A7C15ULL;          // splitmix64 seed
+    uint16_t tss_selector_ = 0, ldt_selector_ = 0;        // 0F 00 group
+    uint64_t fs_base_ = 0, gs_base_ = 0, kernel_gs_base_ = 0; // FS/GS bases
+    kernel::Tick icount_ = 0;                                 // virtual time
+    std::vector<char> console_;                               // serial bytes (diagnostics)
+    std::function<void(uint64_t)> trace_;                     // instruction trace hook
+    kernel::IrqLine* irq_line_ = nullptr;                     // wiring; snapshots re-attach
+    std::function<void()> irq_hook_;                          // fired while the line is high
+    uint64_t insn_rip_ = 0;                                   // executing rip (traces)
+    uint8_t cur_length_ = 0;                                  // executing instruction length
+    uint64_t jit_next_rip_ = 0;                       // block exit target (ret/call/jmp/jcc)
+    bool jit_next_set_ = false, jit_suspend_ = false; // suspend: fault retry
+    uint64_t jit_chain_[4] = {64, 0, UINT64_MAX, 0};  // budget, insns, due, next
+    uint64_t jit_run_end_ = UINT64_MAX;               // run() loop budget guard
+    std::optional<std::size_t> append_link_tail(base::JitPage& page, uint64_t target,
+                                                uint64_t guard, unsigned cnt);
+    bool append_plain_tail(base::JitPage& page, unsigned cnt); ///< 19B tail
+    void try_link(JitBlock& blk); ///< links a block's exit to its target
     ExitStatus exit_{};
-    std::array<uint8_t, 16> fetch_buf_{};
-
-    /// GPR array index of a register enum.
+    std::array<uint8_t, 16> fetch_buf_{}; // GPR array index of a register enum:
     [[nodiscard]] static unsigned index_of(Reg reg) { return static_cast<unsigned>(reg) & 0xFU; }
 };
 

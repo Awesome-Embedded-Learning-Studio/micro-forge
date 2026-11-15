@@ -6,15 +6,38 @@
 
 #include "micro_forge/arch/x86_64/cpu.hpp"
 
-#include <cstdlib>
-
+#include "micro_forge/arch/x86_64/cached_insn.hpp"
+#include "micro_forge/arch/x86_64/decoded.hpp"
 #include "micro_forge/arch/x86_64/decoder.hpp"
+#include "micro_forge/kernel/bit.hpp"
+#include "micro_forge/kernel/bus/bus.hpp"
+#include "micro_forge/kernel/bus/port_space.hpp"
+#include "micro_forge/kernel/scheduler.hpp"
+#include "micro_forge/kernel/snapshot.hpp"
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <expected>
+#include <functional>
 #include <limits>
 #include <span>
+#include <utility>
+#include <vector>
 
 namespace micro_forge::arch::x86_64 {
+
+Cpu::Cpu(kernel::Bus& bus, kernel::Scheduler& scheduler, kernel::PortSpace* ports)
+    : bus_(bus), scheduler_(scheduler), ports_(ports) {}
+
+void Cpu::set_trace(std::function<void(uint64_t rip)> trace) {
+    trace_ = std::move(trace);
+}
+
+void Cpu::request_interrupt(uint8_t vector) {
+    pending_vector_ = vector;
+    interrupt_pending_ = true;
+}
 
 void Cpu::reset(uint64_t rip, uint64_t rsp) {
     regs_.fill(0);
@@ -29,7 +52,9 @@ void Cpu::reset(uint64_t rip, uint64_t rsp) {
     of_ = false;
     df_ = false;
     if_ = false;
+    ac_ = false;
     // Long-mode entry state the boot shim hands over: paging and
+    // protection enabled, no EFER bits, empty tables.
     // protection enabled, no EFER bits, empty tables.
     cr_.fill(0);
     cr_[0] = 0x80000001ULL; // PE | PG
@@ -78,51 +103,76 @@ void Cpu::save(kernel::SnapshotWriter& writer) const {
         flags |= kernel::bit::mask_bit(6);
     }
     writer.u8(static_cast<uint8_t>(flags));
+    uint8_t flags2 = 0;
+    if (if_) {
+        flags2 |= kernel::bit::mask_bit(0);
+    }
+    if (ac_) {
+        flags2 |= kernel::bit::mask_bit(1);
+    }
+    writer.u8(flags2);
     writer.u64(icount_);
     writer.bytes({reinterpret_cast<const uint8_t*>(console_.data()), console_.size()});
 }
 bool Cpu::restore(kernel::SnapshotReader& reader) {
-    bool ok = true;
-    rip_ = reader.u64(ok);
-    for (uint64_t& r : regs_) {
-        r = reader.u64(ok);
+    const auto rip = reader.u64();
+    if (!rip) {
+        return false;
     }
-    const uint64_t flags = reader.u8(ok);
-    cf_ = kernel::bit::extract(flags, {
+    rip_ = *rip;
+    for (uint64_t& r : regs_) {
+        const auto v = reader.u64();
+        if (!v) {
+            return false;
+        }
+        r = *v;
+    }
+    const auto flags = reader.u8();
+    const auto flags2 = reader.u8();
+    if (!flags || !flags2) {
+        return false;
+    }
+    if_ = (*flags2 & kernel::bit::mask_bit(0)) != 0;
+    ac_ = (*flags2 & kernel::bit::mask_bit(1)) != 0;
+    cf_ = kernel::bit::extract(*flags, {
                                           .low = 0,
                                           .width = 1,
                                       }) != 0;
-    pf_ = kernel::bit::extract(flags, {
+    pf_ = kernel::bit::extract(*flags, {
                                           .low = 1,
                                           .width = 1,
                                       }) != 0;
-    af_ = kernel::bit::extract(flags, {
+    af_ = kernel::bit::extract(*flags, {
                                           .low = 2,
                                           .width = 1,
                                       }) != 0;
-    zf_ = kernel::bit::extract(flags, {
+    zf_ = kernel::bit::extract(*flags, {
                                           .low = 3,
                                           .width = 1,
                                       }) != 0;
-    sf_ = kernel::bit::extract(flags, {
+    sf_ = kernel::bit::extract(*flags, {
                                           .low = 4,
                                           .width = 1,
                                       }) != 0;
-    of_ = kernel::bit::extract(flags, {
+    of_ = kernel::bit::extract(*flags, {
                                           .low = 5,
                                           .width = 1,
                                       }) != 0;
-    df_ = kernel::bit::extract(flags, {
+    df_ = kernel::bit::extract(*flags, {
                                           .low = 6,
                                           .width = 1,
                                       }) != 0;
-    icount_ = reader.u64(ok);
-    const std::vector<uint8_t> console = reader.bytes(ok);
-    console_.assign(console.begin(), console.end());
+    const auto icount = reader.u64();
+    const auto console = reader.bytes();
+    if (!icount || !console) {
+        return false;
+    }
+    icount_ = *icount;
+    console_.assign(console->begin(), console->end());
     insn_rip_ = rip_; // next step() refreshes both instruction-local fields
     cur_length_ = 0;
     exit_ = ExitStatus{};
-    return ok;
+    return true;
 }
 
 void Cpu::request_debug_exit(uint32_t encoded_code) {
@@ -145,16 +195,41 @@ void Cpu::retire(unsigned n) {
     // Batched: a JIT block retires its whole run at once. Scheduler events
     // can slide to the end of the block (<= 64 instructions), which is far
     // below the 100 Hz device tick.
+    retire_deferred(n);
+    retire_poll();
+}
+
+void Cpu::retire_deferred(unsigned n) {
     icount_ += n;
+}
+
+void Cpu::retire_poll() {
     scheduler_.dispatch(icount_);
     if (irq_line_ != nullptr && irq_line_->pending() && irq_hook_) {
         irq_hook_(); // device acknowledgement / EOI hook
     }
     if (interrupt_pending_) {
-        deliver_interrupt();
+        // STI shadow: after STI opens IF, exactly one more instruction
+        // retires before the queued vector is recognized (SDM STI).
+        if (sti_shadow_) {
+            sti_shadow_ = false;
+        } else {
+            deliver_interrupt();
+        }
     }
     if (trace_) {
         trace_(insn_rip_);
+    }
+    // Chain deadline: instructions the block chain may retire before the
+    // next device event (or a queued interrupt) must surface. Blocks retire
+    // per instruction on the interpreter path, so 1 keeps that granularity.
+    const auto next = scheduler_.next_deadline();
+    const bool wake = interrupt_pending_ || (irq_line_ != nullptr && irq_line_->pending());
+    const auto due = next.has_value() && *next > icount_ ? *next - icount_ : 1;
+    if (wake) {
+        jit_chain_[2] = 1; // interrupt wants the surface at the next check
+    } else {
+        jit_chain_[2] = next.has_value() ? due : UINT64_MAX;
     }
 }
 
@@ -227,8 +302,14 @@ void Cpu::note_store(uint64_t paddr) {
     // The store may have rewritten executable bytes: drop every cached
     // decode and forget the page set (conservative but cheap; stores to
     // code pages are rare after the loader finishes).
+    switch_address_space();
+}
+
+void Cpu::switch_address_space() {
     decode_cache_.clear();
     std::ranges::fill(code_page_bits_, 0ULL);
+    ++code_epoch_;
+    ++tlb_epoch_; // every translation derived from the old CR3 is stale
 }
 
 ExitStatus Cpu::step() {
@@ -241,14 +322,14 @@ ExitStatus Cpu::step() {
     // Decode cache: the hot path repeats the same instructions; a hit
     // skips fetch + decode entirely. The hit path mirrors the slow path
     // exactly (insn_rip_, cur_length_, dispatch by mnemonic).
-    if (const CachedInsn* cached = decode_cache_.find(rip_)) {
-        const DecodedInsn& insn = cached->insn;
-        insn_rip_ = rip_;
-        cur_length_ = insn.length;
-        const uint64_t rip_after = rip_ + insn.length;
+    const CachedInsn* const cached = decode_cache_.find(rip_);
+    if (cached != nullptr && cached->cr3 == cr_[3]) {
         // Insertion already marked the code page. note_store() clears
         // both the bitmap and the cache together, so a live hit cannot
         // need to mark it again.
+        insn_rip_ = rip_;
+        cur_length_ = cached->insn.length;
+        const uint64_t rip_after = rip_ + cached->insn.length;
         rip_ = rip_after;
         return execute_cached(*cached, rip_after);
     }
@@ -285,15 +366,18 @@ ExitStatus Cpu::step() {
         }
     }
     // Repeat visitors skip fetch+decode (and the translation below).
-    decode_cache_.put(rip_, cache_insn(*decoded));
+    CachedInsn entry = cache_insn(*decoded);
+    entry.cr3 = cr_[3];
+    decode_cache_.put(rip_, entry);
     maybe_compile_block(rip_);
     return execute_insn(*decoded, rip_ + decoded->length);
 }
 
 ExitStatus Cpu::run(uint64_t max_instructions) {
     const kernel::Tick start = icount_;
+    jit_run_end_ = start + max_instructions; // block-chain budget guard
     while (exit_.kind == ExitStatus::Kind::kRunning && icount_ - start < max_instructions) {
-        (void)step();
+        step();
     }
     return exit_;
 }
@@ -485,6 +569,40 @@ ExitStatus Cpu::execute_string(const DecodedInsn& insn, uint64_t rip_after) {
         }
     }
     return exit_;
+}
+
+void Cpu::attach_irq(kernel::IrqLine& line, std::function<void()> on_pending) {
+    irq_line_ = &line;
+    irq_hook_ = std::move(on_pending);
+}
+
+std::span<const uint8_t> Cpu::last_fault_bytes() const {
+    return {last_fault_bytes_.data(), last_fault_bytes_.size()};
+}
+
+void Cpu::set_code_range(uint64_t lo, uint64_t hi) {
+    code_lo_ = lo;
+    code_hi_ = hi;
+}
+
+void Cpu::flush_tlb() {
+    mmu_.flush();
+    ++tlb_epoch_;
+}
+
+void Cpu::invalidate_page(uint64_t vaddr) {
+    mmu_.invalidate(vaddr);
+    ++tlb_epoch_; // block-side TLB clears on the next block run
+    if (decode_cache_.erase_if([vaddr](uint64_t rip) {
+            return (rip >> 12U) == (vaddr >> 12U); // same vaddr page
+        }) != 0U) {
+        ++code_epoch_; // JIT mirrors revalidate lazily
+    }
+}
+
+void Cpu::set_gdtr(uint64_t base, uint16_t limit) {
+    gdtr_base_ = base;
+    gdtr_limit_ = limit;
 }
 
 } // namespace micro_forge::arch::x86_64

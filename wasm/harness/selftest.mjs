@@ -78,4 +78,24 @@ for (let pass = 0; pass < 2; ++pass) {
         fail(`physical-zero RAM access on pass ${pass}: ${JSON.stringify(status)}`);
     }
 }
-console.log("selftest: PASS (bare client, snapshot size, physical-zero RAM, cached execution)");
+// The block walker needs CR3, whose compact control-register bank index
+// differs from its architectural number. Set CR3 and CR4 to distinct
+// values through guest instructions before checking the bridge.
+const controlCode = CODE_BASE + 0x100;
+pokeGuest(zero, controlCode, new Uint8Array([
+    0x0f, 0x22, 0xd8, // mov cr3,rax
+    0x0f, 0x22, 0xe1, // mov cr4,rcx
+]));
+zero.mf_reset(controlCode, STACK_TOP);
+zero.mf_gpr_set(0, 0x4000n);
+zero.mf_gpr_set(1, 0x620n);
+const controls = decodeExit(zero.mf_run(2n));
+if (controls.kind !== EXIT_KIND.RUNNING || zero.mf_icount() !== 2n) {
+    fail(`control-register setup: ${JSON.stringify(controls)}`);
+}
+zero.mf_gprs_flush(0);
+const bridge = zero.mf_gpr_bridge_base();
+if (new DataView(zero.memory.buffer).getBigUint64(bridge + 264, true) !== 0x4000n) {
+    fail("block page-walk root must mirror CR3");
+}
+console.log("selftest: PASS (bare client, snapshot size, physical-zero RAM, cached execution, CR3 bridge)");

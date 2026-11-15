@@ -11,37 +11,52 @@
 
 #include <array>
 #include <bit>
+#include <cstdint>
 #include <cstdlib>
+#include <tuple>
+#include <cstring>
+#include <memory>
+#include <optional>
 #include <print>
+#include <span>
+#include <utility>
+#include <vector>
 
 #include "micro_forge/arch/x86_64/cpu.hpp"
 
+#include "internal.hpp"
+#include "jit_thunks.hpp"
+#include "micro_forge/arch/x86_64/decoded.hpp"
 #include "micro_forge/arch/x86_64/decoder.hpp"
+#include "micro_forge/jit/jit.hpp"
+#include "micro_forge/jit/jit_translate.hpp"
 
 namespace micro_forge::arch::x86_64 {
 
-extern "C" std::uint64_t mf_jit_load(void* cpu, std::uint64_t vaddr, unsigned width);
-extern "C" void mf_jit_store(void* cpu, std::uint64_t vaddr, unsigned width, std::uint64_t value);
-extern "C" std::uint64_t mf_jit_add(void* cpu, std::uint64_t slot, std::uint64_t imm);
-extern "C" void mf_jit_add_mem(void* cpu, std::uint64_t vaddr, std::uint64_t value);
+using width_util::merge_width;
 
 std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
     constexpr std::size_t max_insns = 64;
-    // Pass 1 lowers everything first so the page budget is known before
-    // any byte is emitted: a shared page must not run out mid-block.
+    // Pass 1 lowers everything first: a page must not run dry.
     std::vector<base::TranslatedInsn> items;
     std::size_t budget = 1; // trailing ret for unterminated blocks
     uint64_t covered = 0;
     unsigned count = 0;
+    bool terminated = false;
+    uint64_t link_target = 0; // nonzero: block ends in a direct jmp
+    uint64_t guard_rip = 0;   // nonzero: block ends in a jcc (fallthrough)
     uint64_t pc = rip;
     const uint64_t saved_rip = rip_;
-    // fetch() can latch exception_injected_ when a translation fails; the
-    // compile pass must not leak that into the interpreter's fault path.
+    // fetch() can latch exception_injected_; keep it out of faults.
     const bool saved_exception = exception_injected_;
     const auto fail_compile =
         [&]() -> std::optional<JitBlock> { // NOLINT(readability-redundant-lambda-parameter-list)
         rip_ = saved_rip;
         exception_injected_ = saved_exception;
+        // A half-emitted page must go back to read-execute: live blocks.
+        if (jit_page_) {
+            std::ignore = jit_page_->seal(); // idempotent: false when already sealed
+        }
         jit_failed_.insert(rip);
         return std::nullopt;
     };
@@ -71,8 +86,37 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
         covered += decoded->length;
         ++count;
         pc += decoded->length;
-        if (decoded->mnemonic == Mnemonic::kRet) {
-            --budget; // a terminated block needs no trailing ret
+        // Templates ending in their own host ret close the block: anything
+        // past them would be emitted but never executed.
+        switch (decoded->mnemonic) {
+        case Mnemonic::kRet:
+        case Mnemonic::kCall:
+        case Mnemonic::kJmp:
+        case Mnemonic::kJcc:
+            --budget;
+            terminated = true;
+            break;
+        default:
+            break;
+        }
+        if (terminated) {
+            // Exit tails live in jit_chain.cpp. jmp-imm reserves the 45B
+            // rewritable chain exit; jcc reserves a 55B guard stub that
+            // chains its fallthrough exit when the helper took it; every
+            // other terminated exit (ret/call) carries a 19B accounting
+            // tail. A hop eats only blocks that own a retirement tail, and
+            // link targets are restricted to those.
+            if (decoded->mnemonic == Mnemonic::kJmp &&
+                decoded->ops[0].kind == Operand::Kind::kImm) {
+                link_target = pc + static_cast<uint64_t>(decoded->ops[0].disp);
+                budget += 45;
+            } else if (decoded->mnemonic == Mnemonic::kJcc &&
+                       decoded->ops[0].kind == Operand::Kind::kImm) {
+                guard_rip = pc; // fallthrough rip: pc already advanced
+                budget += 55;
+            } else {
+                budget += 19;
+            }
             break;
         }
     }
@@ -81,9 +125,8 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
     if (count == 0) {
         return std::nullopt;
     }
-    // Pass 2: keep filling the current page while the block fits, else
-    // start a fresh one; blocks average ~1.3 KiB so a 4 KiB page holds a
-    // few. The unseal/seal round trip is per compile, not per instruction.
+    // Pass 2: fill the current page while the block fits, else start a new
+    // one; unseal/seal round trips happen once per compile.
     if (!jit_page_ || jit_page_->available() < budget) {
         auto fresh = base::JitPage::create();
         if (!fresh.has_value()) {
@@ -102,29 +145,32 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
         }
         if (lowered.call_offset.has_value() && lowered.cpu_offset.has_value()) {
             const auto cpu_arg = reinterpret_cast<std::uint64_t>(this);
-            std::uint64_t helper = 0;
-            if (lowered.helper == base::JitHelper::kAdd) {
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_add);
-            } else if (lowered.helper == base::JitHelper::kAddMem) {
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_add_mem);
-            } else if (lowered.helper == base::JitHelper::kStore) {
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_store);
-            } else {
-                helper = reinterpret_cast<std::uint64_t>(&mf_jit_load);
+            const std::uint64_t helper = mf_jit_helper_address(lowered.helper);
+            if (helper == 0) {
+                return fail_compile();
             }
-            // A half-patched template must never become a block: give up
-            // on the whole compile; the interpreter takes this rip.
+            // A half-patched template must never become a block.
             if (!page.patch(*offset + *lowered.cpu_offset, 8, cpu_arg) ||
                 !page.patch(*offset + *lowered.call_offset, 8, helper)) {
                 return fail_compile();
             }
         }
     }
-    if (budget > 1) { // unterminated block: append the shared ret
+    if (!terminated) { // unterminated block: append the shared ret
         const std::array<std::uint8_t, 1> ret = {0xC3};
         if (!page.emit_multi(ret, {}).has_value()) {
             return fail_compile();
         }
+    }
+    std::optional<std::size_t> patch_at;
+    if (terminated && (link_target != 0 || guard_rip != 0)) {
+        // 45B jmp chain exit or 55B jcc guard stub (jit_chain.cpp).
+        patch_at = append_link_tail(page, link_target, guard_rip, count);
+        if (!patch_at.has_value()) {
+            return fail_compile(); // page ran dry: no tail, no chaining
+        }
+    } else if (terminated && !append_plain_tail(page, count)) {
+        return fail_compile(); // 19B accounting tail for ret/call exits
     }
     if (!page.seal()) {
         return std::nullopt;
@@ -134,6 +180,12 @@ std::optional<Cpu::JitBlock> Cpu::compile_block(uint64_t rip) {
         .entry = entry,
         .length = covered,
         .insn_count = count,
+        .patch_at = patch_at,
+        .const_target = link_target,
+        .guard_rip = guard_rip,
+        .linked = false,
+        .self_accounting = terminated,
+        .sets_next = terminated,
     };
 }
 
@@ -148,37 +200,132 @@ extern "C" void mf_jit_store(void* cpu, std::uint64_t vaddr, unsigned width, std
     static_cast<Cpu*>(cpu)->jit_store(vaddr, width, value);
 }
 
-extern "C" std::uint64_t mf_jit_add(void* cpu, std::uint64_t slot, std::uint64_t imm) {
-    return static_cast<Cpu*>(cpu)->jit_add(slot, imm);
+extern "C" std::uint64_t mf_jit_add(void* cpu, std::uint64_t slot, std::uint64_t imm,
+                                    unsigned width) {
+    return static_cast<Cpu*>(cpu)->jit_add(slot, imm, width);
 }
 
 extern "C" void mf_jit_add_mem(void* cpu, std::uint64_t vaddr, std::uint64_t value) {
     static_cast<Cpu*>(cpu)->jit_add_mem(vaddr, value);
 }
 
+extern "C" void mf_jit_cmp(void* cpu, uint64_t slot, uint64_t value, unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_cmp(slot, value, width);
+}
+
+extern "C" void mf_jit_test(void* cpu, uint64_t slot, uint64_t value, unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_test(slot, value, width);
+}
+
+extern "C" void mf_jit_sub(void* cpu, uint64_t slot, uint64_t value, unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_sub(slot, value, width);
+}
+
+extern "C" void mf_jit_and(void* cpu, uint64_t slot, uint64_t value, unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_and(slot, value, width);
+}
+
+extern "C" void mf_jit_cmov(void* cpu, uint64_t slot, uint64_t src_val, unsigned cc,
+                            unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_cmov(slot, src_val, cc, width);
+}
+
+extern "C" void mf_jit_setcc(void* cpu, uint64_t slot, unsigned cc) {
+    static_cast<Cpu*>(cpu)->jit_setcc(slot, cc);
+}
+
+extern "C" void mf_jit_push_val(void* cpu, uint64_t value) {
+    static_cast<Cpu*>(cpu)->jit_push_val(value);
+}
+
+extern "C" void mf_jit_push_imm(void* cpu, uint64_t value) {
+    static_cast<Cpu*>(cpu)->jit_push_imm(value);
+}
+
+extern "C" void mf_jit_load_xmm(void* cpu, uint64_t vaddr, uint64_t slot) {
+    static_cast<Cpu*>(cpu)->jit_load_xmm(vaddr, slot);
+}
+
+extern "C" void mf_jit_store_xmm(void* cpu, uint64_t vaddr, uint64_t slot) {
+    static_cast<Cpu*>(cpu)->jit_store_xmm(vaddr, slot);
+}
+
+extern "C" void mf_jit_pop_reg(void* cpu, uint64_t slot) {
+    static_cast<Cpu*>(cpu)->jit_pop_reg(slot);
+}
+
+extern "C" void mf_jit_or(void* cpu, uint64_t slot, uint64_t value, unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_or(slot, value, width);
+}
+
+extern "C" void mf_jit_xor(void* cpu, uint64_t slot, uint64_t value, unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_xor(slot, value, width);
+}
+
+extern "C" void mf_jit_imul(void* cpu, uint64_t slot, uint64_t value, unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_imul(slot, value, width);
+}
+
+extern "C" void mf_jit_cmp_mem(void* cpu, uint64_t vaddr, uint64_t slot, unsigned width) {
+    static_cast<Cpu*>(cpu)->jit_cmp_mem(vaddr, slot, width);
+}
+
 } // namespace
 
+uint32_t Cpu::flags_code() const {
+    return static_cast<uint32_t>(cf_) | static_cast<uint32_t>(zf_) << 1U |
+           static_cast<uint32_t>(sf_) << 2U | static_cast<uint32_t>(of_) << 3U |
+           static_cast<uint32_t>(pf_) << 4U | static_cast<uint32_t>(af_) << 5U;
+}
+
+void Cpu::set_flags_code(uint32_t code) {
+    cf_ = (code & 1U) != 0;
+    zf_ = (code & 2U) != 0;
+    sf_ = (code & 4U) != 0;
+    of_ = (code & 8U) != 0;
+    pf_ = (code & 16U) != 0;
+    af_ = (code & 32U) != 0;
+}
+
+uint64_t Cpu::event_budget() const {
+    if (interrupt_pending_ || (irq_line_ != nullptr && irq_line_->pending())) {
+        return 1;
+    }
+    const auto next = scheduler_.next_deadline();
+    return next.has_value() && *next > icount_ ? *next - icount_ : UINT64_MAX;
+}
+
 uint64_t Cpu::fetch_paddr(uint64_t vaddr) {
-    const auto translated = translate_access(vaddr, false, true, vaddr);
+    // Probing translation (block fetch / JIT lookups): never raises #PF --
+    // mmu_.translate only walks, the fault latch lives in translate_access.
+    const auto translated =
+        mmu_.translate(vaddr, false, true, cpl_ == 3, cr_[2], cr_[0], efer_value_);
     return translated.ok ? translated.paddr : 0;
 }
 
-uint64_t Cpu::jit_add(uint64_t slot, uint64_t imm) {
-    // The template loads the immediate with `mov edx, imm32`, which zeroes
-    // the upper half; ADD r64,imm32 sign-extends, so restore that here.
+uint64_t Cpu::jit_add(uint64_t slot, uint64_t imm, unsigned width) {
+    // `mov edx, imm32` zeroes the upper half; r64 needs sign extension.
     imm = static_cast<uint64_t>(static_cast<std::int64_t>(static_cast<std::int32_t>(imm)));
     const auto index = static_cast<unsigned>(slot / 8U);
-    const uint64_t a = regs_[index];
-    const uint64_t result = a + imm;
-    regs_[index] = result;
-    // Flags follow the interpreter's 64-bit add semantics.
+    const uint64_t a = width == 4 ? static_cast<uint32_t>(regs_[index]) : regs_[index];
+    const uint64_t result = width == 4 ? static_cast<uint32_t>(a + imm) : a + imm;
+    regs_[index] = merge_width(regs_[index], result, width);
+    // A dword result is zero-extended; the qword path keeps its original arithmetic.
+    const unsigned sign = width == 4 ? 31U : 63U;
     cf_ = result < a;
     zf_ = result == 0;
-    sf_ = (result >> 63U) != 0;
-    of_ = (((a ^ result) & (imm ^ result)) >> 63U) != 0;
+    sf_ = (result >> sign) != 0;
+    of_ = (((a ^ result) & (imm ^ result)) >> sign & 1U) != 0;
     pf_ = (std::popcount(static_cast<std::uint8_t>(result)) % 2) == 0;
     af_ = ((a ^ imm ^ result) & 0x10U) != 0;
     return result;
+}
+
+void Cpu::jit_cmp_mem(uint64_t vaddr, uint64_t slot, unsigned width) {
+    const uint64_t value = jit_load(vaddr, width);
+    if (!exception_injected_) {
+        jit_cmp(slot, value, width);
+    }
 }
 
 uint64_t Cpu::jit_load(uint64_t vaddr, unsigned width) {
@@ -209,8 +356,7 @@ void Cpu::jit_store(uint64_t vaddr, unsigned width, uint64_t value) {
     if (!translated.ok) {
         return;
     }
-    // Store errors are latched by the bus; the template has no way to
-    // react to them, so the results are deliberately discarded here.
+    // Store errors latch in the bus; the results are discarded here.
     switch (width) {
     case 1: {
         [[maybe_unused]] const auto w =
@@ -235,19 +381,32 @@ void Cpu::jit_store(uint64_t vaddr, unsigned width, uint64_t value) {
 }
 
 void Cpu::maybe_compile_block(uint64_t rip) {
+    // The templates are x86-64 machine code: no other host can run them,
+    // so the capability gate outranks both the config and the override.
+#if defined(__x86_64__) || defined(_M_X64)
+    constexpr bool kJitCapable = true;
+#else
+    constexpr bool kJitCapable = false;
+#endif
     // NOLINTNEXTLINE(concurrency-mt-unsafe) -- single-threaded CPU
-    static const bool env_jit = std::getenv("MICRO_FORGE_JIT") != nullptr;
-    // Each block owns a 4 KiB page; 32,768 blocks cost ~128 MiB of the
-    // 2 GiB MAP_32BIT window. Raising the cap from 4,096 lifted the
-    // kernel-boot coverage from 25.9% to 33% (codex measurement).
+    // MICRO_FORGE_JIT: unset follows the config; 0/false forces off;
+    // anything else forces on.
+    static const int env_jit = [] {
+        const char* value = std::getenv("MICRO_FORGE_JIT");
+        if (value == nullptr) {
+            return -1;
+        }
+        return (std::strcmp(value, "0") == 0 || std::strcmp(value, "false") == 0) ? 0 : 1;
+    }();
+    // ~128 MiB of the 2 GiB MAP_32BIT window; 4,096 capped boot coverage.
     constexpr std::size_t max_blocks = 32768;
-    if ((!jit_requested_ && !env_jit) || jit_blocks_.contains(rip) || jit_failed_.contains(rip) ||
+    if (!kJitCapable || env_jit == 0 || (env_jit < 0 && !jit_requested_) ||
+        jit_blocks_.contains(rip) || jit_failed_.contains(rip) ||
         jit_blocks_.size() >= max_blocks) {
         return;
     }
-    // Only compile inside the declared code range. A flat kernel has no
-    // segment table, but the loader knows the file extent, so data and
-    // bss never become blocks.
+    // Only compile inside the declared code range: the loader knows the
+    // file extent, so data and bss never become blocks.
     if (code_hi_ > code_lo_ && (rip < code_lo_ || rip >= code_hi_)) {
         return;
     }
@@ -258,25 +417,98 @@ void Cpu::maybe_compile_block(uint64_t rip) {
     }
 }
 
+namespace {
+bool chaindbg() {
+    return std::getenv("MICRO_FORGE_JIT_CHAINDBG") != nullptr; // NOLINT(concurrency-mt-unsafe)
+}
+
+bool chaindbg2() {
+    return std::getenv("MICRO_FORGE_JIT_CHAINDBG2") != nullptr; // NOLINT(concurrency-mt-unsafe)
+}
+} // namespace
+
 bool Cpu::run_jit_block() {
     // Empty table is the common case (JIT disabled): skip the hash lookup.
     if (jit_blocks_.empty()) {
         return false;
     }
-    const auto it = jit_blocks_.find(rip_);
-    if (it == jit_blocks_.end()) {
-        return false;
-    }
     // NOLINTNEXTLINE(concurrency-mt-unsafe) -- single-threaded CPU
     static const bool trace = std::getenv("MICRO_FORGE_JIT_TRACE") != nullptr;
-    if (trace) {
-        std::println(stderr, "jit: run rip=0x{:x} insns={}", rip_, it->second.insn_count);
+    // Block chaining, stage 1: instead of unwinding to step()/run() after
+    // every block exit, resolve the next block right here. The helpers
+    // record the exit target in jit_next_rip_; when that rip also has a
+    // compiled block we invoke it without leaving this frame. Unresolved
+    // targets fall back to the interpreter exactly as before.
+    bool ran_any = false;
+    for (;;) {
+        const auto it = jit_blocks_.find(rip_);
+        if (it == jit_blocks_.end()) {
+            mf_jit_note_fail_hit(rip_); // diagnostics: which rip falls back
+            return ran_any;
+        }
+        if (trace) {
+            std::println(stderr, "jit: run rip=0x{:x} insns={}", rip_, it->second.insn_count);
+        }
+        it->second.page->invoke(it->second.entry, regs_.data());
+        // Chained jmp blocks retire themselves into the counter (the add in
+        // their exit sequence); surface the total here, exactly once.
+        const std::uint64_t chained = jit_chain_[1];
+        jit_chain_[1] = 0;
+        static const bool cdbg = chaindbg(); // cached: getenv per block exit
+                                             // once cost 12% of the run
+        if (cdbg) {
+            static uint64_t n = 0; // NOLINT(concurrency-mt-unsafe)
+            static const bool every = chaindbg2();
+            ++n;
+            if (n % 50000 == 0 || every) {
+                const auto nd = scheduler_.next_deadline();
+                std::println(stderr,
+                             "cdbg n={} icount={} rip={:#x} budget={} due={} nd={} pend={} shad={}",
+                             n, icount_, rip_, jit_chain_[0], jit_chain_[2],
+                             nd.has_value() ? static_cast<long long>(*nd) : -1LL,
+                             interrupt_pending_, sti_shadow_);
+            }
+        }
+        // jit_ret/jit_call record their own exit; others fall through.
+        // Only control blocks own jit_next_rip_: a chained jmp's helper
+        // leaves it set, and the fallthrough block it jumps to must not
+        // adopt that stale target as its own exit.
+        if (it->second.sets_next && jit_next_set_) {
+            rip_ = jit_next_rip_;
+        } else {
+            rip_ += it->second.length;
+        }
+        jit_next_set_ = false;
+        if (!it->second.self_accounting) {
+            jit_insn_count_ += it->second.insn_count;
+            retire(it->second.insn_count);
+        }
+        if (chained != 0) {
+            jit_insn_count_ += chained;
+            retire(chained);
+        }
+        ran_any = true;
+        // First exit through an unlinked direct jmp: wire it straight to
+        // the target block when that block already exists.
+        if (it->second.patch_at.has_value() && !it->second.linked) {
+            try_link(it->second);
+        }
+        // A helper faulted mid-block: the next step() re-raises it in the
+        // interpreter (mirrors the pre-chaining contract).
+        if (jit_suspend_) {
+            jit_suspend_ = false;
+            return true;
+        }
+        if (exit_.kind != ExitStatus::Kind::kRunning) {
+            return true;
+        }
+        // Budget guard: an all-compiled spin loop (jmp $, no interpreter
+        // fallback) would otherwise never leave this frame and run() would
+        // never observe its instruction budget.
+        if (ran_any && icount_ >= jit_run_end_) {
+            return true;
+        }
     }
-    it->second.page->invoke(it->second.entry, regs_.data());
-    rip_ += it->second.length;
-    jit_insn_count_ += it->second.insn_count;
-    retire(it->second.insn_count);
-    return true;
 }
 
 } // namespace micro_forge::arch::x86_64

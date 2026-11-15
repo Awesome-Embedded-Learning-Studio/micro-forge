@@ -5,6 +5,9 @@
  */
 
 #include "micro_forge/arch/x86_64/cpu.hpp"
+#include "micro_forge/arch/x86_64/decoded.hpp"
+#include "micro_forge/arch/x86_64/mmu.hpp"
+#include <cstdint>
 
 namespace micro_forge::arch::x86_64 {
 
@@ -69,8 +72,6 @@ ExitStatus Cpu::execute_iretq() {
     uint64_t flags = 0;
     uint64_t rsp = 0;
     uint64_t ss = 0;
-    (void)cs;
-    (void)ss;
     if (!pop_value(8, rip) || !pop_value(8, cs) || !pop_value(8, flags) || !pop_value(8, rsp) ||
         !pop_value(8, ss)) {
         return exit_;
@@ -274,7 +275,6 @@ ExitStatus Cpu::execute_lretq() {
     // RETF in 64-bit mode pops RIP and CS (operand size is always 64).
     uint64_t rip = 0;
     uint64_t cs = 0;
-    (void)cs;
     if (!pop_value(8, rip) || !pop_value(8, cs)) {
         return exit_;
     }

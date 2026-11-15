@@ -6,17 +6,27 @@
 
 #include "micro_forge/machine.hpp"
 
-#include "micro_forge/presets/cinux_machine.hpp"
-
+#include "micro_forge/base/machine_config.hpp"
+#include "micro_forge/kernel/bus/port_space.hpp"
+#include "micro_forge/kernel/memory/region.hpp"
+#include "micro_forge/kernel/snapshot.hpp"
 #include "micro_forge/version.hpp"
 
-#include <algorithm>
+#include <cstdint>
 #include <cstdlib>
+#include <optional>
+#include <span>
+#include <vector>
 
 namespace micro_forge {
 
 Machine::Machine(uint64_t ram_size, std::optional<uintptr_t> window)
-    : Machine(cinux_machine_config(ram_size, window)) {}
+    : Machine([ram_size, window] {
+          MachineConfig config;
+          config.ram_size = ram_size;
+          config.window = window;
+          return config;
+      }()) {}
 
 Machine::Machine(const MachineConfig& config)
     : ram_(config.window.has_value()
@@ -35,6 +45,9 @@ Machine::Machine(const MachineConfig& config)
         !bus_.map(kDebugExitBase, 0x1000, debug_exit_).has_value()) {
         std::abort();
     }
+    // Device DMA writes bypass Cpu::store, so self-modifying-code guards
+    // would never fire for them; forward bus writes to the invalidator.
+    bus_.set_write_notifier([this](uint64_t paddr) { cpu_.note_store(paddr); });
     // Port windows come from the layout: the config decides address, size
     // and presence (size 0 skips the device entirely).
     const auto port_device = [this](MachineDevice slot) -> kernel::PortDevice* {
@@ -146,40 +159,40 @@ std::vector<uint8_t> Machine::snapshot() const {
     return writer.take();
 }
 
-std::optional<kernel::SnapshotError> Machine::restore(std::span<const uint8_t> blob) {
+std::expected<void, kernel::SnapshotError> Machine::restore(std::span<const uint8_t> blob) {
     auto reader = kernel::SnapshotReader::open(blob, engine_version());
     if (!reader) {
-        return reader.error();
+        return std::unexpected(reader.error());
     }
     if (!ram_.restore(*reader)) {
-        return kernel::SnapshotError::kTruncated;
+        return std::unexpected(kernel::SnapshotError::kTruncated);
     }
     if (!cpu_.restore(*reader)) {
-        return kernel::SnapshotError::kTruncated;
+        return std::unexpected(kernel::SnapshotError::kTruncated);
     }
     const auto events = scheduler_.restore_begin(*reader);
     if (!events.has_value()) {
-        return kernel::SnapshotError::kTruncated;
+        return std::unexpected(kernel::SnapshotError::kTruncated);
     }
     // Each event triple is 24 bytes; a count that cannot fit the unread
     // payload is a corrupt blob, refuse instead of reserve()ing it.
     constexpr uint64_t event_bytes = 24;
     if (*events > reader->remaining() / event_bytes) {
-        return kernel::SnapshotError::kTruncated;
+        return std::unexpected(kernel::SnapshotError::kTruncated);
     }
     std::vector<kernel::Scheduler::EventInfo> table;
     table.reserve(static_cast<size_t>(*events));
     for (uint64_t i = 0; i < *events; ++i) {
         auto info = kernel::Scheduler::restore_read_event(*reader);
         if (!info.has_value()) {
-            return kernel::SnapshotError::kTruncated;
+            return std::unexpected(kernel::SnapshotError::kTruncated);
         }
         table.push_back(*info);
     }
     if (restore_devices) {
         restore_devices(*reader, table);
     }
-    return std::nullopt;
+    return {};
 }
 
 void Machine::on_ahci_complete() {
@@ -191,5 +204,8 @@ void Machine::on_ahci_complete() {
         cpu_.request_interrupt(vector);
     }
 }
+
+
+arch::x86_64::ExitStatus Machine::run(uint64_t max_instructions) { return cpu_.run(max_instructions); }
 
 } // namespace micro_forge

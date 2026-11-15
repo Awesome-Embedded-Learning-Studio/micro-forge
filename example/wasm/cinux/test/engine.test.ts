@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import {
   bootCinux,
+  bootWithPointers,
   compileBlock,
   createInstance,
   destroyInstance,
@@ -11,6 +12,7 @@ import {
   loadEngine,
   readConsole,
   run,
+  uploadImage,
   useInstance,
 } from '../src/engine';
 
@@ -106,7 +108,10 @@ describe('cinux wasm engine', () => {
     const wasm = await readFile(new URL('../public/engine.wasm', import.meta.url));
     const engine = await loadEngine({ bytes: wasm.buffer.slice(0) as ArrayBuffer });
     expect(engine.mf_abi_version()).toBe(1);
-    bootCinux(engine, images);
+    // Same two-step path the page uses (upload, then boot by pointers).
+    const kernelPtr = uploadImage(engine, images.kernel);
+    const diskPtr = uploadImage(engine, images.disk);
+    bootWithPointers(engine, kernelPtr, images.kernel.length, diskPtr, images.disk.length);
 
     let printed = 0;
     let consoleText = '';

@@ -1,6 +1,10 @@
 /// @file test_engine.cpp
 /// @brief The embedding facade: construct, load, run, observe, snapshot.
 
+#include "micro_forge/arch/x86_64/cpu.hpp"
+#include "micro_forge/arch/x86_64/decoded.hpp"
+#include "micro_forge/base/machine_config.hpp"
+#include <cstdint>
 #include <gtest/gtest.h>
 
 #include <micro_forge/engine.hpp>
@@ -14,7 +18,9 @@ using micro_forge::Engine;
 TEST(EngineTest, FacadeRunsASmallProgram) {
     // mov al,0x41; hlt -- enough to prove the facade forwarded the verbs.
     const std::vector<uint8_t> code = {0xB0, 0x41, 0xF4};
-    Engine engine(0x1000000);
+    micro_forge::MachineConfig config;
+    config.ram_size = 0x1000000;
+    Engine engine(config);
     ASSERT_TRUE(engine.load_image(0x100000, code));
     engine.machine().boot(0x100000, 0x90000);
     const auto status = engine.run(100);
@@ -24,14 +30,18 @@ TEST(EngineTest, FacadeRunsASmallProgram) {
 }
 
 TEST(EngineTest, SnapshotRoundTripsThroughFacade) {
-    Engine engine(0x1000000);
+    micro_forge::MachineConfig config;
+    config.ram_size = 0x1000000;
+    Engine engine(config);
     const std::vector<uint8_t> code = {0xF4}; // hlt
     ASSERT_TRUE(engine.load_image(0x100000, code));
     engine.machine().boot(0x100000, 0x90000);
-    (void)engine.run(10);
+    engine.run(10);
     const auto blob = engine.snapshot();
-    Engine restored(0x1000000);
-    EXPECT_FALSE(restored.restore(blob).has_value());
+    micro_forge::MachineConfig restored_config;
+    restored_config.ram_size = 0x1000000;
+    Engine restored(restored_config);
+    EXPECT_TRUE(restored.restore(blob).has_value());
     EXPECT_EQ(engine.machine().cpu().icount(), restored.machine().cpu().icount());
 }
 

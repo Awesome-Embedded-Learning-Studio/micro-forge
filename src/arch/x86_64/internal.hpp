@@ -9,12 +9,38 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 
-#include "micro_forge/arch/x86_64/decode_error.hpp"
 #include "micro_forge/arch/x86_64/decoded.hpp"
 #include "micro_forge/kernel/bit.hpp"
+
+namespace width_util {
+/// Sign bit (as a mask) of a width-byte operand.
+[[nodiscard]] inline uint64_t sign_bit(unsigned width) {
+    return micro_forge::kernel::bit::mask_bit((8U * width) - 1U);
+}
+/// Full width mask for width bytes.
+[[nodiscard]] inline uint64_t width_mask(unsigned width) {
+    return micro_forge::kernel::bit::ones(8U * width);
+}
+/// x86 shift-count mask: 6 bits at 64-bit operands, else 5 bits.
+[[nodiscard]] inline uint64_t shift_count_mask(unsigned width) {
+    return width == 8U ? 0x3FULL : 0x1FULL;
+}
+/// Sign-extends value from width bytes to 64 bits.
+[[nodiscard]] inline uint64_t sign_extend(uint64_t value, unsigned width) {
+    return micro_forge::kernel::bit::sign_extend(value, 8U * width);
+}
+/// 8/16-bit writes keep the destination's upper bytes; 32-bit writes
+/// zero-extend, exactly like the interpreter's write_operand.
+[[nodiscard]] inline uint64_t merge_width(uint64_t dst, uint64_t result, unsigned width) {
+    const uint64_t mask = width == 1U ? 0xFFULL : 0xFFFFULL;
+    return width == 4U || width == 8U ? result : (dst & ~mask) | result;
+}
+} // namespace width_util
 
 namespace micro_forge::arch::x86_64::detail {
 
@@ -110,18 +136,19 @@ struct Ent {
 /// @brief Group-opcode ids dispatched on the ModRM reg field.
 enum Groups : uint8_t {
     kGrpNone = 0,
-    kGrp1,   // 80/81/83: ALU + imm
-    kGrp2,   // C0/C1/D0-D3: shifts
-    kGrp3,   // F6/F7: test/not/neg/mul/imul/div/idiv
-    kGrp4,   // FE: inc/dec rm8
-    kGrp5,   // FF: inc/dec/call/jmp/push r/m
-    kGrp6,   // 0F 01: descriptor tables / invlpg / swapgs
-    kGrp8,   // 0F BA: bt/bts/btr/btc + imm8
-    kGrp7,   // 0F 00: sldt/str/lldt/ltr/verr/verw
-    kGrp9,   // 0F C7: rdrand/rdseed
-    kGrpPs,  // 0F 71-73 (66): packed shifts + imm8
-    kGrpAe,  // 0F AE: fxsave/fxrstor/fences
-    kGrpPop, // 8F: pop r/m, /0 only (/1-/7 undefined)
+    kGrp1,    // 80/81/83: ALU + imm
+    kGrp2,    // C0/C1/D0-D3: shifts
+    kGrp3,    // F6/F7: test/not/neg/mul/imul/div/idiv
+    kGrp4,    // FE: inc/dec rm8
+    kGrp5,    // FF: inc/dec/call/jmp/push r/m
+    kGrp6,    // 0F 01: descriptor tables / invlpg / swapgs
+    kGrp8,    // 0F BA: bt/bts/btr/btc + imm8
+    kGrp7,    // 0F 00: sldt/str/lldt/ltr/verr/verw
+    kGrp9,    // 0F C7: rdrand/rdseed
+    kGrpPs,   // 0F 71-73 (66): packed shifts + imm8
+    kGrpAe,   // 0F AE: fxsave/fxrstor/fences
+    kGrpPop,  // 8F: pop r/m, /0 only (/1-/7 undefined)
+    kGrp0X87, // 0xDB: x87 FPU group (fninit E3 only, the rest refused)
 };
 
 /// @brief Byte-stream cursor with bounds-checked consumption.
@@ -398,6 +425,9 @@ extern const std::array<Ent, 256> kEsc38;
 [[nodiscard]] Mnemonic grp3_mn(uint8_t reg);
 [[nodiscard]] Mnemonic grp4_mn(uint8_t reg);
 [[nodiscard]] Mnemonic grp5_mn(uint8_t reg);
+/// kGrp6 reg-field dispatch for the descriptor-table forms (0F 01 /0-/3);
+/// nullopt is the shared "outside the subset" refusal.
+[[nodiscard]] std::optional<Mnemonic> grp6_mn(uint8_t reg);
 
 /// @brief Parses legacy prefixes and REX from @p st into @p p.
 ///
@@ -476,7 +506,6 @@ extern const std::array<Ent, 256> kEsc38;
 /// CET group (F3 0F 1E): FA/FB endbr, mod=3 /1 rdsspq, else unsupported.
 [[nodiscard]] inline bool remap_cet(uint8_t modrm_byte, uint8_t reg_field, bool mod_reg,
                                     Mnemonic& mnemonic, Slot& slot_a) {
-    (void)modrm_byte;
     if (mod_reg && reg_field == 1) {
         mnemonic = Mnemonic::kRdsspq;
         slot_a = Slot::kRm;

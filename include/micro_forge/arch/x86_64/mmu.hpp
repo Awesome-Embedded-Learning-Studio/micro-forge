@@ -23,7 +23,7 @@
 #include <array>
 #include <cstdint>
 
-#include "micro_forge/kernel/bus.hpp"
+#include "micro_forge/kernel/bus/bus.hpp"
 
 namespace micro_forge::arch::x86_64 {
 
@@ -89,6 +89,14 @@ public:
     /// @brief INVLPG: drop the entry for this virtual address.
     void invalidate(uint64_t vaddr) { table_[(vaddr >> 12U) & (kEntries - 1U)] = TlbEntry{}; }
 
+    /// @brief The cached frame for this page, or ~0 when untranslated.
+    /// @param[in] vaddr Any address inside the page of interest.
+    [[nodiscard]] uint64_t tlb_frame(uint64_t vaddr) const {
+        const uint64_t vpn = vaddr >> 12U;
+        const TlbEntry& e = table_[vpn & (kEntries - 1U)];
+        return e.flags != 0 && e.tag == vpn ? e.frame : ~0ULL;
+    }
+
     /**
      * @brief Translates one access.
      *
@@ -147,7 +155,7 @@ private:
     /// Reads one 8-byte page-table entry at a physical address.
     bool read_pte(uint64_t paddr, uint64_t& value);
     /// Writes one 8-byte page-table entry at a physical address.
-    void write_pte(uint64_t paddr, uint64_t value);
+    bool write_pte(uint64_t paddr, uint64_t value);
 
     kernel::Bus& bus_;
     bool paging_ = false;

@@ -1,0 +1,329 @@
+// NOLINTBEGIN -- test scaffolding: fork/setenv/env capture are deliberate
+/// @file test_jit_diff.cpp
+/// @brief Native JIT/interpreter differential tests with process isolation.
+
+#include "jit_diff_cases.hpp"
+#include "jit_diff_support.hpp"
+#include <micro_forge/jit/jit_templates_generated.hpp>
+
+namespace {
+
+using namespace jit_diff;
+using jit_diff_cases::add_mem_case;
+using jit_diff_cases::alu_cases;
+using jit_diff_cases::indexed_case;
+using jit_diff_cases::width_cases;
+
+class JitDiffTest : public ::testing::TestWithParam<DiffCase> {};
+
+TEST_P(JitDiffTest, MatchesInterpreter) {
+    const auto& test = GetParam();
+    const auto decoded = micro_forge::arch::x86_64::decode_one(test.code);
+    ASSERT_TRUE(decoded);
+    const auto lowered = translate_insn(*decoded);
+    if (test.require_lowered) {
+        ASSERT_TRUE(lowered);
+    } else {
+        ASSERT_FALSE(lowered); // form must stay with the interpreter
+        return;
+    }
+    ASSERT_TRUE(lowered->has_valid_layout());
+    if (lowered->helper == micro_forge::base::JitHelper::kAdd) {
+        EXPECT_EQ(40U, lowered->code.size());
+        EXPECT_EQ(18U, lowered->cpu_offset);
+        EXPECT_EQ(28U, lowered->call_offset);
+        EXPECT_EQ(decoded->ops[0].size, lowered->patches.back().value);
+    }
+    State interpreter{}, jit{};
+    ASSERT_NO_FATAL_FAILURE(run_child(test, false, interpreter));
+    ASSERT_NO_FATAL_FAILURE(run_child(test, true, jit));
+    EXPECT_EQ(0U, interpreter.blocks);
+    EXPECT_EQ(0U, interpreter.insns);
+    ASSERT_GT(jit.blocks, 0U);
+    ASSERT_GT(jit.insns, 0U);
+    // Only the instruction under test can compile; no padding mov passes.
+    EXPECT_EQ(1U, jit.blocks);
+    EXPECT_EQ(test.jit_insns, jit.insns);
+    EXPECT_EQ(interpreter.exit, jit.exit);
+    EXPECT_EQ(interpreter.vec[0], jit.vec[0]) << "XMM low";
+    EXPECT_EQ(interpreter.vec[1], jit.vec[1]) << "XMM high";
+    EXPECT_EQ(interpreter.rip, jit.rip);
+    EXPECT_EQ(interpreter.rflags, jit.rflags);
+    for (unsigned i = 0; i < jit.gprs.size(); ++i) {
+        EXPECT_EQ(interpreter.gprs[i], jit.gprs[i]) << "GPR " << i;
+    }
+    constexpr std::array flag_names = {"CF", "OF", "SF", "ZF", "AF", "PF"};
+    for (unsigned i = 0; i < jit.flags.size(); ++i) {
+        EXPECT_EQ(interpreter.flags[i], jit.flags[i]) << flag_names[i];
+    }
+    EXPECT_EQ(interpreter.memory, jit.memory);
+}
+
+INSTANTIATE_TEST_SUITE_P(Native, JitDiffTest, ::testing::ValuesIn(jit_diff_cases::base_cases()),
+                         [](const ::testing::TestParamInfo<DiffCase>& info) {
+                             return info.param.name;
+                         });
+
+INSTANTIATE_TEST_SUITE_P(Widths, JitDiffTest, ::testing::ValuesIn(width_cases()),
+                         [](const ::testing::TestParamInfo<DiffCase>& info) {
+                             return info.param.name;
+                         });
+
+INSTANTIATE_TEST_SUITE_P(Alu, JitDiffTest, ::testing::ValuesIn(alu_cases()),
+                         [](const ::testing::TestParamInfo<DiffCase>& info) {
+                             return info.param.name;
+                         });
+
+TEST(JitLayoutTest, PushRegHelperAddressesRegisterFileThroughRdi) {
+    // The block ABI hands the register file to RDI; a template that reads
+    // [rax+disp] works only while rax happens to still hold the same pointer,
+    // which is why the differential test alone cannot catch it. Assert the
+    // encoding instead: 48 8B B7 <disp32> is `mov rsi,[rdi+disp32]`.
+    namespace jg = micro_forge::base::jit_gen;
+    const auto& code = jg::kPushRegHelper;
+    ASSERT_GE(code.size(), 8U);
+    EXPECT_EQ(0x57, code[0]); // push rdi
+    EXPECT_EQ(0x48, code[1]);
+    EXPECT_EQ(0x8B, code[2]);
+    EXPECT_EQ(0xB7, code[3]); // modrm: mod=10, reg=rsi, rm=rdi
+    // pop passes the slot offset directly (57 BE <slot32>), so it needs no
+    // base-register load and is not asserted here.
+}
+
+TEST(JitLayoutTest, MemOperandTemplatesAddressRegisterFileThroughRdi) {
+    // Same ABI rule as the push helper above, for the memory-operand group
+    // that ships helper calls: the base-slot load must read [rdi+disp32]
+    // (48 8B B7 after the 57 prologue), never [rax+disp32].
+    namespace jg = micro_forge::base::jit_gen;
+    for (const auto* code : {&jg::kImulMemSlot, &jg::kGrp3MemSlot}) {
+        ASSERT_GE(code->size(), 8U);
+        EXPECT_EQ(0x57, (*code)[0]); // push rdi
+        EXPECT_EQ(0x48, (*code)[1]); // mov rsi,[rdi+disp32]
+        EXPECT_EQ(0x8B, (*code)[2]);
+        EXPECT_EQ(0xB7, (*code)[3]); // modrm: mod=10, reg=rsi, rm=rdi
+    }
+}
+
+TEST(JitLayoutTest, LeaIdxSlot32LoadsAndStoresThroughRdi) {
+    // The 32-bit indexed lea is pure host arithmetic: it must fetch base and
+    // index from the register file ([rdi+disp32] loads, 48 8B 87 / 4C 8B 87)
+    // and store the zero-extended result back through [rdi+disp32] (48 89 87).
+    namespace jg = micro_forge::base::jit_gen;
+    const auto& code = jg::kLeaIdxSlot32;
+    ASSERT_GE(code.size(), 33U);
+    EXPECT_EQ(0x48, code[0]); // mov rax,[rdi+base32]
+    EXPECT_EQ(0x8B, code[1]);
+    EXPECT_EQ(0x87, code[2]);
+    EXPECT_EQ(0x4C, code[7]); // mov r8,[rdi+idx32]
+    EXPECT_EQ(0x8B, code[8]);
+    EXPECT_EQ(0x87, code[9]);
+    EXPECT_EQ(0x89, code[27]); // mov eax,eax zeroes the upper half
+    EXPECT_EQ(0xC0, code[28]);
+    EXPECT_EQ(0x48, code[29]); // mov [rdi+dst32],rax
+    EXPECT_EQ(0x89, code[30]);
+    EXPECT_EQ(0x87, code[31]);
+}
+
+TEST(JitLayoutTest, PortsSlotKeepsRegisterFilePointerOnRdi) {
+    // Flag-only system instructions pass immediates only; the helper ABI
+    // still receives the register file through RDI (48 BF <helper64> then
+    // 41 FF D3 = movabs rdi,helper; call r11), so the prologue must keep the
+    // pointer alive (57 ... 5F) rather than clobber it with a guest value.
+    namespace jg = micro_forge::base::jit_gen;
+    const auto& code = jg::kPortsSlot;
+    ASSERT_GE(code.size(), 35U);
+    EXPECT_EQ(0x57, code[0]);  // push rdi
+    EXPECT_EQ(0x5F, code[34]); // pop rdi
+}
+
+TEST(JitLayoutTest, RejectsBadRelocationsAndPatches) {
+    const auto decoded = micro_forge::arch::x86_64::decode_one(
+        std::array<uint8_t, 4>{0x48, 0x8B, 0x48, 8}); // mov rcx,[rax+8]
+    ASSERT_TRUE(decoded);
+    const auto good = translate_insn(*decoded);
+    ASSERT_TRUE(good);
+    ASSERT_TRUE(good->has_valid_layout());
+
+    auto bad = *good;
+    bad.call_offset = *good->call_offset + 1; // rel32 is not E8
+    EXPECT_FALSE(bad.has_valid_layout());
+    bad = *good;
+    bad.cpu_offset = *good->cpu_offset - 1; // immediate must follow 48 BF
+    EXPECT_FALSE(bad.has_valid_layout());
+    bad = *good;
+    bad.cpu_offset = 1; // guard subtraction before reading opcode bytes
+    EXPECT_FALSE(bad.has_valid_layout());
+    bad = *good;
+    bad.call_offset = std::numeric_limits<std::size_t>::max();
+    EXPECT_FALSE(bad.has_valid_layout());
+    bad = *good;
+    bad.cpu_offset.reset();
+    EXPECT_FALSE(bad.has_valid_layout());
+    bad = *good;
+    bad.patches[0].offset = good->code.size() + 10; // never a patch site
+    EXPECT_FALSE(bad.has_valid_layout());
+    bad = *good;
+    bad.patches[0].offset = std::numeric_limits<std::size_t>::max();
+    EXPECT_FALSE(bad.has_valid_layout());
+    bad = *good;
+    bad.patches[0].size = 0;
+    EXPECT_FALSE(bad.has_valid_layout());
+    bad = *good;
+    bad.patches.push_back(good->patches.front());
+    EXPECT_FALSE(bad.has_valid_layout());
+    bad = *good;
+    bad.patches[0].offset = *good->cpu_offset; // overlaps Cpu* relocation
+    EXPECT_FALSE(bad.has_valid_layout());
+}
+
+TEST(JitLayoutTest, RejectsOriginalLeaAndStoreOffsets) {
+    const auto lea =
+        micro_forge::arch::x86_64::decode_one(std::array<uint8_t, 4>{0x48, 0x8D, 0x48, 8});
+    const auto store =
+        micro_forge::arch::x86_64::decode_one(std::array<uint8_t, 4>{0x48, 0x89, 0x48, 8});
+    ASSERT_TRUE(lea);
+    ASSERT_TRUE(store);
+    auto bad_lea = translate_insn(*lea);
+    auto bad_store = translate_insn(*store);
+    ASSERT_TRUE(bad_lea);
+    ASSERT_TRUE(bad_store);
+    ASSERT_TRUE(bad_lea->has_valid_layout());
+    ASSERT_TRUE(bad_store->has_valid_layout());
+    // Offsets come from the assembler now, so the literal values these cases
+    // used to corrupt are legal; park the patch past the end instead.
+    const auto bogus = bad_lea->code.size() + 10;
+    bad_lea->patches.back().offset = bogus;
+    EXPECT_FALSE(bad_lea->has_valid_layout());
+    bad_store->call_offset = static_cast<std::size_t>(bogus);
+    EXPECT_FALSE(bad_store->has_valid_layout());
+    bad_store->call_offset = bad_store->cpu_offset;
+    bad_store->patches.back().offset = bogus;
+    EXPECT_FALSE(bad_store->has_valid_layout());
+}
+
+TEST(JitLayoutTest, UnsupportedMemoryFormDoesNotBecomeImmediateMov) {
+    const auto indexed = micro_forge::arch::x86_64::decode_one(
+        std::array<uint8_t, 8>{0x48, 0x8B, 0x04, 0xC5, 0, 0, 0, 0}); // no base
+    ASSERT_TRUE(indexed);
+    EXPECT_FALSE(translate_insn(*indexed));
+}
+
+TEST(JitLayoutTest, IndexedMovValidatesLayoutsAndRejectsUnsupportedForms) {
+    for (const bool store : {false, true}) {
+        const std::array<uint8_t, 5> bytes = {0x48, static_cast<uint8_t>(store ? 0x89 : 0x8B), 0x44,
+                                              0xCB, 0x10};
+        const auto decoded = micro_forge::arch::x86_64::decode_one(bytes);
+        ASSERT_TRUE(decoded);
+        const auto memory = store ? 0U : 1U;
+        for (const uint8_t scale : {1, 2, 4, 8}) {
+            auto insn = *decoded;
+            insn.ops[memory].scale = scale;
+            const auto lowered = translate_insn(insn);
+            ASSERT_TRUE(lowered);
+            EXPECT_TRUE(lowered->has_valid_layout());
+            // Length and offsets belong to the assembled template; the only
+            // fixed expectation here is the behavioural one below.
+            auto bad = *lowered;
+            bad.patches.push_back({.offset = lowered->patches[2].offset, .size = 1, .value = 0});
+            EXPECT_FALSE(bad.has_valid_layout()); // the shift8 hole already owns that byte
+        }
+        for (const uint8_t scale : {0, 3, 16}) {
+            auto insn = *decoded;
+            insn.ops[memory].scale = scale;
+            EXPECT_FALSE(translate_insn(insn));
+        }
+        auto insn = *decoded;
+        insn.ops[memory].index = Reg::kXmm0;
+        EXPECT_FALSE(translate_insn(insn));
+        insn = *decoded;
+        insn.ops[memory].base = Reg::kCr0;
+        EXPECT_FALSE(translate_insn(insn));
+        insn = *decoded;
+        insn.ops[memory].disp = static_cast<int64_t>(INT32_MAX) + 1;
+        EXPECT_FALSE(translate_insn(insn));
+        // Unsupported prefixes must leave these with the interpreter.
+        for (const std::vector<uint8_t>& prefixed :
+             {std::vector<uint8_t>{0x64}, {0x65}, {0x67}, {0xF0}}) {
+            auto code = prefixed;
+            code.insert(code.end(), bytes.begin(), bytes.end());
+            const auto unsupported = micro_forge::arch::x86_64::decode_one(code);
+            if (unsupported) {
+                EXPECT_FALSE(translate_insn(*unsupported));
+            }
+        }
+        const auto dword =
+            micro_forge::arch::x86_64::decode_one(std::span<const uint8_t>(bytes).subspan(1));
+        ASSERT_TRUE(dword);
+        ASSERT_TRUE(translate_insn(*dword));
+        EXPECT_TRUE(translate_insn(*dword)->has_valid_layout());
+        for (const uint8_t width : {0, 3, 16}) {
+            insn = *decoded;
+            insn.ops[0].size = insn.ops[1].size = width;
+            EXPECT_FALSE(translate_insn(insn));
+        }
+    }
+}
+
+TEST(JitLayoutTest, AddMemHasValidFortyEightByteLayout) {
+    const auto decoded = micro_forge::arch::x86_64::decode_one(
+        std::array<uint8_t, 8>{0x4D, 0x01, 0x94, 0x24, 0xB8, 0xFF, 0xFF, 0xFF});
+    ASSERT_TRUE(decoded);
+    const auto lowered = translate_insn(*decoded);
+    ASSERT_TRUE(lowered);
+    ASSERT_TRUE(lowered->has_valid_layout());
+    EXPECT_EQ(micro_forge::base::JitHelper::kAddMem, lowered->helper);
+    // Length and offsets come from the generated template, not from literals:
+    // the assembler picked a shorter encoding, and copying byte offsets into
+    // the test is the same mistake this migration is removing.
+    namespace jg = micro_forge::base::jit_gen;
+    EXPECT_EQ(jg::kAddMemSlot.size(), lowered->code.size());
+    EXPECT_EQ(jg::hole_patch(jg::kAddMemSlotHoles, jg::HoleKind::kCpu64, 0).offset,
+              lowered->cpu_offset);
+    EXPECT_EQ(jg::hole_patch(jg::kAddMemSlotHoles, jg::HoleKind::kHelper64, 0).offset,
+              lowered->call_offset);
+    ASSERT_EQ(3U, lowered->patches.size());
+    constexpr std::array<jg::HoleKind, 3> kinds = {jg::HoleKind::kSrc32, jg::HoleKind::kBase32,
+                                                   jg::HoleKind::kDisp32};
+    constexpr std::array<std::uint64_t, 3> values = {80, 96, 0xFFFFFFB8};
+    for (std::size_t i = 0; i < kinds.size(); ++i) {
+        EXPECT_EQ(jg::hole_patch(jg::kAddMemSlotHoles, kinds[i], 0).offset,
+                  lowered->patches[i].offset);
+        EXPECT_EQ(4U, lowered->patches[i].size);
+        EXPECT_EQ(values[i], lowered->patches[i].value);
+    }
+}
+
+TEST(JitLayoutTest, AddMemRejectsUnsupportedForms) {
+    const std::vector<std::vector<uint8_t>> unsupported = {
+        {0x01, 0x08},                         // add dword [rax],ecx
+        {0x66, 0x01, 0x08},                   // add word [rax],cx
+        {0x00, 0x08},                         // add byte [rax],cl
+        {0x48, 0x01, 0x0C, 0xD8},             // add [rax+rbx*8],rcx
+        {0x48, 0x01, 0x0D, 0, 0, 0, 0},       // add [rip],rcx
+        {0x48, 0x01, 0x0C, 0x25, 0, 0, 0, 0}, // add [abs32],rcx
+        {0x64, 0x48, 0x01, 0x08},             // FS base is not in the ABI
+        {0x65, 0x48, 0x01, 0x08},             // GS base is not in the ABI
+        {0xF0, 0x48, 0x01, 0x08},             // lock add
+    };
+    for (const auto& bytes : unsupported) {
+        const auto decoded = micro_forge::arch::x86_64::decode_one(bytes);
+        ASSERT_TRUE(decoded);
+        EXPECT_FALSE(translate_insn(*decoded));
+    }
+    const auto decoded =
+        micro_forge::arch::x86_64::decode_one(std::array<uint8_t, 3>{0x48, 0x01, 0x08});
+    ASSERT_TRUE(decoded);
+    auto insn = *decoded;
+    insn.ops[0].base = Reg::kXmm0;
+    EXPECT_FALSE(translate_insn(insn));
+    insn = *decoded;
+    insn.ops[1].reg = Reg::kCr0;
+    EXPECT_FALSE(translate_insn(insn));
+    insn = *decoded;
+    insn.addr_size = 4;
+    EXPECT_FALSE(translate_insn(insn));
+}
+
+} // namespace
+
+// NOLINTEND

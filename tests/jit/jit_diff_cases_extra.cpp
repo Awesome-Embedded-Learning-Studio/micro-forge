@@ -1,0 +1,256 @@
+// NOLINTBEGIN -- test scaffolding: fork/setenv/env capture are deliberate
+/// @file jit_diff_cases_extra.cpp
+/// @brief Case table for the newer lowering rounds: pxor, shifts, rip forms.
+///        Split from jit_diff_cases_alu.cpp to stay inside the file budget.
+
+#include "jit_diff_cases.hpp"
+
+namespace jit_diff_cases {
+
+using namespace jit_diff;
+
+std::vector<DiffCase> extra_cases() {
+    std::vector<DiffCase> cases;
+    // pxor on a non-zero source proves the helper really xors both halves.
+    DiffCase pxor_mixed{
+        .name = "pxor_mixed",
+        .code = {0x66, 0x0F, 0xEF, 0xC1, 0xF4}, // pxor xmm0,xmm1; hlt
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = kFlags,
+        .vec_reg = Reg::kXmm0,
+        .vec = {0x0123456789ABCDEFULL, 0xFEDCBA9876543210ULL},
+    };
+    cases.push_back(pxor_mixed);
+    DiffCase shl_r64_cl{
+        .name = "shl_r64_cl",
+        .code = {0x48, 0xD3, 0xE0, 0xF4}, // shl rax,cl (cl masked to 1)
+        .initial = kLoaded,
+        .expected = kLoaded << 1U,
+        .flags = 2192, // AF, SF and OF set; matches the interpreter
+    };
+    shl_r64_cl.result_reg = Reg::kRax;
+    cases.push_back(shl_r64_cl);
+    // rip-relative forms: the effective address is next-rip + disp, and the
+    // harness places data at kData (0x4000) while code starts at 0x1000.
+    DiffCase add_rip{
+        .name = "add_rip",
+        .code = {0x48, 0x03, 0x05, 0xF9, 0x2F, 0x00, 0x00, 0xF4}, // add rax,[rip+0x2ff9]
+        .initial = kLoaded,
+        .expected = kLoaded + kLoaded,
+        .flags = 0x81, // CF and SF set
+    };
+    add_rip.result_reg = Reg::kRax;
+    cases.push_back(add_rip);
+    DiffCase movzx_rip{
+        .name = "movzx_rip",
+        .code = {0x0F, 0xB6, 0x05, 0xF9, 0x2F, 0x00, 0x00, 0xF4}, // movzx eax,[rip+0x2ff9]
+        .initial = kLoaded,
+        .expected = 0x10, // low byte of kLoaded at kData
+        .flags = kFlags,
+    };
+    movzx_rip.result_reg = Reg::kRax;
+    cases.push_back(movzx_rip);
+    DiffCase lea_rip{
+        .name = "lea_rip",
+        .code = {0x48, 0x8D, 0x05, 0xF9, 0x2F, 0x00, 0x00, 0xF4}, // lea rax,[rip+0x2ff9]
+        .initial = kLoaded,
+        .expected = 0x4000, // kData
+        .flags = kFlags,
+    };
+    lea_rip.result_reg = Reg::kRax;
+    cases.push_back(lea_rip);
+    // Accumulator short form: the register is in the opcode, so ops[0] is
+    // kImplicit rather than kReg.
+    DiffCase cmp_accum{
+        .name = "cmp_accum",
+        .code = {0x48, 0x3D, 0x00, 0x01, 0x00, 0x00, 0xF4}, // cmp rax,0x100
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = 0x80, // SF only: the difference stays negative
+    };
+    cmp_accum.result_reg = Reg::kRax;
+    cases.push_back(cmp_accum);
+    // lea with a 32-bit destination: the whole slot is rewritten, highs zeroed.
+    DiffCase lea_r32{
+        .name = "lea_r32",
+        .code = {0x8D, 0x79, 0x01, 0xF4}, // lea edi,[rcx+1]
+        .initial = kLoaded,
+        .expected = 0x50607182ULL, // (rcx seed 0x1020304050607181) + 1, 32-bit
+        .flags = kFlags,
+    };
+    lea_r32.result_reg = Reg::kRdi;
+    cases.push_back(lea_r32);
+    // movzx through a SIB index: rcx is zeroed so the address stays at kData.
+    DiffCase movzx_idx{
+        .name = "movzx_idx",
+        .code = {0x41, 0x0F, 0xB6, 0x04, 0x0C, 0xF4}, // movzx eax,byte [r12+rcx]
+        .initial = kLoaded,
+        .expected = 0x10, // low byte of kLoaded
+        .flags = kFlags,
+        .base = kData,
+        .index = 0,
+    };
+    movzx_idx.result_reg = Reg::kRax;
+    cases.push_back(movzx_idx);
+    // One-operand div: rdx:rax / rbx. xor edx,edx first keeps the quotient
+    // inside 64 bits so no #DE is raised.
+    DiffCase div_reg{
+        .name = "div_reg",
+        .code = {0x31, 0xD2, 0x48, 0xF7, 0xF3, 0xF4}, // xor edx,edx ; div rbx
+        .initial = kLoaded,
+        .expected = 0xF, // quotient, remainder 0x0cf9e6d3c0ad6d63 in rdx
+        .flags = 0x44,   // xor edx,edx sets ZF and PF
+    };
+    div_reg.result_reg = Reg::kRax;
+    div_reg.jit_insns = 2;
+    cases.push_back(div_reg);
+    // Three-operand imul: the product overflows 64 bits, so CF and OF set.
+    DiffCase imul23{
+        .name = "imul23",
+        .code = {0x48, 0x69, 0xC3, 0x10, 0x00, 0x00, 0x00, 0xF4}, // imul rax,rbx,0x10
+        .initial = kLoaded,
+        .expected = 0x0203040506073830ULL, // (rbx * 0x10) truncated
+        .flags = kFlags,
+    };
+    imul23.result_reg = Reg::kRax;
+    cases.push_back(imul23);
+    // bt rax,rbx: the tested bit is (rbx & 63) = 3, and bit 3 of kLoaded
+    // (low byte 0x10) is clear, so CF drops while the other flags stay.
+    DiffCase bt_reg{
+        .name = "bt_reg",
+        .code = {0x48, 0x0F, 0xA3, 0xD8, 0xF4}, // bt rax,rbx
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = 0x8D4, // CF cleared, the rest unchanged
+    };
+    bt_reg.result_reg = Reg::kRax;
+    cases.push_back(bt_reg);
+    // cmovne rcx,[r12] with ZF set: the read happens, the write does not.
+    DiffCase cmov_mem_false{
+        .name = "cmov_mem_false",
+        .code = {0x48, 0x0F, 0x45, 0x0C, 0x24, 0xF4}, // cmovne rcx,[r12]
+        .initial = kLoaded,
+        .expected = kLoaded, // condition false: rcx keeps its seeded value
+        .flags = kFlags,
+        .base = kData,
+    };
+    cmov_mem_false.result_reg = Reg::kRcx;
+    cases.push_back(cmov_mem_false);
+    // not rdx: complement at 64 bits, flags untouched.
+    DiffCase not_r64{
+        .name = "not_r64",
+        .code = {0x48, 0xF7, 0xD2, 0xF4}, // not rdx
+        .initial = kLoaded,
+        .expected = ~kLoaded,
+        .flags = kFlags,
+    };
+    not_r64.result_reg = Reg::kRdx;
+    cases.push_back(not_r64);
+    // sub qword [r12],1: read-modify-write through the ALU mem-imm helper.
+    DiffCase sub_mem_imm{
+        .name = "sub_mem_imm",
+        .code = {0x49, 0x83, 0x6C, 0x24, 0x00, 0x01, 0xF4}, // sub qword [r12],1
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = 0x80, // SF: (kStored-1) keeps the top bit set
+        .store = true,
+        .memory_initial = kStored,
+        .memory_expected = kStored - 1,
+        .base = kData,
+    };
+    cases.push_back(sub_mem_imm);
+    // test [r12+rcx],rax: index form, flags only, memory untouched.
+    DiffCase test_mem_idx{
+        .name = "test_mem_idx",
+        .code = {0x49, 0x85, 0x04, 0x0C, 0xF4}, // test [r12+rcx],rax
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = 0x80, // SF: kLoaded & kLoaded keeps the top bit
+        .base = kData,
+        .index = 0,
+    };
+    test_mem_idx.result_reg = Reg::kRax;
+    cases.push_back(test_mem_idx);
+    // movups [r12+rcx],xmm0: indexed SSE store, 16 bytes land at kData.
+    DiffCase movups_idx{
+        .name = "movups_idx",
+        .code = {0x41, 0x0F, 0x11, 0x04, 0x0C, 0xF4}, // movups [r12+rcx],xmm0
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = kFlags,
+        .store = true,
+        .memory_initial = kStored,
+        .memory_expected = 0x1122334455667788ULL,
+        .base = kData,
+        .index = 0,
+        .vec_reg = Reg::kXmm0,
+        .vec = {0x1122334455667788ULL, 0x99AABBCCDDEEFF00ULL},
+    };
+    cases.push_back(movups_idx);
+    // push rax / pop rbx: the helper must address the register file through
+    // RDI. The template used to read [rax+disp], i.e. a guest register as a
+    // pointer, and no case covered it -- the fix shipped unverified.
+    DiffCase push_rax{
+        .name = "push_rax",
+        .code = {0x50},
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = kFlags,
+        .result_reg = Reg::kRax,
+    };
+    cases.push_back(push_rax);
+    // imul rcx,[rbx-0x48]: two-operand form with the multiplier in memory.
+    // rbx=kData+0x48, so the read lands exactly on [kData]=kLoaded; the
+    // product 2*kLoaded still fits in a signed 64-bit range, so CF/OF clear
+    // while the arithmetic flags stay seeded.
+    DiffCase imul_mem{
+        .name = "imul_mem",
+        .code = {0x48, 0x0F, 0xAF, 0x4B, 0xB8, 0xF4}, // imul rcx,[rbx-0x48]
+        .initial = 2,
+        .expected = 0xFDB97530ECA86420ULL,
+        .flags = 0xD4,
+        .result_reg = Reg::kRcx,
+        .base_reg = Reg::kRbx,
+    };
+    cases.push_back(imul_mem);
+    // lea eax,[rbx+rcx*4]: the 32-bit destination form zero-extends.
+    DiffCase lea_idx32{
+        .name = "lea_idx32",
+        .code = {0x8D, 0x04, 0x8B, 0xF4}, // lea eax,[rbx+rcx*4]
+        .initial = kLoaded,
+        .expected = kData + 0x48 + 3 * 4,
+        .flags = kFlags,
+        .result_reg = Reg::kRax,
+        .base_reg = Reg::kRbx,
+        .index = 3,
+    };
+    cases.push_back(lea_idx32);
+    // cli: flag-only system instruction; the arithmetic flags must not move.
+    DiffCase cli_flags{
+        .name = "cli_flags",
+        .code = {0xFA, 0xF4}, // cli; hlt
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = kFlags,
+    };
+    cases.push_back(cli_flags);
+    // sgdt [rbx]: the memory-system group writes the descriptor register
+    // out where the memory check can see it (2-byte limit then 8-byte base).
+    DiffCase sgdt_mem{
+        .name = "sgdt_mem",
+        .code = {0x0F, 0x01, 0x1B, 0xF4}, // sgdt [rbx]
+        .initial = kLoaded,
+        .expected = kLoaded,
+        .flags = kFlags,
+        .store = true,
+        .memory_initial = kStored,
+        .base = kData,
+        .base_reg = Reg::kRbx,
+    };
+    cases.push_back(sgdt_mem);
+    return cases;
+}
+
+} // namespace jit_diff_cases
+// NOLINTEND

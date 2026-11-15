@@ -5,6 +5,7 @@
  */
 
 #include "micro_forge/arch/x86_64/cpu.hpp"
+#include "micro_forge/arch/x86_64/decoded.hpp"
 
 namespace micro_forge::arch::x86_64 {
 
@@ -17,6 +18,7 @@ bool Cpu::is_sse_mnemonic(Mnemonic mnemonic) {
     case Mnemonic::kMovq_xmm:
     case Mnemonic::kMovd_xmm:
     case Mnemonic::kPxor:
+    case Mnemonic::kXorps:
     case Mnemonic::kPand:
     case Mnemonic::kPandn:
     case Mnemonic::kPor:
@@ -51,7 +53,10 @@ bool Cpu::is_sse_mnemonic(Mnemonic mnemonic) {
     case Mnemonic::kPcmpeqd:
     case Mnemonic::kPcmpeqq:
     case Mnemonic::kPshufd:
+    case Mnemonic::kPshuflw:
+    case Mnemonic::kPshufhw:
     case Mnemonic::kMovlps:
+    case Mnemonic::kMovlpd:
     case Mnemonic::kMovhps:
     case Mnemonic::kMovlhps:
     case Mnemonic::kMovhlps:
@@ -63,6 +68,9 @@ bool Cpu::is_sse_mnemonic(Mnemonic mnemonic) {
     case Mnemonic::kFxsave64:
     case Mnemonic::kFxrstor:
     case Mnemonic::kFxrstor64:
+    case Mnemonic::kPsadbw:
+    case Mnemonic::kPextrw:
+    case Mnemonic::kMovss:
         return true;
     default:
         return false;

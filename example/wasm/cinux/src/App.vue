@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref, shallowRef } from 'vue';
 import TermConsole from './TermConsole.vue';
 import {
-  bootCinux,
+  bootWithPointers,
   compileBlock,
   ExitKind,
   icount,
@@ -10,10 +10,15 @@ import {
   loadEngine,
   readConsole,
   run,
+  uploadImage,
   type EngineExports,
 } from './engine';
 
-const BOOT_BUDGET = 400_000_000;
+// Prompt timeline, measured on the cinux machine description (512 MiB
+// wasm instance): boot text ~1.1e8, shell banner ~3.3e8, the "/ #"
+// prompt ~4.5e8 — clearing 512 MiB costs double the native 256 MiB
+// budget, so the native-tuned 4e8 deadline was a false "known issue".
+const BOOT_BUDGET = 800_000_000;
 // Full-speed frame: the O3 wasm engine retires ~30 Mips, and one frame runs
 // 500K instructions (~16 ms) — enough to saturate 60 Hz without starving
 // the UI thread for longer than a frame.
@@ -107,7 +112,16 @@ const pump = (): void => {
     term.value?.push(drained.text);
     if (exit.kind !== ExitKind.Running) {
       running.value = false;
-      status.value = `guest stopped (kind=${exit.kind}, code=${exit.code})`;
+      const rip = (exit.code >>> 0).toString(16);
+      if (exit.kind === ExitKind.DecodeError) {
+        // The engine artifact carries its own decoder; an older
+        // public/engine.wasm cannot know instructions the kernel now uses.
+        status.value =
+          `引擎不认识 0x${rip} 处的指令：engine.wasm 可能比内核旧，` +
+          '请重新构建 wasm（emcmake cmake -S . -B build-wasm && cmake --build build-wasm）并复制产物后刷新页面';
+      } else {
+        status.value = `guest stopped (kind=${exit.kind}, code=0x${rip})`;
+      }
       return;
     }
     if (drained.text === '') {
@@ -115,17 +129,30 @@ const pump = (): void => {
     } else {
       stallTurns = 0;
     }
-    if (icount(active) > BOOT_BUDGET && printed === 0 && stallTurns > STALL_TURNS) {
+    if (icount(active) > BOOT_BUDGET && stallTurns > STALL_TURNS) {
       running.value = false;
-      status.value = '内核没有产生串口输出（wasm 下已知问题，见 README）';
+      status.value = `引导超出预算（${(BOOT_BUDGET / 1e6).toFixed(0)}M 条）且串口无新输出：` +
+        '镜像对不上这台机器的预期，或内核卡死了';
       return;
     }
     status.value = `运行中 · ${(icount(active) / 1e6).toFixed(1)}M 条指令`;
+  } catch (error) {
+    // A wasm trap would otherwise kill the rAF chain and freeze the page.
+    running.value = false;
+    busy = false;
+    status.value = `引擎中断：${error instanceof Error ? error.message : String(error)}`;
+    return;
   } finally {
     busy = false;
   }
   turnHandle = requestAnimationFrame(pump);
 };
+
+/** One repaint worth of slack for the status line above. */
+const yieldToPaint = (): Promise<void> =>
+  new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
 
 const boot = async (): Promise<void> => {
   if (!kernelFile.value || !diskFile.value || booting.value) return;
@@ -139,12 +166,25 @@ const boot = async (): Promise<void> => {
         status.value = `下载引擎 ${Math.round((100 * loaded) / total)}%`;
       },
     });
+    status.value = '读取内核镜像…';
     const kernel = await readFileBytes(kernelFile.value);
+    status.value = `读取磁盘映像（${(diskFile.value.size / 1048576).toFixed(0)} MiB）…`;
     const disk = await readFileBytes(diskFile.value);
-    status.value = `引导中（kernel ${kernel.length}B · disk ${(disk.length / 1048576).toFixed(0)}MiB）…`;
-    bootCinux(engine.value, { kernel, disk });
+    // Yield between the two uploads: each moves hundreds of MiB and would
+    // otherwise freeze the tab with the status line stuck on the old text.
+    status.value = `上传内核（${(kernel.length / 1024).toFixed(0)} KiB）…`;
+    await yieldToPaint();
+    const kernelPtr = uploadImage(engine.value, kernel);
+    status.value = `上传磁盘映像（${(disk.length / 1048576).toFixed(0)} MiB）…`;
+    await yieldToPaint();
+    const diskPtr = uploadImage(engine.value, disk);
+    status.value = '加载镜像并设置入口…';
+    await yieldToPaint();
+    bootWithPointers(engine.value, kernelPtr, kernel.length, diskPtr, disk.length);
     running.value = true;
-    status.value = `引导中 · ${(icount(engine.value) / 1e6).toFixed(1)}M 条指令`;
+    // The measured prompt arrives around 4.5e8 on the wasm instance; put
+    // the number where the waiting person can see it.
+    status.value = `引导中（提示符约 450M 条后出现）· 0M 条指令`;
     term.value?.focus(); // terminal takes keystrokes from here on
     pump();
   } catch (error) {

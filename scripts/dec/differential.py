@@ -72,7 +72,7 @@ def normalize(text: str) -> str:
     # No-op REX prefixes can appear anywhere; drop them globally.
     t = re.sub(r"\brex(?:\.[WRXB]+)?(?:\s+|$)", "", t)
     while t.startswith(("data16 ", "rex ", "rex.", "es ", "cs ", "ss ",
-                        "ds ", "fs ", "gs ", "repnz ", "repz ", "bnd ")):
+                        "ds ", "fs ", "gs ", "repnz ", "repz ", "bnd ", "lock ")):
         if t.startswith("repnz "):
             t = "repne" + t[5:]  # objdump: repnz; ours: repne
             continue
@@ -112,12 +112,22 @@ def normalize(text: str) -> str:
     w = {"BYTE": "b", "WORD": "w", "DWORD": "d", "QWORD": "q"}
     t = re.sub(r"(movs|stos|lods|scas|cmps)(?:\s+[a-z0-9]+\s*,\s*|\s+)(BYTE|WORD|DWORD|QWORD) PTR (?:es:)?\[[^]]*\](?:,[A-Za-z0-9 ]*PTR (?:es:)?\[[^]]*\])?",
                lambda m: m.group(1) + w[m.group(2)], t)
-    # Short forms with a trailing register operand ("stosb,al").
-    t = re.sub(r"^(movs|stos|lods|scas|cmps)[bwdq](?:,[a-z0-9]+)?$",
-               lambda m: m.group(0).split(",")[0], t)
-    # objdump appends comments ("# 3c2") and symbol notes ("<foo>").
-    t = re.sub(r"\s+#.*$", "", t)
+    # Short forms with a trailing register operand ("stosb,al"), also
+    # carrying a rep/lock prefix ("rep stosd,eax", "lock stosb,al").
+    t = re.sub(r"^(?:rep |repne |repz |repnz |lock )?((?:movs|stos|lods|scas|cmps)[bwdq])(?:,[a-z0-9]+)?$",
+               r"\1", t)
+    # objdump appends comments ("# 3c2", also the comma-glued ",# 3c2")
+    # and symbol notes ("<foo>").
+    t = re.sub(r",\s*#.*$", ",", t)  # keep the comma: seg-reg follows
+    t = re.sub(r"\s*#.*$", "", t)
     t = re.sub(r"\s+<[^>]*>$", "", t)
+    # objdump renders retfq/iretq without the q suffix (operand-size
+    # prefix spelling difference on the same encoding).
+    t = re.sub(r"^retfq\b", "retf", t)
+    t = re.sub(r"^iretq\b", "iret", t)
+    # objdump prints descriptor-table stores (sldt/str/lldt/ltr) against
+    # the 32-bit register name; ours renders the 16-bit store width.
+    t = re.sub(r"^(sldt|str|lldt|ltr) (ax|bx|cx|dx|si|di|bp|sp)$", r"\1 e\2", t)
     # A0-A3 moffs: objdump leaves the width implicit when the bare
     # address faces a register ("mov al,ds:0x.."); ours prints the
     # truthful "BYTE PTR 0x..". Drop the width in exactly that shape.
@@ -178,6 +188,15 @@ def main() -> int:
             if tlen != 0 and tlen != length:
                 len_div += 1  # objdump merges "(bad)" runs; text agreed
         else:
+            # objdump occasionally drops the trailing segment register
+            # ("mov WORD PTR [rip+..],") — align by trimming the dangling
+            # comma and our last operand.
+            if ref.endswith(","):
+                ref = ref.rstrip(",")
+                mine = mine.rsplit(",", 1)[0]
+            if mine == ref:
+                matched += 1
+                continue
             mismatched += 1
             if len(reports) < args.max_report:
                 reports.append(

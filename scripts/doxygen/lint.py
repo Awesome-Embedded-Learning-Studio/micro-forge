@@ -88,6 +88,9 @@ EXCLUDED_DIRS: Tuple[str, ...] = (
     "build-emb",
     # micro-forge: the emsdk toolchain clone (gitignored tooling).
     "emsdk",
+    # micro-forge: the Cinux kernel clone used for joint debugging; its own
+    # docs gates live in that repo, not here.
+    ".claude",
 )
 
 # File extensions to scan

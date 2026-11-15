@@ -6,8 +6,13 @@
 
 #include "micro_forge/arch/x86_64/cpu.hpp"
 
+#include "internal.hpp"
+#include "micro_forge/arch/x86_64/decoded.hpp"
+#include "micro_forge/kernel/bit.hpp"
 #include <algorithm>
 #include <array>
+#include <cstdint>
+#include <optional>
 
 namespace micro_forge::arch::x86_64 {
 
@@ -21,6 +26,7 @@ uint64_t Cpu::rflags() const {
     f |= if_ ? kernel::bit::mask_bit(9) : 0U;
     f |= df_ ? kernel::bit::mask_bit(10) : 0U;
     f |= of_ ? kernel::bit::mask_bit(11) : 0U;
+    f |= ac_ ? kernel::bit::mask_bit(18) : 0U;
     return f;
 }
 
@@ -32,6 +38,7 @@ void Cpu::set_rflags(uint64_t value) {
     sf_ = (value & kernel::bit::mask_bit(7)) != 0;
     if_ = (value & kernel::bit::mask_bit(9)) != 0;
     df_ = (value & kernel::bit::mask_bit(10)) != 0;
+    ac_ = (value & kernel::bit::mask_bit(18)) != 0;
     of_ = (value & kernel::bit::mask_bit(11)) != 0;
 }
 
@@ -99,8 +106,7 @@ bool Cpu::write_msr(uint32_t index, uint64_t value) {
     return true;
 }
 
-Cpu::CpuidAnswer Cpu::cpuid(uint32_t leaf, uint32_t subleaf) {
-    (void)subleaf; // no strided leaves in the v0 self-description
+Cpu::CpuidAnswer Cpu::cpuid(uint32_t leaf, uint32_t /*subleaf*/) {
     CpuidAnswer answer;
     switch (leaf) {
     case 0U:
@@ -147,7 +153,7 @@ ExitStatus Cpu::execute_system(const DecodedInsn& insn, uint64_t rip_after) {
     uint64_t va = 0;
     switch (insn.mnemonic) {
     case Mnemonic::kPushfq:
-        if (!push_value(rflags() & width_mask(insn.opsize), insn.opsize)) {
+        if (!push_value(rflags() & width_util::width_mask(insn.opsize), insn.opsize)) {
             return exit_;
         }
         break;
@@ -162,7 +168,27 @@ ExitStatus Cpu::execute_system(const DecodedInsn& insn, uint64_t rip_after) {
         break;
     case Mnemonic::kSti:
         if_ = true;
+        sti_shadow_ = true; // one instruction runs before IF reopens delivery
         break;
+    case Mnemonic::kClac:
+        ac_ = false;
+        break;
+    case Mnemonic::kStac:
+        ac_ = true;
+        break;
+    case Mnemonic::kFninit:
+        // DB E3 only (decoder refuses every other 0xDB form): the modeled
+        // x87 state is "reset, unused" — no fp stack, no status word.
+        break;
+    case Mnemonic::kUd2:
+        latch(ExitStatus{
+            .kind = ExitStatus::Kind::kFault,
+            .code = insn_rip_,
+            .rip = insn_rip_,
+            .detail = static_cast<uint8_t>(FaultId::kUd),
+        });
+        retire(1);
+        return exit_;
     case Mnemonic::kCpuid: {
         const auto answer = cpuid(static_cast<uint32_t>(regs_[index_of(Reg::kRax)]),
                                   static_cast<uint32_t>(regs_[index_of(Reg::kRcx)]));
@@ -173,8 +199,11 @@ ExitStatus Cpu::execute_system(const DecodedInsn& insn, uint64_t rip_after) {
         break;
     }
     case Mnemonic::kRdtsc: {
-        // Deterministic virtual clock: TSC derives from icount.
-        const uint64_t stamp = icount_;
+        // Deterministic virtual clock: TSC derives from icount. On a
+        // chained block run the retire counter holds instructions the
+        // block chain retired since the last surface; add them so a
+        // mid-chain rdtsc sees the exact same clock as the interpreter.
+        const uint64_t stamp = icount_ + jit_chain_[1];
         write_gpr(Reg::kRax, 4, true, stamp & 0xFFFFFFFFULL);
         write_gpr(Reg::kRdx, 4, true, stamp >> 32U);
         break;
@@ -247,7 +276,7 @@ ExitStatus Cpu::execute_system(const DecodedInsn& insn, uint64_t rip_after) {
         z = (z ^ (z >> 30U)) * 0xBF58476D1CE4E5B9ULL;
         z = (z ^ (z >> 27U)) * 0x94D049BB133111EBULL;
         z = z ^ (z >> 31U);
-        if (!write_operand(insn, a, z & width_mask(a.size))) {
+        if (!write_operand(insn, a, z & width_util::width_mask(a.size))) {
             return exit_;
         }
         cf_ = true;

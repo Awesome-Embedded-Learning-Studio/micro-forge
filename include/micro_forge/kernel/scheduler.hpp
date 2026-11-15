@@ -6,11 +6,11 @@
 
 #pragma once
 
-#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <optional>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "micro_forge/kernel/snapshot.hpp"

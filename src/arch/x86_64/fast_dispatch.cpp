@@ -4,7 +4,10 @@
  * @version 0.1.0
  */
 
+#include "micro_forge/arch/x86_64/cached_insn.hpp"
 #include "micro_forge/arch/x86_64/cpu.hpp"
+#include "micro_forge/arch/x86_64/decoded.hpp"
+#include <cstdint>
 
 namespace micro_forge::arch::x86_64 {
 namespace {
@@ -188,10 +191,10 @@ ExitStatus Cpu::execute_cached(const CachedInsn& cached, uint64_t rip_after) {
             regs_[dst] = alu_sub(lhs, value, 8, false);
             break;
         case Mnemonic::kCmp:
-            (void)alu_sub(lhs, value, 8, false);
+            alu_sub(lhs, value, 8, false);
             break;
         case Mnemonic::kTest:
-            (void)alu_logic(lhs & value, 8);
+            alu_logic(lhs & value, 8);
             break;
         case Mnemonic::kAnd:
             regs_[dst] = alu_logic(lhs & value, 8);

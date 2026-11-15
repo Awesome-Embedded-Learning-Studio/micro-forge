@@ -1,0 +1,258 @@
+/**
+ * @file test_mmu.cpp
+ * @brief Batch-6a software MMU: identity page tables built by hand in
+ *        guest RAM, 2 MiB large pages, #PF error codes and CR2.
+ */
+
+#include "cpu_fixture.hpp"
+
+#include <cstdint>
+#include <gtest/gtest.h>
+#include <micro_forge/arch/x86_64/mmu.hpp>
+
+using micro_forge::arch::x86_64::Mmu;
+
+namespace {
+
+constexpr uint64_t kPml4 = 0x400000;
+constexpr uint64_t kPdpt = 0x401000;
+constexpr uint64_t kPd = 0x402000;
+constexpr uint64_t kMt = 0x403000; // 4 KiB page table for the 0..2 MiB range
+
+class MmuTest : public CpuTest {
+protected:
+    void write64(uint64_t address, uint64_t value) {
+        for (unsigned i = 0; i < 8; ++i) {
+            ram_.data()[address + i] = static_cast<uint8_t>(value >> (8U * i));
+        }
+    }
+
+    /// Identity-maps [0, 8 MiB) with 2 MiB large pages, plus a 4 KiB
+    /// table at [8 MiB, 8 MiB + 4 KiB) when @p fine_map is set.
+    void install_identity(bool fine_map = false) {
+        write64(kPml4, kPdpt | Mmu::kPresent | Mmu::kWrite | Mmu::kUser);
+        write64(kPdpt, kPd | Mmu::kPresent | Mmu::kWrite | Mmu::kUser);
+        for (uint64_t i = 0; i < 4; ++i) {
+            write64(kPd + (i * 8U), (i * 0x200000ULL) | Mmu::kPresent | Mmu::kWrite |
+                                        Mmu::kPageSize | Mmu::kAccessed | Mmu::kDirty);
+        }
+        if (fine_map) {
+            write64(kPd + (uint64_t{4} * 8U), kMt | Mmu::kPresent | Mmu::kWrite | Mmu::kUser);
+            for (uint64_t i = 0; i < 2; ++i) {
+                write64(kMt + (i * 8U), (0x800000ULL + (i * 0x1000ULL)) | Mmu::kPresent |
+                                            Mmu::kWrite | Mmu::kUser | Mmu::kAccessed);
+            }
+        }
+        cpu_.set_control_register(2, kPml4); // CR3
+        cpu_.flush_tlb();
+        cpu_.set_paging(true);
+    }
+};
+
+TEST_F(MmuTest, IdentityMapServesDataAndFetch) {
+    // mov eax, [0x2000]; and the instruction fetch itself walk the map.
+    // mov eax, [0x2000] (absolute: SIB form, not RIP-relative).
+    load({0x8B, 0x04, 0x25, 0x00, 0x20, 0x00, 0x00});
+    poke(0x2000, {0x34, 0x12, 0x00, 0x00});
+    install_identity();
+    cpu_.run(10);
+    EXPECT_EQ(ExitStatus::Kind::kHalt, cpu_.exit_status().kind);
+    EXPECT_EQ(0x1234U, static_cast<uint32_t>(cpu_.gpr(Reg::kRax)));
+}
+
+TEST_F(MmuTest, UnmappedFetchFaultsWithCr2) {
+    // Jump outside the mapped window: fetch faults and CR2 names the rip.
+    load({0xE9, 0x00, 0x00, 0x00, 0x10}); // jmp +0x10000000
+    install_identity();
+    cpu_.run(10);
+    EXPECT_EQ(ExitStatus::Kind::kFault, cpu_.exit_status().kind);
+    EXPECT_EQ(static_cast<uint64_t>(FaultId::kFetch), cpu_.exit_status().detail);
+    EXPECT_EQ(kCodeBase + 5U + 0x10000000ULL, cpu_.page_fault_address());
+    EXPECT_EQ(0U, cpu_.page_fault_error()); // present=0, read, supervisor
+}
+
+TEST_F(MmuTest, WriteToReadOnlyPageFaultsWhenWpSet) {
+    // mov [0x2000], eax with the page marked read-only; CR0.WP=1 makes
+    // the supervisor store fault.
+    load({0x89, 0x04, 0x25, 0x00, 0x20, 0x00, 0x00}); // mov [0x2000], eax
+    cpu_.set_gpr(Reg::kRax, 0x7777);
+    // Rebuild the PDPT/PD without write permission on the first page.
+    install_identity();
+    write64(kPd, Mmu::kPresent | Mmu::kPageSize | Mmu::kAccessed); // clear RW
+    cpu_.flush_tlb();
+    cpu_.set_control_register(0, 0x80000001ULL | (1ULL << 16U)); // WP
+    cpu_.run(10);
+    EXPECT_EQ(ExitStatus::Kind::kFault, cpu_.exit_status().kind);
+    EXPECT_EQ(static_cast<uint64_t>(FaultId::kMemory), cpu_.exit_status().detail);
+    EXPECT_TRUE((cpu_.page_fault_error() & Mmu::kErrWrite) != 0);
+}
+
+TEST_F(MmuTest, SupervisorWriteToReadOnlyPagePassesWithoutWp) {
+    load({0x89, 0x04, 0x25, 0x00, 0x20, 0x00, 0x00}); // mov [0x2000], eax
+    cpu_.set_gpr(Reg::kRax, 0x7777);
+    install_identity();
+    write64(kPd, Mmu::kPresent | Mmu::kPageSize | Mmu::kAccessed);
+    cpu_.flush_tlb();
+    cpu_.set_control_register(0, 0x80000001ULL); // WP clear
+    cpu_.run(10);
+    EXPECT_EQ(ExitStatus::Kind::kHalt, cpu_.exit_status().kind);
+    EXPECT_EQ(0x77U, ram_.data()[0x2000]);
+}
+
+TEST_F(MmuTest, NxPageRefusesFetchOnly) {
+    // Map the code page NX with NXE enabled: the fetch faults, and the
+    // same address is still readable as data.
+    load({0x90}); // nop at 0x100000
+    install_identity();
+    // Map [0, 2 MiB) to itself, marked NX: the fetch faults, data is fine.
+    write64(kPd, Mmu::kPresent | Mmu::kPageSize | Mmu::kAccessed | Mmu::kNx);
+    cpu_.flush_tlb();
+    cpu_.set_control_register(0, 0x80000001ULL);           // no WP
+    ASSERT_TRUE(cpu_.write_msr(0xC0000080U, 1ULL << 11U)); // EFER.NXE
+    cpu_.run(10);
+    EXPECT_EQ(ExitStatus::Kind::kFault, cpu_.exit_status().kind);
+    EXPECT_TRUE((cpu_.page_fault_error() & Mmu::kErrInstruction) != 0);
+}
+
+TEST_F(MmuTest, InvalidatedEntryWalksAgain) {
+    load({0x8B, 0x04, 0x25, 0x00, 0x20, 0x00, 0x00}); // mov eax, [0x2000]
+    poke(0x2000, {0xAA, 0x00, 0x00, 0x00});
+    install_identity();
+    cpu_.run(10); // warm the TLB
+    EXPECT_EQ(0xAAU, static_cast<uint32_t>(cpu_.gpr(Reg::kRax)));
+
+    // Change the mapping under the cached entry, drop it, run again.
+    write64(kPd, 0x200000ULL | Mmu::kPresent | Mmu::kPageSize | Mmu::kAccessed); // map 0 -> 2MB
+    poke(0x200000 + 0x2000, {0xBB, 0x00, 0x00, 0x00});
+    cpu_.invalidate_page(0x2000);
+    cpu_.set_gpr(Reg::kRax, 0);
+    cpu_.reset(kCodeBase, kStackTop);
+    cpu_.set_control_register(2, kPml4);
+    cpu_.set_paging(true);
+    cpu_.run(10);
+    EXPECT_EQ(0xBBU, static_cast<uint32_t>(cpu_.gpr(Reg::kRax)));
+}
+
+TEST_F(MmuTest, DirectMapLargePageAliasesFourKUserPage) {
+    // Kernel-style layout: high-half direct map through a PD of 2 MiB
+    // large pages, and a low user 4 KiB page pointing at the same frame.
+    // One run: store the magic through the direct-map alias, then read it
+    // back through the user mapping.
+    constexpr uint64_t k_direct_pdpt = 0x410000;
+    constexpr uint64_t k_direct_pd = 0x411000;
+    constexpr uint64_t k_user_pdpt = 0x412000;
+    constexpr uint64_t k_user_pd = 0x413000;
+    constexpr uint64_t k_user_pt = 0x414000;
+    constexpr uint64_t k_frame = 0x1BB000;   // alias target inside the 2 MiB test RAM
+    constexpr uint64_t k_user_va = 0xA40000; // heap head seen in the crash
+    write64(kPml4, k_user_pdpt | Mmu::kPresent | Mmu::kWrite | Mmu::kUser);
+    write64(kPml4 + (256ULL * 8U), k_direct_pdpt | Mmu::kPresent | Mmu::kWrite);
+    write64(k_user_pdpt, k_user_pd | Mmu::kPresent | Mmu::kWrite | Mmu::kUser);
+    // Code at 0x100000 rides a 2 MiB identity large page in PD slot 0.
+    write64(k_user_pd, Mmu::kPresent | Mmu::kWrite | Mmu::kUser | Mmu::kPageSize);
+    // PD slot (0xA40000 >> 21) = 5 points at the 4 KiB table.
+    write64(k_user_pd + (5ULL * 8U), k_user_pt | Mmu::kPresent | Mmu::kWrite | Mmu::kUser);
+    write64(k_user_pt + (((k_user_va >> 12U) & 0x1FFU) * 8U),
+            k_frame | Mmu::kPresent | Mmu::kWrite | Mmu::kUser | Mmu::kNx);
+    // Direct map: PDPT[0] -> PD of 512 2 MiB large pages (kernel style,
+    // no pre-set A/D bits, cache-disable like MakeLargePageEntry).
+    write64(k_direct_pdpt, k_direct_pd | Mmu::kPresent | Mmu::kWrite);
+    for (uint64_t i = 0; i < 512U; ++i) {
+        write64(k_direct_pd + (i * 8U), (i * 0x200000ULL) | Mmu::kPresent | Mmu::kWrite |
+                                            Mmu::kPageSize |
+                                            (1ULL << 4U) /* PCD, ignored bits for RAM */);
+    }
+    // movabs rax, 0xFFFF8000001BB000 ; mov [rax], rdx ;
+    // mov rcx, [abs 0xA40000] ; hlt
+    load({
+        0x48, 0xB8, 0x00, 0xB0, 0x1B, 0x00, 0x00, 0x80, 0xFF, 0xFF, // movabs
+        0x48, 0x89, 0x10,                                           // mov [rax], rdx
+        0x48, 0x8B, 0x0C, 0x25, 0x00, 0x00, 0xA4, 0x00,
+    }); // mov rcx,[abs]
+    cpu_.set_gpr(Reg::kRdx, 0xDEADBEEFCAFEBABEULL);
+    cpu_.set_control_register(2, kPml4);
+    cpu_.flush_tlb();
+    cpu_.set_paging(true);
+    cpu_.set_control_register(0, 0x80000001ULL);           // no WP
+    ASSERT_TRUE(cpu_.write_msr(0xC0000080U, 1ULL << 11U)); // EFER.NXE
+    cpu_.run(10);
+    ASSERT_EQ(ExitStatus::Kind::kHalt, cpu_.exit_status().kind)
+        << "alias sequence faulted detail=" << static_cast<unsigned>(cpu_.exit_status().detail)
+        << " cr2=" << cpu_.page_fault_address() << " err=" << cpu_.page_fault_error();
+    // Host truth: the frame must hold the magic.
+    uint64_t stored = 0;
+    for (unsigned i = 0; i < 8; ++i) {
+        stored |= static_cast<uint64_t>(ram_.data()[k_frame + i]) << (8U * i);
+    }
+    EXPECT_EQ(0xDEADBEEFCAFEBABEULL, stored)
+        << "store through the direct map missed the physical frame";
+    EXPECT_EQ(0xDEADBEEFCAFEBABEULL, cpu_.gpr(Reg::kRcx))
+        << "user mapping sees a different frame than the direct map";
+}
+
+TEST_F(MmuTest, UserFourKPageReadsItsFrame) {
+    constexpr uint64_t k_user_pdpt = 0x412000;
+    constexpr uint64_t k_user_pd = 0x413000;
+    constexpr uint64_t k_user_pt = 0x414000;
+    constexpr uint64_t k_frame = 0x1BB000;
+    constexpr uint64_t k_user_va = 0xA40000;
+    write64(kPml4, k_user_pdpt | Mmu::kPresent | Mmu::kWrite | Mmu::kUser);
+    write64(k_user_pdpt, k_user_pd | Mmu::kPresent | Mmu::kWrite | Mmu::kUser);
+    write64(k_user_pd, Mmu::kPresent | Mmu::kWrite | Mmu::kUser | Mmu::kPageSize);
+    write64(k_user_pd + (5ULL * 8U), k_user_pt | Mmu::kPresent | Mmu::kWrite | Mmu::kUser);
+    write64(k_user_pt + (((k_user_va >> 12U) & 0x1FFU) * 8U),
+            k_frame | Mmu::kPresent | Mmu::kWrite | Mmu::kUser);
+    poke(k_frame, {0xBE, 0xBA, 0xFE, 0xCA, 0, 0, 0, 0});
+    // mov rdx, [abs 0xA40000] ; hlt
+    load({0x48, 0x8B, 0x14, 0x25, 0x00, 0x00, 0xA4, 0x00});
+    cpu_.set_control_register(2, kPml4);
+    cpu_.flush_tlb();
+    cpu_.set_paging(true);
+    cpu_.run(10);
+    ASSERT_EQ(ExitStatus::Kind::kHalt, cpu_.exit_status().kind) << "read faulted";
+    EXPECT_EQ(0xCAFEBABEULL, cpu_.gpr(Reg::kRdx)) << "user read missed the frame";
+}
+
+TEST_F(MmuTest, FastLookupRechecksCurrentPermissions) {
+    install_identity();
+    write64(kPd, Mmu::kPresent | Mmu::kPageSize | Mmu::kAccessed | Mmu::kNx);
+    Mmu mmu(bus_);
+    mmu.set_paging(true);
+    uint64_t paddr = 0;
+    constexpr uint64_t nxe = 1ULL << 11U;
+    constexpr uint64_t wp = 1ULL << 16U;
+    EXPECT_FALSE(mmu.lookup(0x2000, false, false, false, 0, nxe, paddr));
+    ASSERT_TRUE(mmu.translate(0x2000, false, false, false, kPml4, 0, nxe).ok);
+    ASSERT_TRUE(mmu.lookup(0x2000, false, false, false, 0, nxe, paddr));
+    EXPECT_EQ(0x2000U, paddr);
+    EXPECT_TRUE(mmu.lookup(0x2000, true, false, false, 0, nxe, paddr));
+    EXPECT_FALSE(mmu.lookup(0x2000, true, false, false, wp, nxe, paddr));
+    EXPECT_FALSE(mmu.lookup(0x2000, false, false, true, 0, nxe, paddr));
+    EXPECT_FALSE(mmu.lookup(0x2000, false, true, false, 0, nxe, paddr));
+    // Permission failures use the regular translation path for error codes.
+    EXPECT_FALSE(mmu.translate(0x2000, true, false, false, kPml4, wp, nxe).ok);
+    EXPECT_FALSE(mmu.translate(0x2000, false, true, false, kPml4, 0, nxe).ok);
+}
+
+TEST_F(MmuTest, FastLookupHonorsInvalidationFlushAndPagingToggle) {
+    install_identity();
+    Mmu mmu(bus_);
+    mmu.set_paging(true);
+    uint64_t paddr = 0;
+    ASSERT_TRUE(mmu.translate(0x2000, false, false, false, kPml4, 0, 0).ok);
+    write64(kPd, 0x200000ULL | Mmu::kPresent | Mmu::kPageSize | Mmu::kAccessed);
+    ASSERT_TRUE(mmu.lookup(0x2000, false, false, false, 0, 0, paddr));
+    EXPECT_EQ(0x2000U, paddr); // old mapping until INVLPG or CR3 flush
+    mmu.invalidate(0x2000);
+    EXPECT_FALSE(mmu.lookup(0x2000, false, false, false, 0, 0, paddr));
+    ASSERT_TRUE(mmu.translate(0x2000, false, false, false, kPml4, 0, 0).ok);
+    ASSERT_TRUE(mmu.lookup(0x2000, false, false, false, 0, 0, paddr));
+    EXPECT_EQ(0x202000U, paddr);
+    mmu.flush();
+    EXPECT_FALSE(mmu.lookup(0x2000, false, false, false, 0, 0, paddr));
+    mmu.set_paging(false);
+    ASSERT_TRUE(mmu.lookup(0x2000, true, true, true, 1ULL << 16U, 1ULL << 11U, paddr));
+    EXPECT_EQ(0x2000U, paddr);
+}
+
+} // namespace

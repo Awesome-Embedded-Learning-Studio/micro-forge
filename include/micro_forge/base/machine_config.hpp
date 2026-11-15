@@ -69,9 +69,11 @@ struct MachineConfig {                 // NOLINT(cppcoreguidelines-pro-type-memb
     uint16_t ahci_device = 0x2922;
     uint32_t ahci_class = 0x01060100U;
     uint8_t ahci_irq = 11;
-    /// Compile guest blocks to native code as they warm up. The
-    /// MICRO_FORGE_JIT environment variable turns this on regardless of
-    /// the config (probes and differential tests rely on that bypass).
+    /// Compile guest blocks to native code as they warm up. The library
+    /// default stays false (explicit over implicit); front ends turn it
+    /// on through the machine description, like mainstream emulators
+    /// default their recompilers on. MICRO_FORGE_JIT overrides either
+    /// way (0/false off, anything else on), on x86-64 hosts only.
     bool jit = false;
 };
 

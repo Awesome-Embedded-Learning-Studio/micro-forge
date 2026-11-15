@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <expected>
 #include <span>
+#include <string>
 #include <string_view>
 
 #include "decode_error.hpp"

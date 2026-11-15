@@ -1,0 +1,119 @@
+# Machine description: the Cinux machine.
+#
+# This file is the single source of truth for the machine's layout. The
+# build runs scripts/gen/gen_machine_config.py over the file selected by
+# MICRO_FORGE_MACHINE and bakes it into build/generated/micro_forge/
+# machine_config_generated.hpp as constexpr data. Changing the machine
+# means editing this file and rebuilding — no source edits.
+#
+# Protocol constants (image magic, PIT crystal Hz, snapshot versions,
+# loader page-table placements) are NOT configuration: they live next to
+# the code that implements the protocol they belong to.
+
+[machine]
+# Guest RAM the preset hands out when the caller does not override it.
+ram_mb = 256
+# Line framebuffer reservation riding the RAM tail (1024x768x32 + slack).
+lfb_mb = 4
+# MMIO debug-exit register base (QEMU isa-debug-exit dialect).
+debug_exit_base = 0xFEED0000
+
+[jit]
+# Mainstream-emulator default: warm blocks compile to native code.
+# Only x86-64 hosts can execute the templates; elsewhere the gate in
+# jit_cpu.cpp silently falls back to the interpreter.
+enabled = true
+
+[ahci]
+vendor = 0x8086
+device = 0x2922
+class = 0x01060100
+irq = 11
+
+# Port-space windows: which device answers which I/O port range.
+[[ports]]
+base = 0x3F8
+size = 8
+device = "serial"
+
+[[ports]]
+base = 0x40
+size = 4
+device = "pit"
+
+[[ports]]
+base = 0x61
+size = 1
+device = "board"
+
+[[ports]]
+base = 0x70
+size = 2
+device = "rtc"
+
+[[ports]]
+base = 0x80
+size = 1
+device = "post"
+
+[[ports]]
+base = 0x510
+size = 2
+device = "fw_cfg"
+
+[[ports]]
+base = 0xCF8
+size = 8
+device = "pci"
+
+[[ports]]
+base = 0x60
+size = 1
+device = "kbd_data"
+
+[[ports]]
+base = 0x64
+size = 1
+device = "kbd_status"
+
+[[ports]]
+base = 0x20
+size = 2
+device = "pic_master"
+
+[[ports]]
+base = 0xA0
+size = 2
+device = "pic_slave"
+
+# Memory-mapped windows (guest-physical).
+[[windows]]
+base = 0xFE000000
+size = 0x2000
+device = "ahci"
+
+[[windows]]
+base = 0xFEE00000
+size = 0x1000
+device = "lapic"
+
+[[windows]]
+base = 0xFEC00000
+size = 0x1000
+device = "io_apic"
+
+# Guest images the example tools boot by default (paths are host-side
+# tooling, not part of the emulated layout).
+# Verified pair (headless run, prompt at ~4.7e8 instructions): the
+# CinuxOS kernel (Nov 11, mounts this ext2 in 4.7e7 — ten times faster
+# than the older kernel) over the 192 MiB ext2 volume. The CinuxOS
+# build's own boot/cinux.img is NOT ext2 at LBA 0 — its kernel refuses
+# to mount it and parks.
+[loader]
+kernel = "/home/charliechen/CinuxOS/build/kernel/kernel.bin"
+disk = "/home/charliechen/Cinux/build/boot/ext2.img"
+
+# The wasm artifact sizes its linear memory differently from the native
+# preset (the whole guest RAM must fit the module's own memory).
+[wasm]
+guest_ram_mb = 512

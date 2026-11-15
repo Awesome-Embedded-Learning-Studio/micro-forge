@@ -2,11 +2,15 @@
 /// @brief Batch-5 acceptance (native side): the Machine assembly runs the
 ///        bare client in both backing modes and snapshots bit-identically.
 
+#include "micro_forge/base/machine_config.hpp"
+#include "micro_forge/kernel/snapshot.hpp"
+#include <cstdint>
 #include <gtest/gtest.h>
 
+#include <ios>
+#include <iterator>
 #include <micro_forge/arch/x86_64/cpu.hpp>
 #include <micro_forge/machine.hpp>
-#include <micro_forge/presets/cinux_machine.hpp>
 
 #include <cstring>
 #include <fstream>
@@ -83,11 +87,11 @@ TEST(MachineTest, SnapshotRoundTripThroughMachineApi) {
     first.boot(kCodeBase, kStackTop);
     std::vector<uint64_t> first_trace;
     first.cpu().set_trace([&first, &first_trace](uint64_t rip) { first_trace.push_back(rip); });
-    (void)first.run(30);
+    first.run(30);
     const auto blob = first.snapshot();
 
     Machine second(0x1000000);
-    EXPECT_FALSE(second.restore(blob).has_value());
+    EXPECT_TRUE(second.restore(blob).has_value());
     std::vector<uint64_t> second_trace;
     second.cpu().set_trace([&second, &second_trace](uint64_t rip) { second_trace.push_back(rip); });
     const auto second_exit = second.run(1ULL << 20U);
@@ -108,11 +112,11 @@ TEST(MachineTest, WindowModeRestoresFromSnapshot) {
     Machine machine(0x1000000, reinterpret_cast<uintptr_t>(window.data()));
     ASSERT_TRUE(machine.load_image(kCodeBase, image));
     machine.boot(kCodeBase, kStackTop);
-    (void)machine.run(30);
+    machine.run(30);
     const auto blob = machine.snapshot();
 
     Machine restored(0x1000000, reinterpret_cast<uintptr_t>(window.data()));
-    EXPECT_FALSE(restored.restore(blob).has_value());
+    EXPECT_TRUE(restored.restore(blob).has_value());
 }
 
 TEST(MachineTest, RestoreRefusesTruncatedSchedulerSection) {
@@ -133,8 +137,8 @@ TEST(MachineTest, RestoreRefusesTruncatedSchedulerSection) {
     }
     Machine other(0x1000000);
     const auto refused = other.restore(blob);
-    ASSERT_TRUE(refused.has_value());
-    EXPECT_EQ(micro_forge::kernel::SnapshotError::kTruncated, *refused);
+    ASSERT_FALSE(refused.has_value());
+    EXPECT_EQ(micro_forge::kernel::SnapshotError::kTruncated, refused.error());
 }
 
 TEST(MachineTest, RestoreRefusesForeignEngineVersion) {
@@ -150,8 +154,8 @@ TEST(MachineTest, RestoreRefusesForeignEngineVersion) {
     }
     Machine other(0x1000000);
     const auto refused = other.restore(forged);
-    ASSERT_TRUE(refused.has_value());
-    EXPECT_EQ(micro_forge::kernel::SnapshotError::kEngineMismatch, *refused);
+    ASSERT_FALSE(refused.has_value());
+    EXPECT_EQ(micro_forge::kernel::SnapshotError::kEngineMismatch, refused.error());
 }
 
 TEST(MachineTest, ConfigMovesSerialAndDisablesDevices) {
@@ -185,7 +189,7 @@ TEST(MachineTest, ConfigWithoutPitLeavesPortUnmapped) {
     const uint8_t in_40[] = {0xE4, 0x40, 0xF4}; // in al,0x40; hlt
     ASSERT_TRUE(machine.load_image(kCodeBase, in_40));
     machine.boot(kCodeBase, kStackTop);
-    (void)machine.run(100);
+    machine.run(100);
     EXPECT_EQ(micro_forge::arch::x86_64::ExitStatus::Kind::kFault,
               machine.cpu().exit_status().kind);
 }
@@ -201,7 +205,7 @@ TEST(MachineTest, ConflictingPortWindowsRefuseConstruction) {
     };
     EXPECT_DEATH(([&] {
                      Machine machine(config);
-                     (void)machine;
+                     Machine{config};
                  }()),
                  "");
 }
@@ -221,7 +225,7 @@ TEST(MachineTest, ConfigSwitchCompilesBlocksWithoutEnv) {
     // First pass compiles the block, the loop re-enters and runs it.
     for (int i = 0; i < 4; ++i) {
         machine.boot(kCodeBase, kStackTop);
-        (void)machine.run(8);
+        machine.run(8);
     }
     EXPECT_GT(machine.cpu().jit_block_count(), 0U);
     EXPECT_GT(machine.cpu().jit_insn_count(), 0U);

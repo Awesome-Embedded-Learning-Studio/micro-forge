@@ -16,7 +16,11 @@
 
 #include "arch/x86_64/sse_ops.hpp"
 
+#include "internal.hpp"
+#include "micro_forge/arch/x86_64/decoded.hpp"
 #include "micro_forge/kernel/le_access.hpp"
+#include <array>
+#include <cstdint>
 
 namespace micro_forge::arch::x86_64 {
 
@@ -76,18 +80,19 @@ ExitStatus Cpu::execute_sse(const DecodedInsn& insn, uint64_t rip_after) {
             if (!read_operand(insn, b, rip_after, lane)) {
                 return exit_;
             }
-            if (!write_vec(a, Vec128{lane & width_mask(width), 0})) {
+            if (!write_vec(a, Vec128{lane & width_util::width_mask(width), 0})) {
                 return exit_;
             }
         } else {
             const Vec128 v = xmm(b.reg);
-            if (!write_operand(insn, a, v[0] & width_mask(width))) {
+            if (!write_operand(insn, a, v[0] & width_util::width_mask(width))) {
                 return exit_;
             }
         }
         break;
     }
     case Mnemonic::kPxor:
+    case Mnemonic::kXorps:
     case Mnemonic::kPand:
     case Mnemonic::kPandn:
     case Mnemonic::kPor: {
@@ -97,7 +102,7 @@ ExitStatus Cpu::execute_sse(const DecodedInsn& insn, uint64_t rip_after) {
             return exit_;
         }
         for (unsigned i = 0; i < 2; ++i) {
-            if (insn.mnemonic == Mnemonic::kPxor) {
+            if (insn.mnemonic == Mnemonic::kPxor || insn.mnemonic == Mnemonic::kXorps) {
                 dst[i] ^= src[i];
             } else if (insn.mnemonic == Mnemonic::kPand) {
                 dst[i] &= src[i];
@@ -229,22 +234,8 @@ ExitStatus Cpu::execute_sse(const DecodedInsn& insn, uint64_t rip_after) {
             count = 16U;
         }
         const bool left = insn.mnemonic == Mnemonic::kPslldq;
-        const auto shift_bytes = [&](unsigned byte) -> uint8_t {
-            if (left) {
-                const unsigned from = byte + static_cast<unsigned>(count);
-                return from < 16U ? sse_ops::byte_at(dst, from) : 0;
-            }
-            const unsigned from = (byte >= count) ? static_cast<unsigned>(byte - count) : 0U;
-            return byte >= count ? sse_ops::byte_at(dst, from) : 0;
-        };
-        Vec128 out{};
-        for (unsigned byte = 0; byte < 16U; ++byte) {
-            sse_ops::put_byte(out, byte,
-                              left ? sse_ops::byte_at(dst, byte >= count ? 0U : byte) : 0);
-        }
-        (void)shift_bytes;
         // Recompute cleanly: dst shifted, zero fill.
-        out = Vec128{};
+        Vec128 out{};
         for (unsigned byte = 0; byte < 16U; ++byte) {
             if (left) {
                 const unsigned src = (byte >= count) ? static_cast<unsigned>(byte - count) : 16U;
@@ -293,22 +284,8 @@ ExitStatus Cpu::execute_sse(const DecodedInsn& insn, uint64_t rip_after) {
                 count = 16U;
             }
             const bool left = insn.mnemonic == Mnemonic::kPslldq;
-            const auto shift_bytes = [&](unsigned byte) -> uint8_t {
-                if (left) {
-                    const unsigned from = byte + static_cast<unsigned>(count);
-                    return from < 16U ? sse_ops::byte_at(dst, from) : 0;
-                }
-                const unsigned from = (byte >= count) ? static_cast<unsigned>(byte - count) : 0U;
-                return byte >= count ? sse_ops::byte_at(dst, from) : 0;
-            };
-            Vec128 out{};
-            for (unsigned byte = 0; byte < 16U; ++byte) {
-                sse_ops::put_byte(out, byte,
-                                  left ? sse_ops::byte_at(dst, byte >= count ? 0U : byte) : 0);
-            }
-            (void)shift_bytes;
             // Recompute cleanly: dst shifted, zero fill.
-            out = Vec128{};
+            Vec128 out{};
             for (unsigned byte = 0; byte < 16U; ++byte) {
                 if (left) {
                     const unsigned src =
@@ -397,6 +374,7 @@ ExitStatus Cpu::execute_sse(const DecodedInsn& insn, uint64_t rip_after) {
         break;
     }
     case Mnemonic::kMovlps:
+    case Mnemonic::kMovlpd:
     case Mnemonic::kMovhps: {
         // Half-register moves. The store forms (modreg=0, XMM as source)
         // write 8 bytes; the load forms fill one lane and leave the other.
@@ -557,9 +535,10 @@ ExitStatus Cpu::execute_sse(const DecodedInsn& insn, uint64_t rip_after) {
         break;
     }
     default:
-        return unsupported(insn);
+        return execute_sse_ext(insn, rip_after); // 2026-11 face: sse_ext.cpp
     }
-    return exit_; // kRunning: the caller retires the instruction
+    retire(1); // Successful SSE instructions share the scalar retirement contract.
+    return exit_;
 }
 
 } // namespace micro_forge::arch::x86_64

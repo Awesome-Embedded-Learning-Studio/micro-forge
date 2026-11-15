@@ -8,7 +8,8 @@
 
    ```bash
    source tools/use-emsdk.sh
-   bash scripts/build-wasm.sh
+   cmake -S . -B build-wasm -DMICRO_FORGE_WASM=ON
+   cmake --build build-wasm
    cp build-wasm/engine.wasm example/wasm/cinux/public/engine.wasm
    ```
 
@@ -38,7 +39,7 @@ example/wasm/cinux/
 ├── package.json        # vue + vite + vitest
 ├── vite.config.ts      # @vitejs/plugin-vue，端口 8090
 ├── tsconfig.json       # strict + vue-tsc
-├── public/engine.wasm  # scripts/build-wasm.sh 的产物
+├── public/engine.wasm  # wasm 构建的产物（build-wasm/engine.wasm）
 ├── src/
 │   ├── main.ts         # createApp(App)
 │   ├── App.vue         # 终端页面（文件选择、运行循环、输入）

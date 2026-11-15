@@ -12,11 +12,14 @@
 #pragma once
 
 #include <cstdint>
+#include <expected>
 #include <optional>
 #include <span>
 #include <vector>
 
+#include "micro_forge/arch/x86_64/cpu.hpp"
 #include "micro_forge/base/machine_config.hpp"
+#include "micro_forge/kernel/snapshot.hpp"
 #include "micro_forge/machine.hpp"
 
 namespace micro_forge {
@@ -36,35 +39,13 @@ public:
     explicit Engine(const MachineConfig& config) : machine_(config) {}
 
     /**
-     * @brief Builds an engine with the Cinux preset layout.
-     *
-     * @param[in] ram_size Usable guest RAM in bytes.
-     * @param[in] window Host window base (wasm); null for owning mode.
-     */
-    explicit Engine(uint64_t ram_size, std::optional<uintptr_t> window = std::nullopt)
-        : machine_(ram_size, window) {}
-
-    /**
      * @brief Copies an image into guest RAM.
      *
      * @param[in] guest_addr Destination guest-physical address.
      * @param[in] image The bytes to place.
      * @return False when the image does not fit.
      */
-    [[nodiscard]] bool load_image(uint64_t guest_addr, std::span<const uint8_t> image) {
-        return machine_.load_image(guest_addr, image);
-    }
-
-    /**
-     * @brief Boots a Cinux kernel image (boot shim) and attaches no disk.
-     *
-     * For a disk, attach it through `machine()` before calling boot, or
-     * use the wasm ABI's boot entry which takes both blobs.
-     *
-     * @param[in] kernel kernel.bin bytes.
-     * @return True when the shim accepted the image.
-     */
-    [[nodiscard]] bool boot_cinux(std::span<const uint8_t> kernel);
+    [[nodiscard]] bool load_image(uint64_t guest_addr, std::span<const uint8_t> image);
 
     /**
      * @brief Runs up to @p max_instructions instructions.
@@ -72,9 +53,7 @@ public:
      * @param[in] max_instructions Budget for this call.
      * @return The latched status (kRunning when the budget ran out).
      */
-    [[nodiscard]] arch::x86_64::ExitStatus run(uint64_t max_instructions) {
-        return machine_.run(max_instructions);
-    }
+    arch::x86_64::ExitStatus run(uint64_t max_instructions);
 
     /// @brief Serial console bytes (device sink).
     [[nodiscard]] std::span<const char> console() const { return machine_.console(); }
@@ -93,11 +72,10 @@ public:
      * @brief Restores from a snapshot blob.
      *
      * @param[in] blob Bytes produced by snapshot().
-     * @return Empty on success, the refusal reason otherwise.
+     * @return Success, or the refusal reason.
      */
-    [[nodiscard]] std::optional<kernel::SnapshotError> restore(std::span<const uint8_t> blob) {
-        return machine_.restore(blob);
-    }
+    [[nodiscard]] std::expected<void, kernel::SnapshotError> restore(
+        std::span<const uint8_t> blob);
 
     /// @brief The underlying machine (advanced use: devices, CPU, bus).
     [[nodiscard]] Machine& machine() { return machine_; }

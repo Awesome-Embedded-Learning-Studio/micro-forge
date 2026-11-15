@@ -14,28 +14,31 @@
 
 #include <cstdint>
 #include <functional>
+#include <expected>
 #include <optional>
 #include <span>
+#include <utility>
 #include <vector>
 
 #include "micro_forge/arch/x86_64/cpu.hpp"
 #include "micro_forge/base/machine_config.hpp"
-#include "micro_forge/kernel/ahci.hpp"
-#include "micro_forge/kernel/bus.hpp"
+#include "micro_forge/generated/machine_config_generated.hpp"
+#include "micro_forge/kernel/bus/bus.hpp"
+#include "micro_forge/kernel/bus/port_space.hpp"
+#include "micro_forge/kernel/bus/port_stubs.hpp"
 #include "micro_forge/kernel/debug_exit.hpp"
-#include "micro_forge/kernel/fw_cfg.hpp"
-#include "micro_forge/kernel/i8042.hpp"
-#include "micro_forge/kernel/io_apic.hpp"
-#include "micro_forge/kernel/lapic.hpp"
-#include "micro_forge/kernel/pci_config.hpp"
-#include "micro_forge/kernel/pic_8259.hpp"
-#include "micro_forge/kernel/pit_8254.hpp"
-#include "micro_forge/kernel/port_space.hpp"
-#include "micro_forge/kernel/port_stubs.hpp"
-#include "micro_forge/kernel/ram_region.hpp"
-#include "micro_forge/kernel/rtc.hpp"
+#include "micro_forge/kernel/device/ahci.hpp"
+#include "micro_forge/kernel/device/fw_cfg.hpp"
+#include "micro_forge/kernel/device/i8042.hpp"
+#include "micro_forge/kernel/device/io_apic.hpp"
+#include "micro_forge/kernel/device/lapic.hpp"
+#include "micro_forge/kernel/device/pci_config.hpp"
+#include "micro_forge/kernel/device/pic_8259.hpp"
+#include "micro_forge/kernel/device/pit_8254.hpp"
+#include "micro_forge/kernel/device/rtc.hpp"
+#include "micro_forge/kernel/device/serial_16550.hpp"
+#include "micro_forge/kernel/memory/ram_region.hpp"
 #include "micro_forge/kernel/scheduler.hpp"
-#include "micro_forge/kernel/serial_16550.hpp"
 #include "micro_forge/kernel/snapshot.hpp"
 
 namespace micro_forge {
@@ -57,13 +60,14 @@ namespace micro_forge {
 class Machine {
 public:
     /// LFB reservation: 4 MiB, enough for 1024x768x32 plus slack.
-    static constexpr uint64_t kLfbSize = 0x400000;
+    // Both from machines/*.toml via the generated description.
+    static constexpr uint64_t kLfbSize = generated::kLfbSize;
     /// Where the MMIO debug-exit register answers.
-    static constexpr uint64_t kDebugExitBase = 0xFEED0000;
+    static constexpr uint64_t kDebugExitBase = generated::kDebugExitBase;
 
     /**
-     * @brief Assembles the machine with @p ram_size bytes of guest RAM
-     *        (the LFB reservation is appended past it).
+     * @brief Assembles a bare machine: guest RAM plus the debug-exit
+     *        register, no devices wired.
      *
      * @param[in] ram_size Guest RAM in bytes (below the LFB window).
      * @param[in] window   Integer base of a non-owning backing of
@@ -130,9 +134,7 @@ public:
      * @param[in] max_instructions Instruction budget.
      * @return The terminal exit status (see Cpu::run).
      */
-    [[nodiscard]] arch::x86_64::ExitStatus run(uint64_t max_instructions) {
-        return cpu_.run(max_instructions);
-    }
+    arch::x86_64::ExitStatus run(uint64_t max_instructions);
 
     /// @brief Bytes collected by the write syscall so far.
     [[nodiscard]] std::span<const char> console() const {
@@ -154,9 +156,10 @@ public:
      * @brief Replaces this machine's contents from @p blob.
      *
      * @param[in] blob A snapshot from an identically-laid-out machine.
-     * @return Nothing on success, else the envelope refusal reason.
+     * @return Success, else the envelope refusal reason.
      */
-    [[nodiscard]] std::optional<kernel::SnapshotError> restore(std::span<const uint8_t> blob);
+    [[nodiscard]] std::expected<void, kernel::SnapshotError> restore(
+        std::span<const uint8_t> blob);
 
     /// Section order in the blob: RAM, CPU, scheduler, then devices.
     /// The snapshot hook appends device sections; the restore hook

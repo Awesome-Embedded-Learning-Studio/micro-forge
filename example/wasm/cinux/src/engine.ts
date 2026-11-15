@@ -12,6 +12,7 @@ export interface EngineExports {
   mf_inject_serial: (byte: number) => void;
   mf_instance_create: (ramSize: number, window: number) => number;
   mf_write_guest: (paddr: number, src: number, len: number) => number;
+  mf_read_guest: (paddr: number, dst: number, len: number) => number;
   mf_wasm_block: (
     ripLo: number,
     ripHi: number,
@@ -44,11 +45,31 @@ const REACTOR_IMPORTS: WebAssembly.Imports = {
       },
 };
 
+/**
+ * Normalizes wasm i32 results to unsigned: pointers past the 2 GiB mark
+ * (heap growth under a large disk upload) arrive sign-extended and would
+ * otherwise surface as negative offsets in TypedArray constructors.
+ */
+function normalizeExports(raw: Record<string, unknown>): EngineExports {
+  const e: Record<string, unknown> = { memory: raw.memory };
+  for (const [name, value] of Object.entries(raw)) {
+    if (typeof value !== 'function') {
+      continue;
+    }
+    const fn = value as (...args: unknown[]) => unknown;
+    e[name] = (...args: unknown[]) => {
+      const r = fn(...args);
+      return typeof r === 'number' && r < 0 ? r >>> 0 : r;
+    };
+  }
+  return e as unknown as EngineExports;
+}
+
 /** Loads the standalone engine and runs the reactor constructors. */
 export async function loadEngine(options: EngineLoadOptions = {}): Promise<EngineExports> {
   if (options.bytes) {
     const { instance } = await WebAssembly.instantiate(options.bytes, REACTOR_IMPORTS);
-    const exports = instance.exports as unknown as EngineExports;
+    const exports = normalizeExports(instance.exports as unknown as Record<string, unknown>);
     exports._initialize();
     return exports;
   }
@@ -82,8 +103,8 @@ export async function loadEngine(options: EngineLoadOptions = {}): Promise<Engin
     bytes = await response.arrayBuffer();
   }
   const { instance } = await WebAssembly.instantiate(bytes, REACTOR_IMPORTS);
-  const exports = instance.exports as unknown as EngineExports;
   // Reactor contract: static constructors (the Machine singleton) run here.
+  const exports = normalizeExports(instance.exports as unknown as Record<string, unknown>);
   exports._initialize();
   return exports;
 }
@@ -108,6 +129,37 @@ function upload(engine: EngineExports, bytes: Uint8Array): number {
  * Boots the kernel with its ext2 volume. Throws when the boot shim refuses
  * the image (bad header, oversized kernel).
  */
+/**
+ * Uploads one image into the engine heap and returns the wasm pointer. The
+ * caller owns it and must engine.free() it (or hand it to bootWithPointers).
+ */
+export function uploadImage(engine: EngineExports, bytes: Uint8Array): number {
+  return upload(engine, bytes);
+}
+
+/**
+ * Boots with images already in the engine heap. Kept separate from
+ * bootCinux so the page can yield between the two uploads: moving ~600 MiB
+ * of disk image on one turn freezes the tab.
+ */
+export function bootWithPointers(
+  engine: EngineExports,
+  kernelPtr: number,
+  kernelLen: number,
+  diskPtr: number,
+  diskLen: number,
+): void {
+  try {
+    const ok = engine.mf_boot_cinux(kernelPtr, kernelLen, diskPtr, diskLen);
+    if (ok !== 1) {
+      throw new Error('boot_cinux refused the image');
+    }
+  } finally {
+    engine.free(kernelPtr);
+    engine.free(diskPtr);
+  }
+}
+
 export function bootCinux(engine: EngineExports, images: CinuxImages): void {
   const kernelPtr = upload(engine, images.kernel);
   const diskPtr = upload(engine, images.disk);
@@ -156,6 +208,9 @@ export function readConsole(
 ): { text: string; printed: number } {
   const cap = 1 << 16;
   const dst = engine.malloc(cap);
+  if (dst === 0) {
+    throw new Error(`readConsole: malloc(${cap}) failed`);
+  }
   try {
     const n = Number(engine.mf_read_console(dst, cap));
     if (n <= printed) {

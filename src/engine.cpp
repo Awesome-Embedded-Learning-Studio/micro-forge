@@ -1,17 +1,23 @@
 /**
  * @file engine.cpp
- * @brief Engine facade: the Cinux boot convenience.
+ * @brief Engine facade bodies (engine.hpp).
  * @version 0.1.0
  */
 
 #include "micro_forge/engine.hpp"
 
-#include "micro_forge/loader/cinux_loader.hpp"
-
 namespace micro_forge {
 
-bool Engine::boot_cinux(std::span<const uint8_t> kernel) {
-    return loader::boot_cinux(machine_.ram(), machine_.cpu(), kernel).has_value();
+bool Engine::load_image(uint64_t guest_addr, std::span<const uint8_t> image) {
+    return machine_.load_image(guest_addr, image);
+}
+
+arch::x86_64::ExitStatus Engine::run(uint64_t max_instructions) {
+    return machine_.run(max_instructions);
+}
+
+std::expected<void, kernel::SnapshotError> Engine::restore(std::span<const uint8_t> blob) {
+    return machine_.restore(blob);
 }
 
 } // namespace micro_forge

@@ -126,7 +126,7 @@ else
     echo "[acceptance] differential: SKIP (MF_KERNEL_BIN unset or missing)"
 fi
 run_segment differential_sample python3 scripts/dec/differential.py \
-    tests/data/kernel-sample.bin || failed=1
+    tests/arch/x86_64/kernel-sample.bin || failed=1
 
 for name in "${segments[@]}"; do
     status="$(cat "${logs}/${name}.status" 2>/dev/null || echo FAILED)"
