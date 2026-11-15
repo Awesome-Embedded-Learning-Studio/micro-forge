@@ -30,7 +30,7 @@ namespace micro_forge::wasm {
 
 Machine& current() {
     if (g_instances.empty()) {
-        g_instances.push_back(std::make_unique<Machine>(kGuestRam, uintptr_t{0}));
+        g_instances.push_back(std::make_unique<Machine>(cinux_machine_config(kGuestRam, uintptr_t{0})));
     }
     return *g_instances[g_current];
 }
