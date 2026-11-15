@@ -158,8 +158,8 @@ endif()
 enable_testing()
 add_subdirectory(tests)
 
-# ips bench (batch 3 onward): advisory perf baselines, see bench/.
-add_subdirectory(bench)
+# ips bench (batch 3 onward): advisory perf baselines, live in tools/bench/.
+add_subdirectory(tools/bench)
 
 # Decode-dump tool for the objdump differential harness (batch 2).
 add_executable(mf-decode-dump tools/dec_dump.cpp)

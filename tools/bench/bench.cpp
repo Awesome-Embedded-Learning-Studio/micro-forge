@@ -5,7 +5,7 @@
  * @version 0.1.0
  *
  * Usage: mf-bench <name> <guest.bin> [warmup] [measure] [reps]
- *                 [--baseline bench/baseline.txt]
+ *                 [--baseline tools/bench/baseline.txt]
  *
  * Method inherited from the v1 baseline (PERF-METHODOLOGY.md §4): pinned
  * cores, RelWithDebInfo build, warmup/measure/rep counts, reported value
