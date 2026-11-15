@@ -18,6 +18,12 @@ lfb_mb = 4
 # MMIO debug-exit register base (QEMU isa-debug-exit dialect).
 debug_exit_base = 0xFEED0000
 
+[jit]
+# Mainstream-emulator default: warm blocks compile to native code.
+# Only x86-64 hosts can execute the templates; elsewhere the gate in
+# jit_cpu.cpp silently falls back to the interpreter.
+enabled = true
+
 [ahci]
 vendor = 0x8086
 device = 0x2922

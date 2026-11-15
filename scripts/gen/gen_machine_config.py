@@ -104,6 +104,9 @@ def emit(dev: dict) -> str:
         "/// The wasm artifact's linear-memory sizing (guest RAM in MiB).",
         f"inline constexpr std::uint64_t kWasmGuestRamMb = {dev['wasm_ram_mb']}ULL;",
         "",
+        "/// Whether this machine boots with the JIT warmed on (x86-64 hosts).",
+        f"inline constexpr bool kJitEnabled = {'true' if dev['jit'] else 'false'};",
+        "",
         "} // namespace micro_forge::generated",
         "",
     ]
@@ -125,6 +128,7 @@ def load(machine: str) -> dict:
         "windows": raw.get("windows", []),
         "loader": raw["loader"],
         "wasm_ram_mb": int(raw["wasm"]["guest_ram_mb"]),
+        "jit": bool(raw["jit"]["enabled"]),
     }
     for w in dev["ports"] + dev["windows"]:
         if w["device"] not in DEVICES:

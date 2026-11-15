@@ -20,6 +20,7 @@ MachineConfig active_machine_config(uint64_t ram_size, std::optional<uintptr_t> 
     config.ahci_device = generated::kAhciDevice;
     config.ahci_class = generated::kAhciClass;
     config.ahci_irq = generated::kAhciIrq;
+    config.jit = generated::kJitEnabled;
     return config;
 }
 

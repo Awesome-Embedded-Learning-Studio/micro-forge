@@ -381,11 +381,27 @@ void Cpu::jit_store(uint64_t vaddr, unsigned width, uint64_t value) {
 }
 
 void Cpu::maybe_compile_block(uint64_t rip) {
+    // The templates are x86-64 machine code: no other host can run them,
+    // so the capability gate outranks both the config and the override.
+#if defined(__x86_64__) || defined(_M_X64)
+    constexpr bool kJitCapable = true;
+#else
+    constexpr bool kJitCapable = false;
+#endif
     // NOLINTNEXTLINE(concurrency-mt-unsafe) -- single-threaded CPU
-    static const bool env_jit = std::getenv("MICRO_FORGE_JIT") != nullptr;
+    // MICRO_FORGE_JIT: unset follows the config; 0/false forces off;
+    // anything else forces on.
+    static const int env_jit = [] {
+        const char* value = std::getenv("MICRO_FORGE_JIT");
+        if (value == nullptr) {
+            return -1;
+        }
+        return (std::strcmp(value, "0") == 0 || std::strcmp(value, "false") == 0) ? 0 : 1;
+    }();
     // ~128 MiB of the 2 GiB MAP_32BIT window; 4,096 capped boot coverage.
     constexpr std::size_t max_blocks = 32768;
-    if ((!jit_requested_ && !env_jit) || jit_blocks_.contains(rip) || jit_failed_.contains(rip) ||
+    if (!kJitCapable || env_jit == 0 || (env_jit < 0 && !jit_requested_) ||
+        jit_blocks_.contains(rip) || jit_failed_.contains(rip) ||
         jit_blocks_.size() >= max_blocks) {
         return;
     }
