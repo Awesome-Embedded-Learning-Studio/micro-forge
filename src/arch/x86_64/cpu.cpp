@@ -557,4 +557,38 @@ ExitStatus Cpu::execute_string(const DecodedInsn& insn, uint64_t rip_after) {
     return exit_;
 }
 
+void Cpu::attach_irq(kernel::IrqLine& line, std::function<void()> on_pending) {
+    irq_line_ = &line;
+    irq_hook_ = std::move(on_pending);
+}
+
+std::span<const uint8_t> Cpu::last_fault_bytes() const {
+    return {last_fault_bytes_.data(), last_fault_bytes_.size()};
+}
+
+void Cpu::set_code_range(uint64_t lo, uint64_t hi) {
+    code_lo_ = lo;
+    code_hi_ = hi;
+}
+
+void Cpu::flush_tlb() {
+    mmu_.flush();
+    ++tlb_epoch_;
+}
+
+void Cpu::invalidate_page(uint64_t vaddr) {
+    mmu_.invalidate(vaddr);
+    ++tlb_epoch_; // block-side TLB clears on the next block run
+    if (decode_cache_.erase_if([vaddr](uint64_t rip) {
+            return (rip >> 12U) == (vaddr >> 12U); // same vaddr page
+        }) != 0U) {
+        ++code_epoch_; // JIT mirrors revalidate lazily
+    }
+}
+
+void Cpu::set_gdtr(uint64_t base, uint16_t limit) {
+    gdtr_base_ = base;
+    gdtr_limit_ = limit;
+}
+
 } // namespace micro_forge::arch::x86_64

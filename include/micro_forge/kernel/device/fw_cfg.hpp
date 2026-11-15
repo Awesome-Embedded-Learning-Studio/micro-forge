@@ -30,20 +30,7 @@ public:
      * @param[out] out Selector value or zero.
      * @return False outside the pair.
      */
-    bool read(uint16_t offset, unsigned width, uint64_t& out) override {
-        if (width == 0 || width > 4) {
-            return false;
-        }
-        if (offset == 0) {
-            out = selector_;
-            return true;
-        }
-        if (offset == 1) {
-            out = 0; // no firmware entries: signature probe fails cleanly
-            return true;
-        }
-        return false;
-    }
+    bool read(uint16_t offset, unsigned width, uint64_t& out) override;
 
     /**
      * @brief Answers one port write (selector latch).
@@ -52,16 +39,7 @@ public:
      * @param[in] value The selector written.
      * @return False outside the pair.
      */
-    bool write(uint16_t offset, unsigned width, uint64_t value) override {
-        if (width == 0 || width > 4) {
-            return false;
-        }
-        if (offset == 0) {
-            selector_ = static_cast<uint16_t>(value);
-            return true;
-        }
-        return offset == 1;
-    }
+    bool write(uint16_t offset, unsigned width, uint64_t value) override;
 
 private:
     uint16_t selector_ = 0;

@@ -156,10 +156,7 @@ public:
      * @param[in] on_pending Called once per observation while the line
      *            is high; may be null (observe via irq_pending() only).
      */
-    void attach_irq(kernel::IrqLine& line, std::function<void()> on_pending = nullptr) {
-        irq_line_ = &line;
-        irq_hook_ = std::move(on_pending);
-    }
+    void attach_irq(kernel::IrqLine& line, std::function<void()> on_pending = nullptr);
     /// @brief Whether the attached IRQ line is high.
     [[nodiscard]] bool irq_pending() const { return irq_line_ != nullptr && irq_line_->pending(); }
     /// @brief Queue one interrupt vector for the next retire boundary.
@@ -179,9 +176,7 @@ public:
     /// @brief Scheduler dispatch and interrupt delivery after a deferred run.
     void retire_poll();
     /// Probe-only: byte image of the faulting instruction and its length.
-    [[nodiscard]] std::span<const uint8_t> last_fault_bytes() const {
-        return {last_fault_bytes_.data(), last_fault_bytes_.size()};
-    }
+    [[nodiscard]] std::span<const uint8_t> last_fault_bytes() const;
     /// Probe-only: execution length of the faulting instruction.
     [[nodiscard]] unsigned last_fault_length() const { return last_fault_length_; }
     /// @brief Writes one full GPR.
@@ -280,7 +275,7 @@ public:
     /// @brief JIT memory ADD: qword [vaddr] += value, updating flags.
     void jit_add_mem(uint64_t vaddr, uint64_t value);
     /// @brief Restricts JIT compilation to [lo, hi); zero means no filter.
-    void set_code_range(uint64_t lo, uint64_t hi) { code_lo_ = lo, code_hi_ = hi; }
+    void set_code_range(uint64_t lo, uint64_t hi);
     /// @brief Turns block compilation on without the env variable.
     void set_jit_enabled(bool enabled) { jit_requested_ = enabled; }
     /// @brief JIT counters: coverage meter plus block/failed-rip counts.
@@ -312,20 +307,9 @@ public:
     /// @brief Enables paging (boot shim) or returns to pass-through.
     void set_paging(bool enabled) { mmu_.set_paging(enabled); }
     /// @brief CR3 write: drop translations.
-    void flush_tlb() {
-        mmu_.flush();
-        ++tlb_epoch_;
-    }
+    void flush_tlb();
     /// @brief Drops one translation (INVLPG); same-page decodes die too.
-    void invalidate_page(uint64_t vaddr) {
-        mmu_.invalidate(vaddr);
-        ++tlb_epoch_; // block-side TLB clears on the next block run
-        if (decode_cache_.erase_if([vaddr](uint64_t rip) {
-                return (rip >> 12U) == (vaddr >> 12U); // same vaddr page
-            }) != 0U) {
-            ++code_epoch_; // JIT mirrors revalidate lazily
-        }
-    }
+    void invalidate_page(uint64_t vaddr);
     /// @brief CR2 of the last page fault.
     [[nodiscard]] uint64_t page_fault_address() const { return cr2_; }
     /// @brief #PF error code of the last page fault.
@@ -358,10 +342,7 @@ public:
         xmm_[static_cast<unsigned>(reg) - 16U] = value;
     }
     /// @brief Sets the GDTR image (the boot shim installs its own).
-    void set_gdtr(uint64_t base, uint16_t limit) {
-        gdtr_base_ = base;
-        gdtr_limit_ = limit;
-    }
+    void set_gdtr(uint64_t base, uint16_t limit);
     /// @brief GS base (swapgs swaps this with the kernel base).
     [[nodiscard]] uint64_t gs_base() const { return gs_base_; }
     /// @brief GS base setter (MSR 0xC0000101 writes land here).

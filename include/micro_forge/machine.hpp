@@ -131,9 +131,7 @@ public:
      * @param[in] max_instructions Instruction budget.
      * @return The terminal exit status (see Cpu::run).
      */
-    arch::x86_64::ExitStatus run(uint64_t max_instructions) {
-        return cpu_.run(max_instructions);
-    }
+    arch::x86_64::ExitStatus run(uint64_t max_instructions);
 
     /// @brief Bytes collected by the write syscall so far.
     [[nodiscard]] std::span<const char> console() const {

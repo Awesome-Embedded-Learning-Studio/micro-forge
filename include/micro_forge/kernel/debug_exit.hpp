@@ -52,9 +52,7 @@ public:
      * @param[in] offset Byte offset relative to the mapping base.
      * @return Always kOutOfBounds: the exit register is write-only.
      */
-    [[nodiscard]] std::expected<uint8_t, BusError> read_u8(uint64_t offset) override {
-        return unexpected_out_of_bounds(offset);
-    }
+    [[nodiscard]] std::expected<uint8_t, BusError> read_u8(uint64_t offset) override;
 
     /**
      * @brief Reads a little-endian 16-bit value at @p offset.
@@ -62,9 +60,7 @@ public:
      * @param[in] offset Byte offset relative to the mapping base.
      * @return Always kOutOfBounds: the exit register is write-only.
      */
-    [[nodiscard]] std::expected<uint16_t, BusError> read_u16(uint64_t offset) override {
-        return unexpected_out_of_bounds(offset);
-    }
+    [[nodiscard]] std::expected<uint16_t, BusError> read_u16(uint64_t offset) override;
 
     /**
      * @brief Reads a little-endian 32-bit value at @p offset.
@@ -72,9 +68,7 @@ public:
      * @param[in] offset Byte offset relative to the mapping base.
      * @return Always kOutOfBounds: the exit register is write-only.
      */
-    [[nodiscard]] std::expected<uint32_t, BusError> read_u32(uint64_t offset) override {
-        return unexpected_out_of_bounds(offset);
-    }
+    [[nodiscard]] std::expected<uint32_t, BusError> read_u32(uint64_t offset) override;
 
     /**
      * @brief Reads a little-endian 64-bit value at @p offset.
@@ -82,9 +76,7 @@ public:
      * @param[in] offset Byte offset relative to the mapping base.
      * @return Always kOutOfBounds: the exit register is write-only.
      */
-    [[nodiscard]] std::expected<uint64_t, BusError> read_u64(uint64_t offset) override {
-        return unexpected_out_of_bounds(offset);
-    }
+    [[nodiscard]] std::expected<uint64_t, BusError> read_u64(uint64_t offset) override;
 
     /**
      * @brief Writes one byte at @p offset.
@@ -93,10 +85,7 @@ public:
      * @param[in] value Byte to store.
      * @return Always kOutOfBounds: exits trigger through the u32 register.
      */
-    [[nodiscard]] std::expected<void, BusError> write_u8(uint64_t offset,
-                                                         uint8_t /*value*/) override {
-        return unexpected_out_of_bounds(offset);
-    }
+    [[nodiscard]] std::expected<void, BusError> write_u8(uint64_t offset, uint8_t /*value*/) override;
 
     /**
      * @brief Writes a little-endian 16-bit value at @p offset.
@@ -105,10 +94,7 @@ public:
      * @param[in] value Value to store.
      * @return Always kOutOfBounds: exits trigger through the u32 register.
      */
-    [[nodiscard]] std::expected<void, BusError> write_u16(uint64_t offset,
-                                                          uint16_t /*value*/) override {
-        return unexpected_out_of_bounds(offset);
-    }
+    [[nodiscard]] std::expected<void, BusError> write_u16(uint64_t offset, uint16_t /*value*/) override;
 
     /**
      * @brief Writes a little-endian 32-bit value at @p offset.
@@ -117,14 +103,7 @@ public:
      * @param[in] value Exit payload; the sink receives (value << 1) | 1.
      * @return Success on the exit register, kOutOfBounds elsewhere.
      */
-    [[nodiscard]] std::expected<void, BusError> write_u32(uint64_t offset,
-                                                          uint32_t value) override {
-        if (offset == kRegExit) {
-            on_exit_((value << 1U) | 1U);
-            return {};
-        }
-        return unexpected_out_of_bounds(offset);
-    }
+    [[nodiscard]] std::expected<void, BusError> write_u32(uint64_t offset, uint32_t value) override;
 
     /**
      * @brief Writes a little-endian 64-bit value at @p offset.
@@ -133,15 +112,10 @@ public:
      * @param[in] value Value to store.
      * @return Always kOutOfBounds: exits trigger through the u32 register.
      */
-    [[nodiscard]] std::expected<void, BusError> write_u64(uint64_t offset,
-                                                          uint64_t /*value*/) override {
-        return unexpected_out_of_bounds(offset);
-    }
+    [[nodiscard]] std::expected<void, BusError> write_u64(uint64_t offset, uint64_t /*value*/) override;
 
 private:
-    [[nodiscard]] static std::unexpected<BusError> unexpected_out_of_bounds(uint64_t offset) {
-        return std::unexpected(BusError{.kind = BusError::Kind::kOutOfBounds, .address = offset});
-    }
+    [[nodiscard]] static std::unexpected<BusError> unexpected_out_of_bounds(uint64_t offset);
 
     std::function<void(uint32_t)> on_exit_;
 };

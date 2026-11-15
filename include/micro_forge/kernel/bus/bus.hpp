@@ -151,14 +151,7 @@ public:
      * @param[out] host Integer host address on success (0 is valid).
      * @return True for RAM; false requires normal width access routing.
      */
-    [[nodiscard]] bool direct_ram(uint64_t address, unsigned width, uintptr_t& host) const {
-        const uint64_t offset = address - direct_base_;
-        if (offset >= direct_size_ || width > direct_size_ - offset) {
-            return false;
-        }
-        host = direct_host_ + static_cast<uintptr_t>(offset);
-        return true;
-    }
+    [[nodiscard]] bool direct_ram(uint64_t address, unsigned width, uintptr_t& host) const;
 
 private:
     /// Optional post-write observer (DMA self-modifying-code guard).

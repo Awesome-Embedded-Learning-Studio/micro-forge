@@ -205,4 +205,7 @@ void Machine::on_ahci_complete() {
     }
 }
 
+
+arch::x86_64::ExitStatus Machine::run(uint64_t max_instructions) { return cpu_.run(max_instructions); }
+
 } // namespace micro_forge

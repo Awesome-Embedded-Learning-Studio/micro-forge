@@ -85,8 +85,7 @@ protected:
      * @param[in] offset Access offset inside the window.
      * @param[in] width Access width in bytes.
      */
-    virtual void on_read(uint64_t /*offset*/, unsigned /*width*/) {
-                    }
+    virtual void on_read(uint64_t /*offset*/, unsigned /*width*/) {}
     /**
      * @brief Behavior hook before a write lands (e.g. EOI clears).
      *
@@ -94,8 +93,7 @@ protected:
      * @param[in] width Access width in bytes.
      * @param[in] value The value written.
      */
-    virtual void on_write(uint64_t /*offset*/, unsigned /*width*/, uint64_t /*value*/) {
-                            }
+    virtual void on_write(uint64_t /*offset*/, unsigned /*width*/, uint64_t /*value*/) {}
 
 private:
     uint8_t* window_;

@@ -44,9 +44,7 @@ public:
      * @param[in] image The bytes to place.
      * @return False when the image does not fit.
      */
-    [[nodiscard]] bool load_image(uint64_t guest_addr, std::span<const uint8_t> image) {
-        return machine_.load_image(guest_addr, image);
-    }
+    [[nodiscard]] bool load_image(uint64_t guest_addr, std::span<const uint8_t> image);
 
     /**
      * @brief Runs up to @p max_instructions instructions.
@@ -54,9 +52,7 @@ public:
      * @param[in] max_instructions Budget for this call.
      * @return The latched status (kRunning when the budget ran out).
      */
-    arch::x86_64::ExitStatus run(uint64_t max_instructions) {
-        return machine_.run(max_instructions);
-    }
+    arch::x86_64::ExitStatus run(uint64_t max_instructions);
 
     /// @brief Serial console bytes (device sink).
     [[nodiscard]] std::span<const char> console() const { return machine_.console(); }
@@ -77,9 +73,7 @@ public:
      * @param[in] blob Bytes produced by snapshot().
      * @return Empty on success, the refusal reason otherwise.
      */
-    [[nodiscard]] std::optional<kernel::SnapshotError> restore(std::span<const uint8_t> blob) {
-        return machine_.restore(blob);
-    }
+    [[nodiscard]] std::optional<kernel::SnapshotError> restore(std::span<const uint8_t> blob);
 
     /// @brief The underlying machine (advanced use: devices, CPU, bus).
     [[nodiscard]] Machine& machine() { return machine_; }

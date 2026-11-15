@@ -50,6 +50,7 @@ add_custom_target(
 
 add_library(micro_forge
     src/machine.cpp
+    src/engine.cpp
     src/jit/jit.cpp
     src/jit/jit_translate.cpp
     src/jit/jit_translate_alu.cpp
@@ -63,17 +64,22 @@ add_library(micro_forge
     src/kernel/bus/bus.cpp
     src/kernel/device/acpi_tables.cpp
     src/kernel/device/ahci.cpp
+    src/kernel/device/debug_exit.cpp
+    src/kernel/device/fw_cfg.cpp
+    src/kernel/device/i8042.cpp
     src/kernel/device/io_apic.cpp
     src/kernel/device/lapic.cpp
     src/kernel/device/pic_8259.cpp
     src/kernel/device/pci_config.cpp
     src/kernel/device/pit_8254.cpp
     src/kernel/bus/port_space.cpp
+    src/kernel/bus/port_stubs.cpp
     src/kernel/memory/register_region.cpp
     src/kernel/device/rtc.cpp
     src/kernel/memory/ram_region.cpp
     src/kernel/device/serial_16550.cpp
     src/kernel/scheduler.cpp
+    src/kernel/snapshot.cpp
     src/arch/x86_64/decoder.cpp
     src/arch/x86_64/tables.cpp
     src/arch/x86_64/render.cpp

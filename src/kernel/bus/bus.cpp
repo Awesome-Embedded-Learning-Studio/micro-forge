@@ -181,4 +181,14 @@ std::expected<void, BusError> Bus::write_u64(uint64_t address, uint64_t value) {
     return done;
 }
 
+
+bool Bus::direct_ram(uint64_t address, unsigned width, uintptr_t& host) const {
+    const uint64_t offset = address - direct_base_;
+    if (offset >= direct_size_ || width > direct_size_ - offset) {
+        return false;
+    }
+    host = direct_host_ + static_cast<uintptr_t>(offset);
+    return true;
+}
+
 } // namespace micro_forge::kernel
