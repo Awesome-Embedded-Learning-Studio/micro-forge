@@ -126,6 +126,33 @@ TEST_F(CpuTest, XchgSwapsAccumulator) {
     EXPECT_EQ(1U, static_cast<uint32_t>(cpu_.gpr(Reg::kRcx)));
 }
 
+TEST_F(CpuTest, Opcode90SwapsExtendedRegisterThroughWidthsAndCache) {
+    for (const unsigned width : {2U, 4U, 8U}) {
+        if (width == 2) {
+            load({0x66, 0x41, 0x90});
+        } else if (width == 4) {
+            load({0x41, 0x90});
+        } else {
+            load({0x49, 0x90});
+        }
+        cpu_.switch_address_space(); // the next width replaces code at the same address
+        const uint64_t mask = width == 8 ? UINT64_MAX : (1ULL << (8 * width)) - 1;
+        constexpr uint64_t accumulator = 0x123456789ABCDEF0ULL;
+        constexpr uint64_t extended = 0xFEDCBA9876543210ULL;
+        const uint64_t preserved = mask == 0xFFFF ? ~mask : 0;
+        for (unsigned pass = 0; pass < 2; ++pass) {
+            cpu_.set_rip(kCodeBase); // exercise both fresh and cached decoding
+            cpu_.set_gpr(Reg::kRax, accumulator);
+            cpu_.set_gpr(Reg::kR8, extended);
+            cpu_.set_rflags(0x8D7);
+            ASSERT_EQ(ExitStatus::Kind::kRunning, cpu_.run(1).kind);
+            EXPECT_EQ((accumulator & preserved) | (extended & mask), cpu_.gpr(Reg::kRax));
+            EXPECT_EQ((extended & preserved) | (accumulator & mask), cpu_.gpr(Reg::kR8));
+            EXPECT_EQ(0x8D7U, cpu_.rflags());
+        }
+    }
+}
+
 TEST_F(CpuTest, RepStosbFillsAndAdvances) {
     load({
         0x48,

@@ -189,6 +189,24 @@ TEST(DecodeTest, XchgXaddCmpxchg) {
     EXPECT_EQ(text_of({0x0F, 0xB1, 0x17}), "cmpxchg DWORD PTR [rdi], edx");
 }
 
+TEST(DecodeTest, Opcode90HonorsRexB) {
+    // REX.B selects r8 in the accumulator-xchg encoding, including opcode 90.
+    EXPECT_EQ(text_of({0x49, 0x90}), "xchg r8, rax");
+    EXPECT_EQ(text_of({0x41, 0x90}), "xchg r8d, eax");
+    EXPECT_EQ(text_of({0x66, 0x41, 0x90}), "xchg r8w, ax");
+    EXPECT_EQ(text_of({0x4D, 0x90}), "xchg r8, rax");
+    EXPECT_EQ(text_of({0x40, 0x90}), "nop");
+    EXPECT_EQ(text_of({0x48, 0x90}), "nop");
+    EXPECT_EQ(text_of({0x44, 0x90}), "nop");
+    EXPECT_EQ(text_of({0xF3, 0x49, 0x90}), "pause");
+}
+
+TEST(DecodeTest, XorpsRegisterAndMemoryForms) {
+    EXPECT_EQ(text_of({0x0F, 0x57, 0xC1}), "xorps xmm0, xmm1");
+    EXPECT_EQ(text_of({0x0F, 0x57, 0x10}), "xorps xmm2, XMMWORD PTR [rax]");
+    EXPECT_EQ(text_of({0x45, 0x0F, 0x57, 0xC0}), "xorps xmm8, xmm8");
+}
+
 TEST(DecodeTest, BtFamily) {
     // 0F BA reg-field map per SDM and objdump 2.47 (batch-4 review: the
     // map was off by one, a real bt executed as a writing bts):

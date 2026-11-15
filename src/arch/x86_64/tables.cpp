@@ -215,6 +215,7 @@ constexpr std::array<Ent, 256> build_esc0() {
     t[0x32] = make_ent(Mnemonic::kRdmsr);
     t[0x28] = make_ent(Mnemonic::kMovaps, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
     t[0x29] = make_ent(Mnemonic::kMovaps, Slot::kXRm, Slot::kXReg, Slot::kNone, SizeR::kV);
+    t[0x57] = make_ent(Mnemonic::kXorps, Slot::kXReg, Slot::kXRm, Slot::kNone, SizeR::kV);
     for (uint8_t cc = 0; cc < 16; ++cc) {
         t[0x40 + cc] = make_ent(Mnemonic::kCmovcc, Slot::kReg, Slot::kRm, Slot::kNone, SizeR::kD);
     }

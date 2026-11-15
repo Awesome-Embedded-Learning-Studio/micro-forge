@@ -124,7 +124,7 @@ std::expected<DecodedInsn, DecodeError> decode_one(std::span<const uint8_t> byte
             }
         }
     } else {
-        ent = kPrimary[op];
+        ent = kPrimary[op == 0x90 && p.rex_b != 0U ? 0x91 : op];
         if (!ent.valid) {
             return std::unexpected(
                 DecodeError{.kind = DecodeError::Kind::kUnsupportedOpcode, .offset = opcode_off});

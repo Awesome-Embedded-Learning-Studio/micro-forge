@@ -211,6 +211,28 @@ TEST_F(CpuTest, PshufdReordersDwords) {
     EXPECT_EQ(0x3333333344444444ULL, x2[1]); // dwords 1,0
 }
 
+TEST_F(CpuTest, XorpsHandlesBothHalvesMemoryAndSelfWithoutChangingFlags) {
+    load({0x0F, 0x57, 0xC1,         // xorps xmm0,xmm1
+          0x0F, 0x57, 0x10,         // xorps xmm2,[rax]
+          0x45, 0x0F, 0x57, 0xC0}); // xorps xmm8,xmm8
+    cpu_.set_xmm(Reg::kXmm0, {0x1122334455667788ULL, 0x99AABBCCDDEEFF00ULL});
+    cpu_.set_xmm(Reg::kXmm2, cpu_.xmm(Reg::kXmm0));
+    cpu_.set_xmm(Reg::kXmm8, cpu_.xmm(Reg::kXmm0));
+    cpu_.set_xmm(Reg::kXmm1, {0xFF00FF00FF00FF00ULL, 0x00FF00FF00FF00FFULL});
+    ASSERT_TRUE(bus_.write_u64(0x2000, 0xFF00FF00FF00FF00ULL).has_value());
+    ASSERT_TRUE(bus_.write_u64(0x2008, 0x00FF00FF00FF00FFULL).has_value());
+    cpu_.set_gpr(Reg::kRax, 0x2000);
+    cpu_.set_rflags(0x8D7);
+    ASSERT_EQ(ExitStatus::Kind::kHalt, cpu_.run(10).kind);
+    for (const auto reg : {Reg::kXmm0, Reg::kXmm2}) {
+        EXPECT_EQ(0xEE22CC44AA668888ULL, cpu_.xmm(reg)[0]);
+        EXPECT_EQ(0x9955BB33DD11FFFFULL, cpu_.xmm(reg)[1]);
+    }
+    EXPECT_EQ(0U, cpu_.xmm(Reg::kXmm8)[0]);
+    EXPECT_EQ(0U, cpu_.xmm(Reg::kXmm8)[1]);
+    EXPECT_EQ(0x8D7U, cpu_.rflags());
+}
+
 TEST_F(CpuTest, MovqTransfersLaneAndClearsHigh) {
     // movq xmm0, rbx: lane 0 gets rbx, high half zeroed.
     load({

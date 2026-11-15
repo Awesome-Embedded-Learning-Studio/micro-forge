@@ -290,7 +290,7 @@ std::optional<TranslatedInsn> translate_move(const arch::x86_64::DecodedInsn& in
         (insn.ops[1].size == 1 || insn.ops[1].size == 2 || insn.ops[1].size == 4) &&
         insn.ops[1].size < insn.ops[0].size) {
         const auto dst = operand_slot(insn.ops[0], insn.rex_present);
-        const auto src = reg_slot_offset(insn.ops[1].reg);
+        const auto src = operand_slot(insn.ops[1], insn.rex_present);
         if (dst.has_value() && src.has_value()) {
             return TranslatedInsn{
                 .code = jg::kMovSlotW,
@@ -367,7 +367,7 @@ std::optional<TranslatedInsn> translate_move(const arch::x86_64::DecodedInsn& in
         const bool movzx = insn.mnemonic == Mnemonic::kMovzx;
         if (movzx || insn.ops[0].size == 2) {
             const auto dst = reg_slot_offset(insn.ops[0].reg);
-            const auto src = reg_slot_offset(insn.ops[1].reg);
+            const auto src = operand_slot(insn.ops[1], insn.rex_present);
             if (dst.has_value() && src.has_value()) {
                 return TranslatedInsn{
                     .code = jg::kMovSlotW,

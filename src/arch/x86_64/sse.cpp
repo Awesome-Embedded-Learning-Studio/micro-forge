@@ -92,6 +92,7 @@ ExitStatus Cpu::execute_sse(const DecodedInsn& insn, uint64_t rip_after) {
         break;
     }
     case Mnemonic::kPxor:
+    case Mnemonic::kXorps:
     case Mnemonic::kPand:
     case Mnemonic::kPandn:
     case Mnemonic::kPor: {
@@ -101,7 +102,7 @@ ExitStatus Cpu::execute_sse(const DecodedInsn& insn, uint64_t rip_after) {
             return exit_;
         }
         for (unsigned i = 0; i < 2; ++i) {
-            if (insn.mnemonic == Mnemonic::kPxor) {
+            if (insn.mnemonic == Mnemonic::kPxor || insn.mnemonic == Mnemonic::kXorps) {
                 dst[i] ^= src[i];
             } else if (insn.mnemonic == Mnemonic::kPand) {
                 dst[i] &= src[i];

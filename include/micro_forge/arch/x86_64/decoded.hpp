@@ -287,6 +287,7 @@ enum class Mnemonic : uint8_t {
     kStac,
     kFninit,
     kUd2,
+    kXorps,
 };
 
 /**

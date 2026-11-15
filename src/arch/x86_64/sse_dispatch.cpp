@@ -18,6 +18,7 @@ bool Cpu::is_sse_mnemonic(Mnemonic mnemonic) {
     case Mnemonic::kMovq_xmm:
     case Mnemonic::kMovd_xmm:
     case Mnemonic::kPxor:
+    case Mnemonic::kXorps:
     case Mnemonic::kPand:
     case Mnemonic::kPandn:
     case Mnemonic::kPor:

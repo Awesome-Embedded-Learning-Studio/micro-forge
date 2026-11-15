@@ -248,7 +248,7 @@ std::string_view gpr_name(Reg reg, uint8_t size, bool rex_present) {
 }
 
 /// @brief Mnemonic text indexed by Mnemonic value (order = enum order).
-constexpr std::array<std::string_view, 179> kMnemonicNames = {
+constexpr std::array<std::string_view, 180> kMnemonicNames = {
     "mov",        "movsx",     "movzx",     "movsxd",    "xchg",       "lea",       "push",
     "pop",        "cmovcc",    "movabs",    "add",       "adc",        "sub",       "sbb",
     "inc",        "dec",       "neg",       "cmp",       "mul",        "imul",      "div",
@@ -274,9 +274,9 @@ constexpr std::array<std::string_view, 179> kMnemonicNames = {
     "pslld",      "psllq",     "paddd",     "paddq",     "psubd",      "paddb",     "psubb",
     "paddw",      "psubw",     "psubq",     "pminub",    "pmaxub",     "pminsw",    "pmaxsw",
     "rdsspq",     "pcmpeqb",   "pcmpeqd",   "pcmpeqq",   "psadbw",     "pextrw",    "movss",
-    "clac",       "stac",      "fninit",    "ud2",
+    "clac",       "stac",      "fninit",    "ud2",       "xorps",
 };
-static_assert(kMnemonicNames.size() == 179, "keep in sync with Mnemonic in decoded.hpp");
+static_assert(kMnemonicNames.size() == 180, "keep in sync with Mnemonic in decoded.hpp");
 
 std::string_view mnemonic_name(Mnemonic mn) {
     const auto idx = static_cast<size_t>(mn);

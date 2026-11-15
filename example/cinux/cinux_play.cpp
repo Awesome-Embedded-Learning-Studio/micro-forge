@@ -83,6 +83,7 @@ public:
     }
     ~RawTerminal() {
         if (active_) {
+            tcsetattr(STDIN_FILENO, TCSANOW, &saved_);
         }
     }
     RawTerminal(const RawTerminal&) = delete;
@@ -113,16 +114,13 @@ std::string poll_stdin(int timeout_ms) {
 }
 
 /// Prints console bytes that appeared since @p printed, updating the mark.
-void flush_console(const std::vector<char>& console, size_t& printed, bool raw_mode) {
+void flush_console(const std::vector<char>& console, size_t& printed) {
     if (console.size() <= printed) {
         return;
     }
     const size_t count = console.size() - printed;
-    if (raw_mode) {
-    } else {
-        std::fwrite(console.data() + printed, 1, count, stdout);
-        std::fflush(stdout);
-    }
+    std::fwrite(console.data() + printed, 1, count, stdout);
+    std::fflush(stdout);
     printed = console.size();
 }
 
@@ -150,14 +148,22 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    const bool raw_mode = isatty(STDIN_FILENO) != 0;
     std::println("[play] booting {} ({} bytes) + {} ({} bytes)", kernel_path, image.size(),
                  disk_path, disk.size());
     std::println("[play] waiting for the shell prompt (about a minute)...");
+    std::fflush(stdout);
 
-    auto status = machine.run(kBootBudget);
+    micro_forge::arch::x86_64::ExitStatus status{};
     size_t printed = 0;
-    flush_console(machine.cpu().console_sink(), printed, raw_mode);
+    for (unsigned long long remaining = kBootBudget; remaining > 0;) {
+        const auto budget = remaining < kTurnBudget ? remaining : kTurnBudget;
+        status = machine.run(budget);
+        flush_console(machine.cpu().console_sink(), printed);
+        if (status.kind != micro_forge::arch::x86_64::ExitStatus::Kind::kRunning) {
+            break;
+        }
+        remaining -= budget;
+    }
     if (status.kind != micro_forge::arch::x86_64::ExitStatus::Kind::kRunning) {
         std::println(stderr, "[play] guest stopped during boot (kind={} rip=0x{:X})",
                      unsigned(status.kind), status.rip);
@@ -179,7 +185,7 @@ int main(int argc, char** argv) {
             machine.inject_serial(static_cast<uint8_t>(c == '\n' ? '\r' : c));
         }
         status = machine.run(kTurnBudget);
-        flush_console(machine.cpu().console_sink(), printed, raw_mode);
+        flush_console(machine.cpu().console_sink(), printed);
         if (status.kind != micro_forge::arch::x86_64::ExitStatus::Kind::kRunning) {
             std::println("\n[play] guest stopped (kind={} rip=0x{:X})", unsigned(status.kind),
                          status.rip);

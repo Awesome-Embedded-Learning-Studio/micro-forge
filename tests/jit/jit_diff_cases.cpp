@@ -298,6 +298,40 @@ std::vector<DiffCase> width_cases() {
         }
     }
 
+    // ACPI parsing uses movzx eax,ah. Without REX, byte registers 4..7
+    // select AH/CH/DH/BH; with REX they select SPL/BPL/SIL/DIL.
+    for (const bool sign_extend : {false, true}) {
+        for (const uint8_t rex : {0x00, 0x40, 0x48}) {
+            for (unsigned reg = 4; reg < 8; ++reg) {
+                constexpr uint64_t source = 0x112233445566C380ULL;
+                const bool high_byte = rex == 0;
+                const uint64_t byte = high_byte ? 0xC3 : 0x80;
+                uint64_t expected = byte;
+                if (sign_extend) {
+                    expected = rex == 0x48 ? (UINT64_MAX - 0xFF) | byte
+                                           : (uint64_t{UINT32_MAX} - 0xFF) | byte;
+                }
+                std::vector<uint8_t> code;
+                if (rex != 0) {
+                    code.push_back(rex);
+                }
+                code.insert(code.end(), {0x0F, static_cast<uint8_t>(sign_extend ? 0xBE : 0xB6),
+                                         static_cast<uint8_t>(0xC0 | reg)});
+                cases.push_back({
+                    .name = std::string(sign_extend ? "Movsx" : "Movzx") +
+                            (high_byte ? "HighByte" : "RexByte") + std::to_string(rex) + "Reg" +
+                            std::to_string(reg),
+                    .code = std::move(code),
+                    .initial = source,
+                    .expected = expected,
+                    .source = source,
+                    .result_reg = Reg::kRax,
+                    .source_reg = static_cast<Reg>(high_byte ? reg - 4 : reg),
+                });
+            }
+        }
+    }
+
     // AH/CH/DH/BH destinations: the helper ABI addresses whole slots, so these
     // must fall back to the interpreter instead of corrupting the parent reg.
     {

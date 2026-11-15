@@ -8,22 +8,34 @@ project(micro-forge
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Default to Release (-O3): an emulator is pure compute, an unoptimized
-# build is ~an order of magnitude slower and only worth building on
-# purpose for source-level debugging. Pass
-# -DCMAKE_BUILD_TYPE=RelWithDebInfo (-O2 -g) for profiling, matching the
-# bench/baseline.txt methodology; pass Debug explicitly when debugging.
+# ---------------------------------------------------------------------------
+# Compile profile: release by default, debug on purpose.
+#
+# An emulator is pure compute; an unoptimized build is roughly an order of
+# magnitude slower and only worth building for source-level debugging.
+# cmake/compile_config/<profile>.cmake owns the flags per profile. The
+# mapping is two-way by build type: Debug takes the debug profile, every
+# other type (Release, RelWithDebInfo, ...) takes the release profile, so
+# profiling builds keep the bench methodology's -O2 from CMake itself.
+# ---------------------------------------------------------------------------
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    include(cmake/compile_config/debug.cmake)
+else()
+    include(cmake/compile_config/release.cmake)
+endif()
 
-add_compile_options(-Wall -Wextra -Werror)
+find_program(MICRO_FORGE_PYTHON3 python3 REQUIRED)
 
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+# Generated headers (JIT templates, machine description): one uniform
+# mechanism in cmake/tools/generators.cmake.
+include(cmake/tools/generators.cmake)
 
-# Generate the version header from the project VERSION (single source of
-# truth), following the legacy arch_details.hpp precedent.
+# Version header from the project VERSION (single source of truth).
 set(MICRO_FORGE_VERSION       ${PROJECT_VERSION})
 set(MICRO_FORGE_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
 set(MICRO_FORGE_VERSION_MINOR ${PROJECT_VERSION_MINOR})
@@ -34,148 +46,12 @@ configure_file(
     @ONLY
 )
 
-# Engine library: the shared machine kernel, grown batch by batch.
-option(MICRO_FORGE_EMBEDDED "Freestanding-ish build: no exceptions, no RTTI" OFF)
-
-# ---------------------------------------------------------------------------
-# JIT template generation.
-#
-# The templates live in src/arch/x86_64/jit_templates.S; the generator
-# assembles them, scans the hole magics and writes the header. Regenerating
-# unconditionally is deliberate: a stale header means every hole offset in
-# the block compiler is silently wrong, and the cost is a fraction of a
-# second per build.
-# ---------------------------------------------------------------------------
-find_program(MICRO_FORGE_PYTHON3 python3 REQUIRED)
-
-# Machine description: MICRO_FORGE_MACHINE selects machines/<name>.toml.
-# Generated once at configure (so install(DIRECTORY) sees the file) and
-# again at build time (so editing the TOML refreshes it without a
-# reconfigure).
-set(MICRO_FORGE_MACHINE "cinux" CACHE STRING "Machine description in machines/")
-set(MACHINE_CONFIG_OUT "${CMAKE_CURRENT_SOURCE_DIR}/include/micro_forge/generated/machine_config_generated.hpp")
-execute_process(
-    COMMAND "${CMAKE_COMMAND}" -E env
-        "MICRO_FORGE_MACHINE=${MICRO_FORGE_MACHINE}"
-        "MACHINE_CONFIG_OUT=${MACHINE_CONFIG_OUT}"
-        "${MICRO_FORGE_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen/gen_machine_config.py"
-    RESULT_VARIABLE machine_gen_result
-)
-if(NOT machine_gen_result EQUAL 0)
-    message(FATAL_ERROR "machine config generation failed for '${MICRO_FORGE_MACHINE}'")
-endif()
-add_custom_target(
-    machine_config_gen ALL
-    COMMAND
-        "${CMAKE_COMMAND}" -E env
-        "MICRO_FORGE_MACHINE=${MICRO_FORGE_MACHINE}"
-        "MACHINE_CONFIG_OUT=${MACHINE_CONFIG_OUT}"
-        "${MICRO_FORGE_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen/gen_machine_config.py"
-    COMMENT "Regenerating machine config from machines/${MICRO_FORGE_MACHINE}.toml"
-    VERBATIM
-)
-add_custom_target(
-    jit_templates_gen ALL
-    COMMAND
-        "${CMAKE_COMMAND}" -E env
-        "JIT_TEMPLATES_OUT=${CMAKE_BINARY_DIR}/generated/micro_forge/jit/jit_templates_generated.hpp"
-        "${MICRO_FORGE_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen/gen_jit_templates.py"
-    COMMENT "Regenerating JIT templates from assembly"
-    VERBATIM
-)
-
-add_library(micro_forge
-    src/machine.cpp
-    src/base/active_machine.cpp
-    src/engine.cpp
-    src/jit/jit.cpp
-    src/jit/jit_translate.cpp
-    src/jit/jit_translate_alu.cpp
-    src/jit/jit_translate_mov.cpp
-    src/jit/jit_translate_movx.cpp
-    src/wasm/wasm_emit.cpp
-    src/wasm/wasm_block.cpp
-    src/wasm/wasm_block_mem.cpp
-    src/wasm/wasm_block_walk.cpp
-    src/wasm/wasm_block_stack.cpp
-    src/kernel/bus/bus.cpp
-    src/kernel/device/acpi_tables.cpp
-    src/kernel/device/ahci.cpp
-    src/kernel/device/debug_exit.cpp
-    src/kernel/device/fw_cfg.cpp
-    src/kernel/device/i8042.cpp
-    src/kernel/device/io_apic.cpp
-    src/kernel/device/lapic.cpp
-    src/kernel/device/pic_8259.cpp
-    src/kernel/device/pci_config.cpp
-    src/kernel/device/pit_8254.cpp
-    src/kernel/bus/port_space.cpp
-    src/kernel/bus/port_stubs.cpp
-    src/kernel/memory/register_region.cpp
-    src/kernel/device/rtc.cpp
-    src/kernel/memory/ram_region.cpp
-    src/kernel/device/serial_16550.cpp
-    src/kernel/scheduler.cpp
-    src/kernel/snapshot.cpp
-    src/arch/x86_64/decoder.cpp
-    src/arch/x86_64/tables.cpp
-    src/arch/x86_64/render.cpp
-    src/arch/x86_64/cpu.cpp
-    src/arch/x86_64/memory.cpp
-    src/arch/x86_64/fast_dispatch.cpp
-    src/arch/x86_64/jit_alu.cpp
-    src/arch/x86_64/jit_chain.cpp
-    src/arch/x86_64/jit_control.cpp
-    src/arch/x86_64/jit_cpu.cpp
-    src/arch/x86_64/jit_cpu_alu.cpp
-    src/arch/x86_64/jit_helpers.cpp
-    src/arch/x86_64/jit_stats.cpp
-    src/arch/x86_64/execute.cpp
-    src/arch/x86_64/execute_dispatch.cpp
-    src/arch/x86_64/dispatch.cpp
-    src/arch/x86_64/interrupt.cpp
-    src/arch/x86_64/io.cpp
-    src/arch/x86_64/grp3.cpp
-    src/arch/x86_64/sysregs.cpp
-    src/arch/x86_64/sse.cpp
-    src/arch/x86_64/sse_ext.cpp
-    src/arch/x86_64/sse_dispatch.cpp
-    src/arch/x86_64/syscall_impl.cpp
-    src/arch/x86_64/mmu.cpp
-)
-
-# The generated header must exist before the library compiles.
-add_dependencies(micro_forge jit_templates_gen machine_config_gen)
-target_include_directories(micro_forge PUBLIC
-    "$<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/generated>"
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/generated>
-)
-# Internal headers (src/**) are PRIVATE: consumers must not include them.
-target_include_directories(micro_forge PRIVATE
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
-)
-
-# Embedded profile: the engine already avoids exceptions and RTTI internally
-# (std::expected everywhere), so the flags mainly guard against regressions
-# and let the same sources build for freestanding-ish targets.
-if(MICRO_FORGE_EMBEDDED)
-    target_compile_options(micro_forge PUBLIC -fno-exceptions -fno-rtti)
-    target_compile_definitions(micro_forge PUBLIC MICRO_FORGE_EMBEDDED=1)
-endif()
-
-enable_testing()
+add_subdirectory(src)
 add_subdirectory(tests)
+add_subdirectory(tools)
 
-# ips bench (batch 3 onward): advisory perf baselines, live in tools/bench/.
-add_subdirectory(tools/bench)
-
-# Decode-dump tool for the objdump differential harness (batch 2).
-add_executable(mf-decode-dump tools/dec_dump.cpp)
-target_link_libraries(mf-decode-dump PRIVATE micro_forge)
-
-# Interactive Cinux shell: COM1 wired to the terminal. Lives in
-# example/cinux: the guest-specific glue is example code now.
+# example/: guest-specific glue (the Cinux loader shim and its terminal
+# front end). The core library must not know about it.
 add_subdirectory(example)
 
 # --- Install / export: micro_forge as an embeddable library -------------
