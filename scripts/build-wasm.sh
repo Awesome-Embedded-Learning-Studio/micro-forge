@@ -41,21 +41,12 @@ if [[ "${WASM_PROFILE}" == "1" ]]; then
     OPT_FLAGS+=(--profiling-funcs)
 fi
 
-EXPORTS="_mf_abi_version,_mf_engine_version,_mf_snapshot_format_version"
-EXPORTS="${EXPORTS},_mf_guest_ram_size,_mf_lfb_base,_mf_lfb_size"
-EXPORTS="${EXPORTS},_mf_reset,_mf_run,_mf_icount"
-EXPORTS="${EXPORTS},_mf_read_console,_mf_snapshot,_mf_restore"
-EXPORTS="${EXPORTS},_mf_boot_cinux,_mf_inject_serial,_malloc,_free"
-EXPORTS="${EXPORTS},_mf_rip_low,_mf_rip_high,_mf_peek32,_mf_serial_tx"
-EXPORTS="${EXPORTS},_mf_instance_create,_mf_instance_destroy,_mf_instance_use"
-EXPORTS="${EXPORTS},_mf_wasm_block,_mf_wasm_block2,_mf_gprs_flush,_mf_gprs_commit,_mf_bridge_cpu_state,_mf_bridge_prepare,_mf_bridge_finish,_mf_gpr_bridge_base,_mf_fetch_peek,_mf_write_guest"
-EXPORTS="${EXPORTS},_mf_gpr_get,_mf_gpr_set,_mf_set_rip"
-EXPORTS="${EXPORTS},_mf_flags_get,_mf_flags_set"
-EXPORTS="${EXPORTS},_mf_retire"
-EXPORTS="${EXPORTS},_mf_event_budget"
-EXPORTS="${EXPORTS},_mf_note_store,_mf_code_epoch,_mf_tlb_epoch"
-EXPORTS="${EXPORTS},_mf_runner_reset,_mf_runner_put,_mf_runner_refuse,_mf_runner_remove,_mf_runner_reepoch,_mf_runner_set_batch,_mf_runner_run,_mf_runner_dump"
-EXPORTS="${EXPORTS},_mf_runner_retired,_mf_runner_exit,_mf_runner_miss_lo,_mf_runner_miss_hi,_mf_runner_execs,_mf_runner_handoffs,_mf_runner_partial_handoffs,_mf_runner_reason,_mf_runner_block_retired,_mf_runner_interp_retired,_mf_runner_fallback_cause"
+# Export list derives from the sources (scripts/gen/gen_wasm_exports.py),
+# so the ABI surface and the link line cannot drift apart. _malloc/_free
+# are the Emscripten allocator entries the standalone module needs.
+EXPORTS_FILE="${WASM_EXPORTS_OUT:-build-wasm/exports.list}"
+python3 scripts/gen/gen_wasm_exports.py
+EXPORTS="$(sed 's/^/_/' "${EXPORTS_FILE}" | paste -sd ',' -),_malloc,_free"
 
 mkdir -p "$(dirname "${OUT}")"
 # shellcheck disable=SC2086
