@@ -6,10 +6,11 @@
 # Wasm configure:   emcmake cmake -S . -B build-wasm
 # Build:            cmake --build build-wasm
 #
-# Usage (no wrapper script):
-#   source tools/use-emsdk.sh          # puts emcmake/em++ on PATH
-#   emcmake cmake -S . -B build-wasm
+# Usage (plain cmake; MICRO_FORGE_WASM wires the Emscripten toolchain):
+#   cmake -S . -B build-wasm -DMICRO_FORGE_WASM=ON
 #   cmake --build build-wasm
+#
+# (emcmake works too when the emsdk environment is already sourced.)
 #
 # Produce: build-wasm/engine.wasm — STANDALONE_WASM, no Emscripten JS
 # glue, single file. The exported linear memory is guest physical memory

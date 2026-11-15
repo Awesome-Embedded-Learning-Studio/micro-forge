@@ -1,5 +1,18 @@
 cmake_minimum_required(VERSION 3.25)
 
+# The wasm engine build needs the Emscripten toolchain, and that choice
+# must land before project() probes the compilers. Passing
+# -DMICRO_FORGE_WASM=ON wires it in — plain cmake, no emcmake, no emsdk
+# environment (the emsdk checkout carries its own .emscripten config).
+# The flag persists in the build dir's cache, so later reconfigures and
+# plain `cmake --build` keep building wasm without repeating it.
+option(MICRO_FORGE_WASM "Configure for the wasm engine artifact" OFF)
+if(MICRO_FORGE_WASM)
+    set(CMAKE_TOOLCHAIN_FILE
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake"
+        CACHE FILEPATH "Emscripten toolchain" FORCE)
+endif()
+
 project(micro-forge
     VERSION 0.1.0
     LANGUAGES CXX
